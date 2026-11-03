@@ -83,6 +83,8 @@ fun SettingsScreen(
     var lastSaved by remember { mutableStateOf(0L) }
     var savedVisible by remember { mutableStateOf(false) }
     var voiceEnabled by remember { mutableStateOf(voicePrefs.getBoolean("voice_enabled", false)) }
+    var wakeWordAccessKey by remember { mutableStateOf(voicePrefs.getString("picovoice_access_key", "") ?: "") }
+    var showWakeWordKey by remember { mutableStateOf(false) }
     var speakResults by remember { mutableStateOf(voicePrefs.getBoolean("speak_results", true)) }
     var speechRate by remember { mutableStateOf(1.05f) }
     var sttMode by remember { mutableStateOf("Push to Talk") }
@@ -191,7 +193,28 @@ fun SettingsScreen(
                 
                 if (voiceEnabled) {
                     Spacer(modifier = Modifier.height(8.dp))
-                    
+
+                    SectionLabel("OFFLINE WAKE WORD")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    FloatingLabelTextField(
+                        value = wakeWordAccessKey,
+                        onValueChange = {
+                            wakeWordAccessKey = it
+                            voicePrefs.edit().putString("picovoice_access_key", it.trim()).apply()
+                        },
+                        label = "Picovoice AccessKey (free)",
+                        isFocused = false,
+                        isPassword = true,
+                        showPassword = showWakeWordKey,
+                        onTogglePassword = { showWakeWordKey = !showWakeWordKey }
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Required once. Wake-word detection runs on-device; no paid API subscription.",
+                        style = TextStyle(fontSize = 11.sp, color = VoidColor.TextDisabled)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
                     SettingsToggleRow(
                         title = "Speak Results",
                         subtitle = "Jarvis reads results aloud",

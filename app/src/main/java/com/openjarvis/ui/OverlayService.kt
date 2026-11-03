@@ -9,11 +9,14 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
@@ -24,12 +27,14 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.openjarvis.R
 import com.openjarvis.agent.AgentCore
 import com.openjarvis.graphify.GraphifyRepository
 import com.openjarvis.graphify.nodes.TaskNode
 import com.openjarvis.voice.VoiceManager
+import com.openjarvis.voice.PorcupineWakeWordController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -49,6 +54,10 @@ class OverlayService : Service() {
     private lateinit var agentCore: AgentCore
     private lateinit var voiceManager: VoiceManager
     private lateinit var graphifyRepo: GraphifyRepository
+    private var wakeWordController: PorcupineWakeWordController? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var wakeWordCommandPending = false
+    private var wakeWordResponsePending = false
     private var recentTasks = emptyList<TaskNode>()
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var isExpanded = false
@@ -59,17 +68,36 @@ class OverlayService : Service() {
         agentCore = AgentCore(this)
         voiceManager = VoiceManager(this)
         graphifyRepo = GraphifyRepository(this)
-        startForeground(NOTIFICATION_ID, createNotification())
+        val microphoneGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        if (Build.VERSION.SDK_INT >= 34) {
+            val foregroundTypes = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
+                (if (microphoneGranted) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0)
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, createNotification(), foregroundTypes)
+        } else {
+            startForeground(NOTIFICATION_ID, createNotification())
+        }
         attachAssistant()
         serviceScope.launch {
             voiceManager.state.collect { state ->
                 when (state) {
                     is VoiceManager.VoiceState.Result -> {
+                        if (wakeWordCommandPending) {
+                            wakeWordCommandPending = false
+                            voiceManager.stopListening()
+                        }
                         commandInput?.setText(state.text)
                         statusText?.text = "Voice captured — executing command…"
                         submitCommand(state.text)
                     }
-                    is VoiceManager.VoiceState.Error -> statusText?.text = state.message
+                    is VoiceManager.VoiceState.Error -> {
+                        statusText?.text = state.message
+                        if (wakeWordCommandPending) {
+                            wakeWordCommandPending = false
+                            wakeWordResponsePending = false
+                            voiceManager.stopListening()
+                            serviceScope.launch { delay(700); startWakeWordListening() }
+                        }
+                    }
                     is VoiceManager.VoiceState.Recording -> statusText?.text = "Listening… speak now"
                     is VoiceManager.VoiceState.Transcribing -> statusText?.text = "Thinking…"
                     is VoiceManager.VoiceState.Speaking -> statusText?.text = "Speaking…"
@@ -84,16 +112,18 @@ class OverlayService : Service() {
                     is com.openjarvis.agent.AgentState.Running -> statusText?.text = state.step
                     is com.openjarvis.agent.AgentState.Done -> {
                         statusText?.text = state.result
-                        voiceManager.speak(if (responseLanguage == "mr") "काम पूर्ण झाले आहे" else "काम पूरा हुआ")
+                        voiceManager.speak(if (responseLanguage == "mr") "काम पूर्ण झाले आहे" else "काम पूरा हुआ") { resumeWakeWordAfterResponse() }
                     }
                     is com.openjarvis.agent.AgentState.Error -> {
                         statusText?.text = "Jarvis error: ${state.message}"
-                        voiceManager.speak(if (responseLanguage == "mr") "कमांड पूर्ण झाली नाही. ${state.message}" else "कमांड पूरी नहीं हुई। ${state.message}")
+                        voiceManager.speak(if (responseLanguage == "mr") "कमांड पूर्ण झाली नाही. ${state.message}" else "कमांड पूरी नहीं हुई। ${state.message}") { resumeWakeWordAfterResponse() }
                     }
                 }
             }
         }
         serviceScope.launch(Dispatchers.IO) { recentTasks = graphifyRepo.getRecentTasks(10) }
+        if (microphoneGranted) startWakeWordListening()
+        else statusText?.text = "Allow microphone permission to enable Hey Jarvis"
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
@@ -102,6 +132,7 @@ class OverlayService : Service() {
     override fun onDestroy() {
         try { overlayView?.let { windowManager?.removeView(it) } } catch (_: Exception) { }
         overlayView = null
+        stopWakeWordListening()
         voiceManager.release()
         serviceScope.cancel()
         super.onDestroy()
@@ -170,6 +201,11 @@ class OverlayService : Service() {
                     } else if (!voiceManager.isVoiceEnabled()) {
                         status.text = "Enable Voice Assistant in Jarvis Settings first"
                     } else {
+                        if (wakeWordController?.isRunning() == true) {
+                            stopWakeWordListening()
+                            wakeWordCommandPending = true
+                            wakeWordResponsePending = true
+                        }
                         voiceManager.startListening()
                     }
                 }
@@ -232,10 +268,63 @@ class OverlayService : Service() {
             statusText?.text = "Accessibility service is OFF. Enable Open Jarvis in Android Accessibility settings."
             return
         }
+        if (wakeWordController?.isRunning() == true) {
+            stopWakeWordListening()
+            wakeWordResponsePending = true
+        }
         statusText?.text = "Jarvis is working…"
         voiceManager.markThinking()
         agentCore.executeTask(command)
         commandInput?.text?.clear()
+    }
+
+    private fun startWakeWordListening() {
+        if (!voiceManager.isVoiceEnabled()) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            statusText?.text = "Microphone permission is required for Hey Jarvis"
+            return
+        }
+        val accessKey = voiceManager.getPicovoiceAccessKey()
+        if (accessKey.isBlank()) {
+            statusText?.text = "Add the free Picovoice AccessKey in Settings to enable offline Hey Jarvis"
+            return
+        }
+        if (Build.VERSION.SDK_INT >= 34) {
+            val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, createNotification(), types)
+        }
+        if (wakeWordController == null) {
+            wakeWordController = PorcupineWakeWordController(
+                this,
+                accessKey,
+                onWakeWord = { mainHandler.post { handleWakeWordDetected() } },
+                onError = { message -> mainHandler.post { statusText?.text = "Wake-word error: $message" } }
+            )
+        }
+        val error = wakeWordController?.start()
+        statusText?.text = error ?: "Standby — say Hey Jarvis (offline)"
+    }
+
+    private fun handleWakeWordDetected() {
+        if (!voiceManager.isVoiceEnabled() || wakeWordCommandPending) return
+        stopWakeWordListening()
+        wakeWordCommandPending = true
+        wakeWordResponsePending = true
+        statusText?.text = "Yes? Listening for your command…"
+        voiceManager.startListening()
+    }
+
+    private fun stopWakeWordListening() {
+        wakeWordController?.stop()
+    }
+
+    private fun resumeWakeWordAfterResponse() {
+        if (!wakeWordResponsePending) return
+        wakeWordResponsePending = false
+        serviceScope.launch {
+            delay(500)
+            startWakeWordListening()
+        }
     }
 
     private fun rounded(color: Int, radius: Int) = GradientDrawable().apply {

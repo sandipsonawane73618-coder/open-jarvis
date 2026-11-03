@@ -9,6 +9,14 @@ on:
       - "*.gradle"
       - "settings.gradle"
       - ".github/workflows/android-build.yml"
+  pull_request:
+    branches: [feature/jarvis-stable-1.0]
+    paths:
+      - "app/**"
+      - "scripts/**"
+      - "*.gradle"
+      - "settings.gradle"
+      - ".github/workflows/android-build.yml"
   workflow_dispatch:
 
 permissions:
