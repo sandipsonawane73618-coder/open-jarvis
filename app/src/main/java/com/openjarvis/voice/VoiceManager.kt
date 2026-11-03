@@ -89,6 +89,8 @@ class VoiceManager(private val context: Context) {
 
     // Push-to-talk mode
     fun startListening() {
+        // A completed/error result must never leave the mic UI stuck in a terminal state.
+        resetState()
         if (!isVoiceEnabled()) {
             _state.value = VoiceState.Error("Voice disabled in settings")
             return

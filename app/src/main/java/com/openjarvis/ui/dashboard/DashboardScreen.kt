@@ -3,6 +3,7 @@ package com.openjarvis.ui.dashboard
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,6 +27,8 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
@@ -51,6 +54,7 @@ fun DashboardScreen(
     var recentTasks by remember { mutableStateOf<List<TaskNode>>(emptyList()) }
     var mostUsedApps by remember { mutableStateOf<List<AppNode>>(emptyList()) }
     var isSystemActive by remember { mutableStateOf(true) }
+    var showSelfRepair by remember { mutableStateOf(false) }
     
     var heroAlpha by remember { mutableFloatStateOf(0f) }
     var statsAlpha by remember { mutableFloatStateOf(0f) }
@@ -95,6 +99,16 @@ fun DashboardScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             Button(
+                onClick = { showSelfRepair = true },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = VoidColor.Void800)
+            ) {
+                Text("AUTONOMOUS SELF-REPAIR  •  DIAGNOSTICS / HISTORY", color = VoidColor.Cyan, fontWeight = FontWeight.Bold)
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Button(
                 onClick = onOpenEuronics,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = VoidColor.Violet)
@@ -122,6 +136,8 @@ fun DashboardScreen(
             modifier = Modifier.align(Alignment.BottomCenter)
         )
 
+        if (showSelfRepair) SelfRepairDashboardDialog(onDismiss = { showSelfRepair = false })
+
         FloatingActionButton(
             onClick = onStartOverlay,
             modifier = Modifier
@@ -130,7 +146,12 @@ fun DashboardScreen(
             containerColor = VoidColor.Violet,
             contentColor = Color.White
         ) {
-            Text("J", fontWeight = FontWeight.Bold)
+            Image(
+                painter = painterResource(id = com.openjarvis.R.drawable.jarvis_robot),
+                contentDescription = "Jarvis robot",
+                modifier = Modifier.size(52.dp).clip(RoundedCornerShape(50)),
+                contentScale = ContentScale.Crop
+            )
         }
     }
 }

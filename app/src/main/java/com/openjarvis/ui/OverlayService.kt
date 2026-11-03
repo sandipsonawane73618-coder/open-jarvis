@@ -16,11 +16,13 @@ import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
@@ -51,7 +53,7 @@ class OverlayService : Service() {
     private lateinit var graphifyRepo: GraphifyRepository
     private var recentTasks = emptyList<TaskNode>()
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    private var isExpanded = false
+    private var isExpanded = true
     private var responseLanguage = "hi"
 
     override fun onCreate() {
@@ -82,12 +84,14 @@ class OverlayService : Service() {
                     is com.openjarvis.agent.AgentState.Idle -> statusText?.text = "Ready — type a command or use mic"
                     is com.openjarvis.agent.AgentState.Running -> statusText?.text = state.step
                     is com.openjarvis.agent.AgentState.Done -> {
-                        statusText?.text = state.result
-                        voiceManager.speak(if (responseLanguage == "mr") "काम पूर्ण झाले आहे" else "काम पूरा हुआ")
+                        statusText?.text = "Done — tap Mic to give the next command"
+                        voiceManager.speak(state.result)
+                        voiceManager.resetState()
                     }
                     is com.openjarvis.agent.AgentState.Error -> {
-                        statusText?.text = "Jarvis error: ${state.message}"
-                        voiceManager.speak(if (responseLanguage == "mr") "कमांड पूर्ण झाली नाही. ${state.message}" else "कमांड पूरी नहीं हुई। ${state.message}")
+                        statusText?.text = "Command failed — tap Mic to try again"
+                        voiceManager.speak(if (responseLanguage == "mr") "काम पूर्ण होऊ शकलं नाही. कृपया पुन्हा प्रयत्न करा." else "Bhai, command poori nahi hui. Ek baar phir try karo.")
+                        voiceManager.resetState()
                     }
                 }
             }
@@ -112,25 +116,59 @@ class OverlayService : Service() {
             windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
             val root = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(10, 8, 10, 8)
-                background = rounded(Color.rgb(20, 18, 35), 24)
-                elevation = 18f
+                setPadding(0, 0, 0, 0)
+                setBackgroundColor(Color.TRANSPARENT)
+                elevation = 8f
             }
-            val pill = TextView(this).apply {
-                text = "●  JARVIS  ▾"
-                textSize = 14f
-                setTextColor(Color.WHITE)
-                gravity = Gravity.CENTER
-                setPadding(22, 14, 22, 14)
-                background = rounded(Color.rgb(55, 35, 95), 40)
-                setOnClickListener { togglePanel() }
+            // Compact transparent robot-only launcher. Drag to reposition; tap to expand.
+            val robot = ImageView(this).apply {
+                setImageResource(R.drawable.jarvis_robot)
+                scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                contentDescription = "Open Jarvis"
+                layoutParams = LinearLayout.LayoutParams(dp(48), dp(48))
             }
-            root.addView(pill, LinearLayout.LayoutParams(-2, -2))
+            var downRawX = 0f
+            var downRawY = 0f
+            var startX = 0
+            var startY = 0
+            var dragged = false
+            robot.setOnTouchListener { _, event ->
+                val params = windowParams
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        downRawX = event.rawX
+                        downRawY = event.rawY
+                        startX = params?.x ?: 0
+                        startY = params?.y ?: 0
+                        dragged = false
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = event.rawX - downRawX
+                        val dy = event.rawY - downRawY
+                        if (kotlin.math.abs(dx) > 5 || kotlin.math.abs(dy) > 5) dragged = true
+                        if (dragged && params != null) {
+                            params.x = (startX - dx.toInt()).coerceAtLeast(0)
+                            params.y = (startY + dy.toInt()).coerceAtLeast(0)
+                            try { windowManager?.updateViewLayout(root, params) } catch (_: Exception) { }
+                        }
+                        true
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        if (!dragged) startVoiceListening()
+                        true
+                    }
+                    else -> true
+                }
+            }
+            root.addView(robot, LinearLayout.LayoutParams(dp(48), dp(48)))
 
             val commandPanel = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                visibility = android.view.View.GONE
-                setPadding(4, 12, 4, 4)
+                visibility = android.view.View.VISIBLE
+                setPadding(12, 12, 12, 12)
+                background = rounded(Color.rgb(20, 18, 35), 20)
+                elevation = 12f
             }
             val status = TextView(this).apply {
                 text = "Ready — type a command or use mic"
@@ -151,6 +189,12 @@ class OverlayService : Service() {
                 maxLines = 4
                 inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
                 imeOptions = EditorInfo.IME_ACTION_SEND
+                setOnEditorActionListener { _, actionId, _ ->
+                    if (actionId == EditorInfo.IME_ACTION_SEND) {
+                        submitCommand()
+                        true
+                    } else false
+                }
                 setPadding(12, 8, 12, 8)
                 background = rounded(Color.rgb(42, 38, 58), 12)
             }
@@ -169,6 +213,8 @@ class OverlayService : Service() {
                     } else if (!voiceManager.isVoiceEnabled()) {
                         status.text = "Enable Voice Assistant in Jarvis Settings first"
                     } else {
+                        voiceManager.resetState()
+                        status.text = "Listening… speak now"
                         voiceManager.startListening()
                     }
                 }
@@ -190,7 +236,7 @@ class OverlayService : Service() {
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 type,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.TOP or Gravity.END
@@ -203,6 +249,19 @@ class OverlayService : Service() {
         } catch (e: Exception) {
             android.util.Log.e("OpenJarvis", "Unable to attach assistant overlay", e)
         }
+    }
+
+    private fun startVoiceListening() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            statusText?.text = "Microphone permission missing. Allow it in Android app settings."
+            Toast.makeText(this, "Allow Jarvis microphone permission first", Toast.LENGTH_LONG).show()
+            return
+        }
+        // Tapping the floating Jarvis icon is an explicit request to use the microphone.
+        voiceManager.setVoiceEnabled(true)
+        voiceManager.resetState()
+        statusText?.text = "Listening… speak your command"
+        voiceManager.startListening()
     }
 
     private fun togglePanel() {
@@ -235,6 +294,8 @@ class OverlayService : Service() {
         agentCore.executeTask(command)
         commandInput?.text?.clear()
     }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private fun rounded(color: Int, radius: Int) = GradientDrawable().apply {
         setColor(color)
