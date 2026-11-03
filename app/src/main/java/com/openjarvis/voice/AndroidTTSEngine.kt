@@ -2,6 +2,8 @@ package com.openjarvis.voice
 
 import android.content.Context
 import android.speech.tts.TextToSpeech
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
 import java.util.UUID
@@ -12,6 +14,14 @@ class AndroidTTSEngine(private val context: Context) {
     private var isReady = false
     private var speechRate = 1.05f
     private var pitch = 0.95f
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var completionCallback: (() -> Unit)? = null
+
+    private fun finishSpeech() {
+        val callback = completionCallback
+        completionCallback = null
+        callback?.let { mainHandler.post(it) }
+    }
 
     init {
         tts = TextToSpeech(context) { status ->
@@ -23,22 +33,24 @@ class AndroidTTSEngine(private val context: Context) {
                 
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {}
-                    override fun onDone(utteranceId: String?) {}
-                    override fun onError(utteranceId: String?) {}
+                    override fun onDone(utteranceId: String?) { finishSpeech() }
+                    override fun onError(utteranceId: String?) { finishSpeech() }
+                    override fun onStop(utteranceId: String?, interrupted: Boolean) { finishSpeech() }
                 })
             }
         }
     }
 
-    fun speak(text: String) {
-        if (!isReady) return
+    fun speak(text: String, onDone: (() -> Unit)? = null) {
+        if (!isReady) { onDone?.invoke(); return }
+        completionCallback = onDone
         
         val clean = text
             .replace(Regex("\\[\\{.*?\\}\\]"), "")
             .replace(Regex("[\\[\\]{}\":]"), " ")
             .trim()
         
-        if (clean.isBlank()) return
+        if (clean.isBlank()) { finishSpeech(); return }
         configureVoiceForText(clean)
         
         val utteranceId = "jarvis_${UUID.randomUUID()}"
@@ -81,6 +93,7 @@ class AndroidTTSEngine(private val context: Context) {
     }
     fun stop() {
         tts?.stop()
+        finishSpeech()
     }
 
     fun setSpeechRate(rate: Float) {

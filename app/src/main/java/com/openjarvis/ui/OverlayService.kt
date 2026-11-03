@@ -71,7 +71,8 @@ class OverlayService : Service() {
                     }
                     is VoiceManager.VoiceState.Error -> statusText?.text = state.message
                     is VoiceManager.VoiceState.Recording -> statusText?.text = "Listening… speak now"
-                    is VoiceManager.VoiceState.Transcribing -> statusText?.text = "Transcribing…"
+                    is VoiceManager.VoiceState.Transcribing -> statusText?.text = "Thinking…"
+                    is VoiceManager.VoiceState.Speaking -> statusText?.text = "Speaking…"
                     is VoiceManager.VoiceState.Idle -> Unit
                 }
             }
@@ -232,6 +233,7 @@ class OverlayService : Service() {
             return
         }
         statusText?.text = "Jarvis is working…"
+        voiceManager.markThinking()
         agentCore.executeTask(command)
         commandInput?.text?.clear()
     }
