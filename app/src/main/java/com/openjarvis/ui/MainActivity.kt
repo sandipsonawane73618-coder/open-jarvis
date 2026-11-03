@@ -88,6 +88,16 @@ class MainActivity : ComponentActivity() {
         }
     }
     
+    override fun onResume() {
+        super.onResume()
+        val micGranted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        if (micGranted && Settings.canDrawOverlays(this) && isAccessibilityServiceEnabled()) {
+            // Start the foreground assistant automatically; the activity can be sent to background
+            // by the user while the wake-word service remains active.
+            OverlayService.start(this)
+        }
+    }
+
     private fun isAccessibilityServiceEnabled(): Boolean {
         val enabledServices = Settings.Secure.getString(
             contentResolver,

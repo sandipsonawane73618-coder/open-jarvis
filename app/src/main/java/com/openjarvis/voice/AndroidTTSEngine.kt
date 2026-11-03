@@ -5,6 +5,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 class AndroidTTSEngine(private val context: Context) {
 
@@ -12,6 +13,7 @@ class AndroidTTSEngine(private val context: Context) {
     private var isReady = false
     private var speechRate = 0.96f
     private var pitch = 1.12f
+    private val completionCallbacks = ConcurrentHashMap<String, () -> Unit>()
 
     init {
         tts = TextToSpeech(context) { status ->
@@ -25,25 +27,26 @@ class AndroidTTSEngine(private val context: Context) {
                 
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {}
-                    override fun onDone(utteranceId: String?) {}
-                    override fun onError(utteranceId: String?) {}
+                    override fun onDone(utteranceId: String?) { utteranceId?.let { completionCallbacks.remove(it)?.invoke() } }
+                    override fun onError(utteranceId: String?) { utteranceId?.let { completionCallbacks.remove(it)?.invoke() } }
                 })
             }
         }
     }
 
-    fun speak(text: String) {
-        if (!isReady) return
+    fun speak(text: String, onDone: (() -> Unit)? = null) {
+        if (!isReady) { onDone?.invoke(); return }
         
         val clean = text
             .replace(Regex("\\[\\{.*?\\}\\]"), "")
             .replace(Regex("[\\[\\]{}\":]"), " ")
             .trim()
         
-        if (clean.isBlank()) return
+        if (clean.isBlank()) { onDone?.invoke(); return }
         configureVoiceForText(clean)
         
         val utteranceId = "jarvis_${UUID.randomUUID()}"
+        if (onDone != null) completionCallbacks[utteranceId] = onDone
         tts?.speak(clean, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
     }
 

@@ -237,7 +237,7 @@ class OpenAIProvider(
 
 class OllamaProvider(
     override val baseUrl: String = "http://127.0.0.1:11434",
-    private val model: String = "qwen2.5:1.5b"
+    private val model: String = "qwen3:1.7b"
 ) : LLMProvider {
     
     override val name: String = "Ollama"
@@ -260,6 +260,7 @@ class OllamaProvider(
                     })
                 })
                 put("stream", false)
+                put("think", false)
                 put("format", JSONObject().apply {
                     put("type", "array")
                     put("minItems", 1)

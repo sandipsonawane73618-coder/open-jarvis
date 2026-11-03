@@ -53,7 +53,7 @@ class OverlayService : Service() {
     private lateinit var graphifyRepo: GraphifyRepository
     private var recentTasks = emptyList<TaskNode>()
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    private var isExpanded = true
+    private var isExpanded = false
     private var responseLanguage = "hi"
 
     override fun onCreate() {
@@ -74,6 +74,8 @@ class OverlayService : Service() {
                     is VoiceManager.VoiceState.Error -> statusText?.text = state.message
                     is VoiceManager.VoiceState.Recording -> statusText?.text = "Listening… speak now"
                     is VoiceManager.VoiceState.Transcribing -> statusText?.text = "Transcribing…"
+                    is VoiceManager.VoiceState.WakeListening -> statusText?.text = "Standby — say Hey Jarvis"
+                    is VoiceManager.VoiceState.AwaitingCommand -> statusText?.text = "Yes? I'm listening…"
                     is VoiceManager.VoiceState.Idle -> Unit
                 }
             }
@@ -81,22 +83,30 @@ class OverlayService : Service() {
         serviceScope.launch {
             agentCore.state.collect { state ->
                 when (state) {
-                    is com.openjarvis.agent.AgentState.Idle -> statusText?.text = "Ready — type a command or use mic"
+                    is com.openjarvis.agent.AgentState.Idle -> statusText?.text = "Standby — say Hey Jarvis"
                     is com.openjarvis.agent.AgentState.Running -> statusText?.text = state.step
                     is com.openjarvis.agent.AgentState.Done -> {
-                        statusText?.text = "Done — tap Mic to give the next command"
-                        voiceManager.speak(state.result)
+                        statusText?.text = "Done — standby. Say Hey Jarvis."
+                        if (isExpanded) togglePanel()
+                        voiceManager.speak(state.result) { voiceManager.resumeWakeWordMode() }
                         voiceManager.resetState()
                     }
                     is com.openjarvis.agent.AgentState.Error -> {
-                        statusText?.text = "Command failed — tap Mic to try again"
-                        voiceManager.speak(if (responseLanguage == "mr") "काम पूर्ण होऊ शकलं नाही. कृपया पुन्हा प्रयत्न करा." else "Bhai, command poori nahi hui. Ek baar phir try karo.")
+                        statusText?.text = "Command failed — say Hey Jarvis to retry"
+                        if (isExpanded) togglePanel()
+                        voiceManager.speak(if (responseLanguage == "mr") "काम पूर्ण होऊ शकलं नाही. कृपया पुन्हा प्रयत्न करा." else "Bhai, command poori nahi hui. Ek baar phir try karo.") { voiceManager.resumeWakeWordMode() }
                         voiceManager.resetState()
                     }
                 }
             }
         }
         serviceScope.launch(Dispatchers.IO) { recentTasks = graphifyRepo.getRecentTasks(10) }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            voiceManager.setVoiceEnabled(true)
+            voiceManager.startWakeWordMode()
+        } else {
+            statusText?.text = "Allow microphone permission to enable Hey Jarvis"
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
@@ -155,7 +165,7 @@ class OverlayService : Service() {
                         true
                     }
                     MotionEvent.ACTION_UP -> {
-                        if (!dragged) startVoiceListening()
+                        if (!dragged) togglePanel()
                         true
                     }
                     else -> true
@@ -165,7 +175,7 @@ class OverlayService : Service() {
 
             val commandPanel = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                visibility = android.view.View.VISIBLE
+                visibility = android.view.View.GONE
                 setPadding(12, 12, 12, 12)
                 background = rounded(Color.rgb(20, 18, 35), 20)
                 elevation = 12f
@@ -290,6 +300,7 @@ class OverlayService : Service() {
             statusText?.text = "Accessibility service is OFF. Enable Open Jarvis in Android Accessibility settings."
             return
         }
+        voiceManager.pauseWakeWordListening()
         statusText?.text = "Jarvis is working…"
         agentCore.executeTask(command)
         commandInput?.text?.clear()
@@ -312,7 +323,7 @@ class OverlayService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Open Jarvis")
-            .setContentText("Assistant is running — tap the floating Jarvis button")
+            .setContentText("Assistant is running — say Hey Jarvis")
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(pendingIntent)
             .setOngoing(true)

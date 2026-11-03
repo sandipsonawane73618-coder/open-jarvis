@@ -26,12 +26,13 @@ class UniversalAdapter(private val context: Context) {
             (prefs.getString("provider_base_url", DEFAULT_OLLAMA_URL) ?: DEFAULT_OLLAMA_URL)
                 .trim().trimEnd('/').ifBlank { DEFAULT_OLLAMA_URL }
         } else DEFAULT_OLLAMA_URL
-        val model = if (wasOllama) {
-            (prefs.getString("provider_model", DEFAULT_OLLAMA_MODEL) ?: DEFAULT_OLLAMA_MODEL)
-                .trim().ifBlank { DEFAULT_OLLAMA_MODEL }
+        val storedModel = prefs.getString("provider_model", "")?.trim().orEmpty()
+        // Migrate the previous bundled default to the user's new Qwen3 local model.
+        val model = if (wasOllama && storedModel.isNotBlank() && storedModel != "qwen2.5:1.5b") {
+            storedModel
         } else DEFAULT_OLLAMA_MODEL
         // Deliberately route every request to local Ollama. No cloud or llama.cpp fallback.
-        if (!wasOllama || prefs.getString("provider_model", "").isNullOrBlank() ||
+        if (!wasOllama || storedModel.isBlank() || storedModel == "qwen2.5:1.5b" ||
             prefs.getString("provider_base_url", "").isNullOrBlank()) {
             prefs.edit()
                 .putString("provider_name", "Ollama (Local)")
@@ -66,7 +67,7 @@ class UniversalAdapter(private val context: Context) {
         private var modelManager: ModelManager? = null
         
         const val DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
-        const val DEFAULT_OLLAMA_MODEL = "qwen2.5:1.5b"
+        const val DEFAULT_OLLAMA_MODEL = "qwen3:1.7b"
 
         val AVAILABLE_PROVIDERS = listOf("Ollama (Local)")
         

@@ -409,7 +409,7 @@ Preserve the user's original intent. Never invent a destructive or sensitive act
         val raw = error.message.orEmpty().lowercase()
         return when {
             raw.contains("connection") || raw.contains("refused") || raw.contains("ollama") ->
-                "Bhai, local AI se connection nahi ho raha. Ollama aur qwen2.5:1.5b running hain ya nahi, check kar."
+                "Bhai, local AI se connection nahi ho raha. Ollama server aur qwen3:1.7b model running hain ya nahi, check kar."
             raw.contains("timeout") ->
                 "Jawab dene mein zyada time lag gaya. Ek baar phir try kar."
             raw.contains("permission") ->
