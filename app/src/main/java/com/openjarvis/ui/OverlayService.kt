@@ -26,6 +26,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import android.text.TextUtils
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -35,6 +36,7 @@ import com.openjarvis.graphify.GraphifyRepository
 import com.openjarvis.graphify.nodes.TaskNode
 import com.openjarvis.voice.VoiceManager
 import com.openjarvis.voice.PorcupineWakeWordController
+import com.openjarvis.voice.WakeWordConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -55,6 +57,7 @@ class OverlayService : Service() {
     private lateinit var voiceManager: VoiceManager
     private lateinit var graphifyRepo: GraphifyRepository
     private var wakeWordController: PorcupineWakeWordController? = null
+    private var wakeWordControllerKey: String? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var wakeWordCommandPending = false
     private var wakeWordResponsePending = false
@@ -123,10 +126,15 @@ class OverlayService : Service() {
         }
         serviceScope.launch(Dispatchers.IO) { recentTasks = graphifyRepo.getRecentTasks(10) }
         if (microphoneGranted) startWakeWordListening()
-        else statusText?.text = "Allow microphone permission to enable Hey Jarvis"
+        else statusText?.text = "Allow microphone permission to enable Jarvis"
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Re-check the saved AccessKey whenever the app asks the existing service to start.
+        // This also refreshes wake-word setup after the user edits the key in Settings.
+        if (::voiceManager.isInitialized) startWakeWordListening()
+        return START_STICKY
+    }
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
@@ -144,7 +152,9 @@ class OverlayService : Service() {
             windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
             val root = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(10, 8, 10, 8)
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+                minimumWidth = dp(WakeWordConfig.OVERLAY_WIDTH_DP)
+                minimumHeight = dp(48)
                 background = rounded(Color.rgb(20, 18, 35), 24)
                 elevation = 18f
             }
@@ -153,7 +163,7 @@ class OverlayService : Service() {
                 textSize = 14f
                 setTextColor(Color.WHITE)
                 gravity = Gravity.CENTER
-                setPadding(22, 14, 22, 14)
+                setPadding(dp(22), dp(14), dp(22), dp(14))
                 background = rounded(Color.rgb(55, 35, 95), 40)
                 setOnClickListener { togglePanel() }
             }
@@ -162,13 +172,15 @@ class OverlayService : Service() {
             val commandPanel = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 visibility = android.view.View.GONE
-                setPadding(4, 12, 4, 4)
+                setPadding(dp(4), dp(8), dp(4), dp(4))
             }
             val status = TextView(this).apply {
                 text = "Ready — type a command or use mic"
                 textSize = 12f
                 setTextColor(Color.LTGRAY)
-                setPadding(8, 4, 8, 8)
+                setPadding(dp(8), dp(4), dp(8), dp(4))
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.END
             }
             statusText = status
             commandPanel.addView(status)
@@ -179,22 +191,28 @@ class OverlayService : Service() {
                 setTextColor(Color.WHITE)
                 setHintTextColor(Color.GRAY)
                 setSingleLine(false)
-                minLines = 2
-                maxLines = 4
+                minLines = 1
+                maxLines = 2
                 inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
                 imeOptions = EditorInfo.IME_ACTION_SEND
-                setPadding(12, 8, 12, 8)
+                setPadding(dp(10), dp(8), dp(10), dp(8))
                 background = rounded(Color.rgb(42, 38, 58), 12)
             }
             commandInput = input
-            commandPanel.addView(input, LinearLayout.LayoutParams(280, -2))
 
+            // Keep the text field and both actions in one weighted row. Fixed action
+            // widths prevent clipping on compact (~360dp) displays.
             val actions = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.END
+                gravity = Gravity.CENTER_VERTICAL
+                minimumHeight = dp(52)
             }
+            actions.addView(input, LinearLayout.LayoutParams(0, dp(52), 1f))
             val mic = Button(this).apply {
-                text = "🎙 Mic"
+                text = "Mic"
+                isAllCaps = false
+                minWidth = 0
+                setPadding(0, 0, 0, 0)
                 setOnClickListener {
                     if (ContextCompat.checkSelfPermission(this@OverlayService, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                         status.text = "Allow microphone permission in Android app settings"
@@ -206,17 +224,22 @@ class OverlayService : Service() {
                             wakeWordCommandPending = true
                             wakeWordResponsePending = true
                         }
+                        // Manual mic is independent of wake-word initialization/key state.
                         voiceManager.startListening()
                     }
                 }
             }
             val send = Button(this).apply {
                 text = "Send"
+                isAllCaps = false
+                minWidth = 0
+                setPadding(0, 0, 0, 0)
                 setOnClickListener { submitCommand() }
             }
-            actions.addView(mic)
-            actions.addView(send)
-            commandPanel.addView(actions)
+            val actionWidth = dp(WakeWordConfig.ACTION_BUTTON_WIDTH_DP)
+            actions.addView(mic, LinearLayout.LayoutParams(actionWidth, dp(48)))
+            actions.addView(send, LinearLayout.LayoutParams(actionWidth, dp(48)))
+            commandPanel.addView(actions, LinearLayout.LayoutParams(-1, -2))
             root.addView(commandPanel)
             panel = commandPanel
 
@@ -281,28 +304,32 @@ class OverlayService : Service() {
     private fun startWakeWordListening() {
         if (!voiceManager.isVoiceEnabled()) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            statusText?.text = "Microphone permission is required for Hey Jarvis"
+            statusText?.text = "Microphone permission is required for Jarvis"
             return
         }
         val accessKey = voiceManager.getPicovoiceAccessKey()
         if (accessKey.isBlank()) {
-            statusText?.text = "Add the free Picovoice AccessKey in Settings to enable offline Hey Jarvis"
+            statusText?.text = "Add your Picovoice AccessKey in Settings to enable offline Jarvis"
             return
         }
         if (Build.VERSION.SDK_INT >= 34) {
             val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
             ServiceCompat.startForeground(this, NOTIFICATION_ID, createNotification(), types)
         }
-        if (wakeWordController == null) {
+        // Settings can update the key while this foreground service remains alive.
+        // Porcupine captures its AccessKey at construction, so rebuild it when the key changes.
+        if (wakeWordController == null || wakeWordControllerKey != accessKey) {
+            wakeWordController?.stop()
             wakeWordController = PorcupineWakeWordController(
                 this,
                 accessKey,
                 onWakeWord = { mainHandler.post { handleWakeWordDetected() } },
                 onError = { message -> mainHandler.post { statusText?.text = "Wake-word error: $message" } }
             )
+            wakeWordControllerKey = accessKey
         }
         val error = wakeWordController?.start()
-        statusText?.text = error ?: "Standby — say Hey Jarvis (offline)"
+        statusText?.text = error ?: "Standby — say Jarvis (offline)"
     }
 
     private fun handleWakeWordDetected() {
@@ -326,6 +353,8 @@ class OverlayService : Service() {
             startWakeWordListening()
         }
     }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private fun rounded(color: Int, radius: Int) = GradientDrawable().apply {
         setColor(color)

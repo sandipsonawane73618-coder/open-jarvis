@@ -237,70 +237,137 @@ class OpenAIProvider(
 
 class OllamaProvider(
     override val baseUrl: String,
-    private val model: String = "llama3"
+    private val model: String = DEFAULT_MODEL,
+    private val appContext: android.content.Context? = null
 ) : LLMProvider {
-    
+
+    private val client = okhttp3.OkHttpClient.Builder()
+        .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(180, java.util.concurrent.TimeUnit.SECONDS)
+        .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .build()
+
     override val name: String = "Ollama"
-    
+
     override suspend fun complete(
         systemPrompt: String,
         userMessage: String
     ): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
-            val requestBody = JSONObject().apply {
-                put("model", model)
-                put("messages", JSONArray().apply {
-                    put(JSONObject().apply {
-                        put("role", "system")
-                        put("content", systemPrompt)
-                    })
-                    put(JSONObject().apply {
-                        put("role", "user")
-                        put("content", userMessage)
-                    })
-                })
-                put("stream", false)
-            }.toString()
-            
             val request = Request.Builder()
-                .url("$baseUrl/api/chat")
+                .url(OllamaResponseParser.buildUrl(baseUrl, "/api/chat"))
                 .addHeader("Content-Type", "application/json")
-                .post(requestBody.toRequestBody("application/json".toMediaType()))
+                .post(
+                    OllamaResponseParser.buildChatRequestBody(model, systemPrompt, userMessage)
+                        .toRequestBody("application/json".toMediaType())
+                )
                 .build()
-            
-            HttpClient.client.newCall(request).execute().use { response ->
-                val body = response.body?.string() ?: throw Exception("Empty response")
-                val json = JSONObject(body)
-                if (json.has("message")) {
-                    json.getJSONObject("message").getString("content")
-                } else if (json.has("error")) {
-                    throw Exception(json.getString("error"))
-                } else {
-                    throw Exception("Unknown response: $body")
+            val started = System.nanoTime()
+            try {
+                client.newCall(request).execute().use { response ->
+                    val body = response.body ?: throw java.io.IOException("Empty Ollama response")
+                    if (!response.isSuccessful) {
+                        throw IllegalStateException(OllamaResponseParser.httpError(response.code, body.string()))
+                    }
+                    val source = body.source()
+                    val answer = StringBuilder()
+                    var firstTokenMs = -1L
+                    var promptTokens = -1
+                    var promptEvalMs = -1L
+                    var generationMs = -1L
+                    var outputTokens = 0
+                    while (!source.exhausted()) {
+                        val line = source.readUtf8Line() ?: break
+                        if (line.isBlank()) continue
+                        val chunk = JSONObject(line)
+                        val piece = chunk.optJSONObject("message")?.optString("content").orEmpty()
+                        if (piece.isNotEmpty()) {
+                            if (firstTokenMs < 0) firstTokenMs = (System.nanoTime() - started) / 1_000_000
+                            answer.append(piece)
+                        }
+                        if (chunk.optBoolean("done", false)) {
+                            promptTokens = chunk.optInt("prompt_eval_count", -1)
+                            promptEvalMs = chunk.optLong("prompt_eval_duration", 0L) / 1_000_000
+                            generationMs = chunk.optLong("eval_duration", 0L) / 1_000_000
+                            outputTokens = chunk.optInt("eval_count", 0)
+                        }
+                    }
+                    val totalMs = (System.nanoTime() - started) / 1_000_000
+                    val cleaned = OllamaResponseParser.stripThinkBlocks(answer.toString())
+                    if (cleaned.isBlank()) throw IllegalStateException("Ollama returned no answer.")
+                    appContext?.let { ctx ->
+                        val prefs = ctx.getSharedPreferences("ollama_diagnostics", android.content.Context.MODE_PRIVATE)
+                        val old = prefs.getString("recent_requests", "").orEmpty()
+                        val log = "Prompt: $promptTokens tokens | first token: $firstTokenMs ms | total: $totalMs ms | prompt eval: $promptEvalMs ms | generation: $generationMs ms | output: $outputTokens tokens"
+                        prefs.edit().putString("recent_requests", (listOf(log) + old.lineSequence().filter { it.isNotBlank() }.take(11)).joinToString("\n")).apply()
+                        android.util.Log.i("OllamaPerf", log)
+                    }
+                    cleaned
                 }
+            } catch (error: java.net.SocketTimeoutException) {
+                throw IllegalStateException("Ollama slow hai, 180s mein jawab nahi aaya", error)
+            } catch (error: java.io.IOException) {
+                throw IllegalStateException("Ollama not reachable - Termux mein ollama serve chalao. ${error.message.orEmpty()}", error)
             }
         }
     }
-    
+
     override suspend fun testConnection(): Result<Long> = withContext(Dispatchers.IO) {
         runCatching {
             val startTime = System.currentTimeMillis()
-            val requestBody = JSONObject().apply {
-                put("model", model)
-            }.toString()
-            
             val request = Request.Builder()
-                .url("$baseUrl/api/tags")
-                .post(requestBody.toRequestBody("application/json".toMediaType()))
+                .url(OllamaResponseParser.buildUrl(baseUrl, "/api/tags"))
+                .get()
                 .build()
-            
-            HttpClient.client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    throw Exception("HTTP ${response.code}")
-                }
+
+            val body = executeWithRetry(request)
+            if (!OllamaResponseParser.hasModel(body, model)) {
+                throw IllegalStateException("Model $model not found. Termux mein 'ollama pull $model' chalao.")
             }
             System.currentTimeMillis() - startTime
         }
+    }
+
+    private suspend fun executeWithRetry(request: Request): String {
+        var lastError: java.io.IOException? = null
+        for (attempt in 0..2) {
+            try {
+                client.newCall(request).execute().use { response ->
+                    val body = response.body?.string().orEmpty()
+                    if (!response.isSuccessful) {
+                        val message = OllamaResponseParser.httpError(response.code, body)
+                        if (response.code == 404 && message.contains("model", ignoreCase = true)) {
+                            throw IllegalStateException("Model $model not found. Termux mein 'ollama pull $model' chalao.")
+                        }
+                        if (response.code == 429 || response.code >= 500) {
+                            throw java.io.IOException(message)
+                        }
+                        throw IllegalStateException(message)
+                    }
+                    if (body.isBlank()) {
+                        throw java.io.IOException("Ollama returned an empty HTTP response.")
+                    }
+                    return body
+                }
+            } catch (error: java.io.IOException) {
+                lastError = error
+                if (attempt == 2) break
+                kotlinx.coroutines.delay(500L * (attempt + 1))
+            }
+        }
+
+        val detail = lastError?.message.orEmpty()
+        throw IllegalStateException(
+            "Ollama not reachable - Termux mein ollama serve chalao. $detail",
+            lastError
+        )
+    }
+
+    companion object {
+        const val DEFAULT_MODEL = "qwen3:1.7b"
+        const val DEFAULT_BASE_URL = "http://127.0.0.1:11434"
+        val AVAILABLE_MODELS = listOf(DEFAULT_MODEL)
     }
 }
 

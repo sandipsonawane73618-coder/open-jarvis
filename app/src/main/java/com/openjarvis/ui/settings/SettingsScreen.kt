@@ -34,6 +34,9 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openjarvis.llm.UniversalAdapter
+import com.openjarvis.llm.providers.OllamaProvider
+import com.openjarvis.llm.providers.OllamaResponseParser
+import com.openjarvis.voice.WakeWordConfig
 import com.openjarvis.ui.theme.VoidColor
 import kotlinx.coroutines.launch
 
@@ -68,29 +71,51 @@ fun SettingsScreen(
             androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
     }
-    val savedProvider = providerPrefs.getString("provider_name", "Groq") ?: "Groq"
-    val savedModel = providerPrefs.getString("provider_model", "") ?: ""
-    val migratedModel = if (savedProvider == "Groq" && savedModel in setOf(
-        "llama-3.1-70b-versatile", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"
-    )) "openai/gpt-oss-120b" else savedModel.ifBlank { UniversalAdapter.getDefaultModel(savedProvider) }
+    val savedProvider = "Ollama (Local)"
+    val savedModel = OllamaProvider.DEFAULT_MODEL
+    val migratedModel = OllamaProvider.DEFAULT_MODEL
     var selectedProvider by remember { mutableStateOf(savedProvider) }
-    var baseUrl by remember { mutableStateOf(providerPrefs.getString("provider_base_url", "") ?: "") }
-    var apiKey by remember { mutableStateOf(providerPrefs.getString("provider_api_key", "") ?: "") }
-    var model by remember { mutableStateOf(migratedModel) }
-    var showBaseUrlField by remember { mutableStateOf(false) }
+    var baseUrl by remember { mutableStateOf(OllamaProvider.DEFAULT_BASE_URL) }
+    var apiKey by remember { mutableStateOf("") }
+    var model by remember {
+        mutableStateOf(
+            if (savedProvider == "Ollama (Local)") {
+                savedModel.takeIf { it in OllamaProvider.AVAILABLE_MODELS } ?: OllamaProvider.DEFAULT_MODEL
+            } else migratedModel
+        )
+    }
+    var showBaseUrlField by remember { mutableStateOf(savedProvider == "Custom" || savedProvider == "Ollama (Local)") }
     var showProvidersDropdown by remember { mutableStateOf(false) }
     var showPassword by remember { mutableStateOf(false) }
+    var showOllamaModelMenu by remember { mutableStateOf(false) }
     var lastSaved by remember { mutableStateOf(0L) }
     var savedVisible by remember { mutableStateOf(false) }
     var voiceEnabled by remember { mutableStateOf(voicePrefs.getBoolean("voice_enabled", false)) }
-    var wakeWordAccessKey by remember { mutableStateOf(voicePrefs.getString("picovoice_access_key", "") ?: "") }
+    var wakeWordAccessKey by remember { mutableStateOf(voicePrefs.getString(WakeWordConfig.PREFERENCE_KEY, "") ?: "") }
     var showWakeWordKey by remember { mutableStateOf(false) }
     var speakResults by remember { mutableStateOf(voicePrefs.getBoolean("speak_results", true)) }
     var speechRate by remember { mutableStateOf(1.05f) }
     var sttMode by remember { mutableStateOf("Push to Talk") }
+    val ollamaDebugLogs = remember(selectedProvider) {
+        context.getSharedPreferences("ollama_diagnostics", android.content.Context.MODE_PRIVATE)
+            .getString("recent_requests", "").orEmpty().lineSequence().filter { it.isNotBlank() }.take(5).toList()
+    }
     
     LaunchedEffect(selectedProvider) {
-        showBaseUrlField = selectedProvider == "Custom"
+        showBaseUrlField = selectedProvider == "Custom" || selectedProvider == "Ollama (Local)"
+        if (selectedProvider == "Ollama (Local)") {
+            if (baseUrl.isBlank()) baseUrl = OllamaProvider.DEFAULT_BASE_URL
+            model = providerPrefs.getString("provider_model", "").orEmpty()
+                .takeIf { it in OllamaProvider.AVAILABLE_MODELS } ?: OllamaProvider.DEFAULT_MODEL
+            apiKey = ""
+            providerPrefs.edit().apply {
+                putString("provider_name", selectedProvider)
+                putString("provider_base_url", baseUrl.trim())
+                putString("provider_api_key", "")
+                putString("provider_model", model)
+                apply()
+            }
+        }
     }
     
     val scrollState = rememberScrollState()
@@ -123,6 +148,21 @@ fun SettingsScreen(
                     onToggle = { showProvidersDropdown = !showProvidersDropdown },
                     onSelect = { provider ->
                         selectedProvider = provider
+                        if (provider == "Ollama (Local)") {
+                            if (baseUrl.isBlank()) baseUrl = OllamaProvider.DEFAULT_BASE_URL
+                            model = providerPrefs.getString("provider_model", "").orEmpty()
+                                .takeIf { it in OllamaProvider.AVAILABLE_MODELS } ?: OllamaProvider.DEFAULT_MODEL
+                            apiKey = ""
+                            providerPrefs.edit().apply {
+                                putString("provider_name", provider)
+                                putString("provider_base_url", baseUrl.trim())
+                                putString("provider_api_key", "")
+                                putString("provider_model", model)
+                                apply()
+                            }
+                        } else {
+                            providerPrefs.edit().putString("provider_name", provider).apply()
+                        }
                         showProvidersDropdown = false
                     }
                 )
@@ -131,8 +171,8 @@ fun SettingsScreen(
                 
                 FloatingLabelTextField(
                     value = baseUrl,
-                    onValueChange = { baseUrl = it },
-                    label = "Base URL",
+                    onValueChange = { baseUrl = OllamaProvider.DEFAULT_BASE_URL },
+                    label = "Local Base URL (fixed)",
                     isFocused = showBaseUrlField,
                     visible = showBaseUrlField
                 )
@@ -144,15 +184,42 @@ fun SettingsScreen(
                     isFocused = false,
                     isPassword = true,
                     showPassword = showPassword,
+                    visible = selectedProvider != "Ollama (Local)",
                     onTogglePassword = { showPassword = !showPassword }
                 )
                 
-                FloatingLabelTextField(
-                    value = model,
-                    onValueChange = { model = it },
-                    label = "Model",
-                    isFocused = false
-                )
+                if (selectedProvider == "Ollama (Local)") {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        TextButton(onClick = { showOllamaModelMenu = true }) {
+                            Text("Ollama model: $model  ▾")
+                        }
+                        DropdownMenu(
+                            expanded = showOllamaModelMenu,
+                            onDismissRequest = { showOllamaModelMenu = false }
+                        ) {
+                            OllamaProvider.AVAILABLE_MODELS.forEach { availableModel ->
+                                DropdownMenuItem(
+                                    text = { Text(availableModel) },
+                                    onClick = {
+                                        model = availableModel
+                                        providerPrefs.edit().putString("provider_model", availableModel).apply()
+                                        showOllamaModelMenu = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    FloatingLabelTextField(
+                        value = model,
+                        onValueChange = {
+                            model = it
+                            providerPrefs.edit().putString("provider_model", it.trim()).apply()
+                        },
+                        label = "Model",
+                        isFocused = false
+                    )
+                }
                 
                 Text(
                     text = "Works with any OpenAI-compatible API",
@@ -172,7 +239,21 @@ fun SettingsScreen(
                     baseUrl = baseUrl,
                     model = model,
                     onSave = { name, url, key, mdl ->
-                        onSaveProvider(name, url, key, mdl)
+                        val savedUrl = if (name == "Ollama (Local)" && url.isNotBlank()) {
+                            OllamaResponseParser.normalizeBaseUrl(url)
+                        } else url.trim()
+                        val savedKey = if (name == "Ollama (Local)") "" else key
+                        val savedModel = if (name == "Ollama (Local)") {
+                            mdl.trim().takeIf { it in OllamaProvider.AVAILABLE_MODELS } ?: OllamaProvider.DEFAULT_MODEL
+                        } else mdl
+                        providerPrefs.edit().apply {
+                            putString("provider_name", name)
+                            putString("provider_base_url", savedUrl)
+                            putString("provider_api_key", savedKey)
+                            putString("provider_model", savedModel)
+                            apply()
+                        }
+                        onSaveProvider(name, savedUrl, savedKey, savedModel)
                         lastSaved = System.currentTimeMillis()
                         savedVisible = true
                     }
@@ -180,6 +261,29 @@ fun SettingsScreen(
                 
                 Spacer(modifier = Modifier.height(32.dp))
                 
+                if (selectedProvider == "Ollama (Local)") {
+                    SectionLabel("OLLAMA DEBUG LOG")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        color = VoidColor.Void900,
+                        border = BorderStroke(1.dp, VoidColor.BorderSubtle)
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            if (ollamaDebugLogs.isEmpty()) {
+                                Text("No Ollama chat timings yet.", color = VoidColor.TextDisabled, fontSize = 12.sp)
+                            } else {
+                                ollamaDebugLogs.forEach { entry ->
+                                    Text(entry, color = VoidColor.TextSecondary, fontSize = 11.sp)
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
+
                 SectionLabel("VOICE")
                 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -200,7 +304,10 @@ fun SettingsScreen(
                         value = wakeWordAccessKey,
                         onValueChange = {
                             wakeWordAccessKey = it
-                            voicePrefs.edit().putString("picovoice_access_key", it.trim()).apply()
+                            voicePrefs.edit().putString(
+                                WakeWordConfig.PREFERENCE_KEY,
+                                WakeWordConfig.normalizeAccessKey(it)
+                            ).apply()
                         },
                         label = "Picovoice AccessKey (free)",
                         isFocused = false,

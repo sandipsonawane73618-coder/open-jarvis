@@ -21,36 +21,17 @@ class UniversalAdapter(private val context: Context) {
     )
     
     fun getActiveProvider(): LLMProvider {
-        val name = prefs.getString("provider_name", "Groq") ?: "Groq"
-        val baseUrl = prefs.getString("provider_base_url", "") ?: ""
-        val apiKey = prefs.getString("provider_api_key", "") ?: ""
-        val savedModel = prefs.getString("provider_model", "") ?: ""
-        val retiredGroqModels = setOf(
-            "llama-3.1-70b-versatile",
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant"
-        )
-        val model = if (name == "Groq" && (savedModel.isBlank() || savedModel in retiredGroqModels)) {
-            "openai/gpt-oss-120b".also {
-                prefs.edit().putString("provider_model", it).apply()
-            }
-        } else savedModel
-        
-        return when (name) {
-            "Groq" -> GroqProvider(apiKey, model)
-            "Google Gemini", "gemini" -> GeminiProvider(apiKey, model)
-            "OpenRouter" -> OpenRouterProvider(apiKey, model)
-            "Anthropic Claude" -> AnthropicProvider(apiKey, model)
-            "OpenAI" -> OpenAIProvider(apiKey, model)
-            "Ollama (Local)" -> OllamaProvider(baseUrl, model)
-            "Local (LlamaCpp)" -> {
-                val mm = getModelManager(context)
-                val tier = mm.getDownloadedTier() ?: ModelManager.ModelTier.MINIMUM
-                LlamaProvider(mm.getModelPath(tier), tier.displayName)
-            }
-            "Custom" -> CustomProvider(baseUrl, apiKey, model)
-            else -> CustomProvider(baseUrl, apiKey, model)
+        val baseUrl = OllamaProvider.DEFAULT_BASE_URL
+        val model = OllamaProvider.DEFAULT_MODEL
+        // Migrate legacy provider preferences to the required local-only setup.
+        prefs.edit().apply {
+            putString("provider_name", "Ollama (Local)")
+            putString("provider_base_url", baseUrl)
+            putString("provider_api_key", "")
+            putString("provider_model", model)
+            apply()
         }
+        return OllamaProvider(baseUrl, model, context.applicationContext)
     }
     
     suspend fun complete(
@@ -62,28 +43,20 @@ class UniversalAdapter(private val context: Context) {
     
     fun saveSettings(name: String, baseUrl: String, apiKey: String, model: String) {
         prefs.edit().apply {
-            putString("provider_name", name)
-            putString("provider_base_url", baseUrl)
-            putString("provider_api_key", apiKey)
-            putString("provider_model", model)
+            putString("provider_name", "Ollama (Local)")
+            putString("provider_base_url", OllamaProvider.DEFAULT_BASE_URL)
+            putString("provider_api_key", "")
+            putString("provider_model", OllamaProvider.DEFAULT_MODEL)
             apply()
         }
     }
-    
-    fun getProviderName(): String = prefs.getString("provider_name", "Groq") ?: "Groq"
+
+    fun getProviderName(): String = "Ollama (Local)"
     
     companion object {
         private var modelManager: ModelManager? = null
         
-        val AVAILABLE_PROVIDERS = listOf(
-            "Groq",
-            "Google Gemini",
-            "OpenRouter",
-            "Anthropic Claude",
-            "OpenAI",
-            "Ollama (Local)",
-            "Local (LlamaCpp)"
-        )
+        val AVAILABLE_PROVIDERS = listOf("Ollama (Local)")
         
         fun getModelManager(context: Context): ModelManager {
             return modelManager ?: synchronized(this) {
@@ -100,13 +73,7 @@ class UniversalAdapter(private val context: Context) {
         }
         
         fun getDefaultModel(provider: String): String = when (provider) {
-            "Groq" -> "openai/gpt-oss-120b"
-            "Google Gemini" -> "gemini-1.5-flash"
-            "OpenRouter" -> "meta-llama/llama-3-8b-instruct:free"
-            "Anthropic Claude" -> "claude-haiku-4-20250514"
-            "OpenAI" -> "gpt-4o-mini"
-            "Ollama (Local)" -> "llama3"
-            else -> "gpt-4o-mini"
+            else -> OllamaProvider.DEFAULT_MODEL
         }
     }
 }

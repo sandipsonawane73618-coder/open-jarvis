@@ -4,10 +4,11 @@ import ai.picovoice.porcupine.Porcupine
 import ai.picovoice.porcupine.PorcupineManager
 import ai.picovoice.porcupine.PorcupineManagerCallback
 import android.content.Context
+import android.util.Log
 
 /**
- * Offline wake-word detector. The built-in JARVIS keyword is contained in the spoken phrase
- * "Hey Jarvis"; Porcupine performs audio inference locally after its AccessKey is validated.
+ * Offline wake-word detector. Porcupine listens for its built-in JARVIS keyword.
+ * The spoken trigger is "Jarvis"; audio inference runs locally after AccessKey validation.
  */
 class PorcupineWakeWordController(
     context: Context,
@@ -22,7 +23,7 @@ class PorcupineWakeWordController(
     @Synchronized
     fun start(): String? {
         if (manager != null) return null
-        if (key.isBlank()) return "Add a free Picovoice AccessKey in Settings to enable offline Hey Jarvis."
+        WakeWordConfig.validateAccessKey(key)?.let { return it }
         return try {
             val callback = PorcupineManagerCallback { keywordIndex ->
                 if (keywordIndex == 0) onWakeWord()
@@ -37,9 +38,13 @@ class PorcupineWakeWordController(
         } catch (error: Exception) {
             manager?.let { runCatching { it.delete() } }
             manager = null
-            val message = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
-            onError(message)
-            "Wake-word engine could not start: $message"
+            val sdkMessage = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
+            // Keep the SDK diagnostic for debugging, but never expose or log the full token.
+            val safeDiagnostic = sdkMessage.replace(key, "${key.take(4)}…")
+            Log.e(TAG, "Porcupine initialization failed (${WakeWordConfig.accessKeyDiagnostic(key)}): $safeDiagnostic (${error.javaClass.simpleName})")
+            val friendly = "Picovoice wake word start nahi hua. AccessKey ko console.picovoice.ai se dobara copy karke Settings mein paste karo."
+            onError(friendly)
+            friendly
         }
     }
 
@@ -52,4 +57,8 @@ class PorcupineWakeWordController(
     }
 
     fun isRunning(): Boolean = manager != null
+
+    companion object {
+        private const val TAG = "JarvisWakeWord"
+    }
 }

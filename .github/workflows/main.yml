@@ -2,6 +2,10 @@ name: Open Jarvis Android APK
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - feature/jarvis-stable-1.0
+      - feature/jarvis-stable-1.0-phase2-wakeword
 
 permissions:
   contents: read
@@ -24,6 +28,9 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platforms;android-34 build-tools;34.0.0 platform-tools'
+
+      - name: Unit tests
+        run: gradle testDebugUnitTest --no-daemon
 
       - name: Build APK
         run: gradle assembleDebug --no-daemon

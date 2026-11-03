@@ -1,6 +1,7 @@
 package com.openjarvis.agent
 
 import android.content.Context
+import android.util.Log
 import android.content.Intent
 import android.content.pm.ResolveInfo
 import com.openjarvis.accessibility.JarvisAccessibilityService
@@ -11,6 +12,7 @@ import com.openjarvis.intelligence.AIAppInteractor
 import com.openjarvis.intelligence.AIApps
 import com.openjarvis.intelligence.AppAnalyzer
 import com.openjarvis.intelligence.TaskRouter
+import com.openjarvis.intelligence.FastCommandParser
 import com.openjarvis.intelligence.TaskWorkingMemory
 import com.openjarvis.llm.UniversalAdapter
 import com.openjarvis.vision.VisionModule
@@ -45,41 +47,14 @@ class AgentCore(private val context: Context) {
     val state: StateFlow<AgentState> = _state
 
     private val systemPrompt = """
-You are Open Jarvis — an Android device control AI agent.
-The user gives you a cleanCommand in natural language. The Euronics Service Report is embedded inside this app in a WebView. If the current screen contains Euronics Service Report, WORK COMPLETION REPORT, Petrol Sheet, or service-report fields, operate the visible embedded report directly with tap/type actions. Do not try to open a separate Euronics app. Preserve the user data; never clear app storage or reset the report.
-You must respond with ONLY a valid JSON array of actions. No explanation. No markdown fences. No preamble. Pure JSON array only.
-
-AVAILABLE ACTIONS:
-open_app     → {"action":"open_app","package":"com.package","label":"AppName"}
-tap          → {"action":"tap","text":"Button text on screen"}
-type         → {"action":"type","value":"text to type"}
-press_back   → {"action":"press_back"}
-press_home   → {"action":"press_home"}
-press_recents → {"action":"press_recents"}
-wait_for     → {"action":"wait_for","text":"expected text","timeout_ms":3000}
-read_screen  → {"action":"read_screen"}
-ai_prompt    → {"action":"ai_prompt","package":"com.openai.chatgpt","prompt":"{prompt}","outputKey":"result"}
-extract_text → {"action":"extract_text","outputKey":"page_text"}
-
-CURRENT SCREEN CONTENT: {SCREEN_OCR}
-
-APP SELECTION REASONING: {APP_REASONING}
-
-INSTALLED AI APPS: {AI_APPS}
-
-RECENT MEMORY CONTEXT: {GRAPHIFY_CONTEXT}
-
-RULES:
-- Understand Hindi, Marathi, and English commands.
-- For open_app, package name is sufficient; label is optional.
-- Never emit actions unsupported by the executor.
-- Always start complex tasks with open_app
-- Add wait_for after open_app to confirm app loaded
-- If screen content is empty or unclear, add read_screen as first action
-- Never assume UI state — always verify with wait_for
-- Keep action arrays short: 2-8 steps per task
-- Use ai_prompt to delegate complex reasoning to installed AI apps
-- If a task is impossible to do safely, return: [{"action":"error","message":"reason"}]
+You are Jarvis, an Android control assistant. Return ONLY a valid JSON array of supported actions.
+Preserve all user data. If the Euronics Service Report, WCR, or Petrol Sheet is visible, operate that screen only; never reset or clear it.
+Allowed actions: open_app(package,label), tap(text), type(value), press_back, press_home, press_recents, wait_for(text,timeout_ms), read_screen, ai_prompt(package,prompt,outputKey), extract_text(outputKey), error(message).
+Understand Hindi, Marathi, and English. Use exact visible text. Never invent a package or UI state.
+For complex tasks, open the required app, verify with wait_for, and keep the action list short. If screen text is unclear, use read_screen. Return an error action if unsafe or impossible.
+SCREEN: {SCREEN_OCR}
+APP HINT: {APP_REASONING}
+MEMORY: {GRAPHIFY_CONTEXT}
 """.trimIndent()
 
     fun executeTask(cleanCommand: String) {
@@ -116,33 +91,52 @@ RULES:
 
                     _state.value = AgentState.Running("analyzing task...")
 
+                    val fastTarget = FastCommandParser.openAppTarget(safeCommand)
+                    if (fastTarget != null) {
+                        _state.value = AgentState.Running("Opening $fastTarget...")
+                        val opened = tryFastOpenApp(safeCommand)
+                        if (opened != null) {
+                            graphifyRepo.logTask(
+                                command = safeCommand,
+                                result = "success (fast path)",
+                                provider = "Android fast path",
+                                latencyMs = 0
+                            )
+                            _state.value = AgentState.Done("Opened $opened")
+                            return@withLock
+                        }
+                    }
+
                     val plan = taskRouter.analyze(safeCommand)
 
                     _state.value = AgentState.Running("reading screen...")
 
-                    val screenText = withContext(Dispatchers.IO) {
-                        screenReader.extractAllText()
-                    }
+                    val screenText = runCatching {
+                        withContext(Dispatchers.IO) { screenReader.extractAllText() }
+                    }.onFailure { Log.e(TAG, "Screen extraction failed; continuing without OCR", it) }
+                        .getOrDefault("")
 
                     _state.value = AgentState.Running("getting context...")
 
-                    val memoryContext =
+                    val memoryContext = runCatching {
                         graphifyRepo.buildMemoryContext(safeCommand)
+                    }.onFailure { Log.e(TAG, "Memory context failed; continuing without memory", it) }
+                        .getOrDefault("")
 
                     val fullSystem = systemPrompt
-                        .replace("{SCREEN_OCR}", screenText.take(2000))
-                        .replace("{APP_REASONING}", plan.reasoning)
+                        .replace("{SCREEN_OCR}", screenText.take(800))
+                        .replace("{APP_REASONING}", plan.reasoning.take(200))
                         .replace("{AI_APPS}", getInstalledAIApps())
                         .replace(
                             "{GRAPHIFY_CONTEXT}",
                             if (memoryContext.isBlank()) {
                                 "No recent tasks"
                             } else {
-                                memoryContext
+                                memoryContext.take(250)
                             }
                         )
 
-                    _state.value = AgentState.Running("thinking...")
+                    _state.value = AgentState.Running("Soch raha hoon...")
 
                     val startTime = System.currentTimeMillis()
 
@@ -185,7 +179,8 @@ RULES:
                                 latencyMs = latency
                             )
 
-                            analysisEngine.analyzeLastTask()
+                            runCatching { analysisEngine.analyzeLastTask() }
+                                .onFailure { Log.e(TAG, "Post-task analysis failed", it) }
 
                             _state.value =
                                 AgentState.Done("done in ${latency}ms")
@@ -205,8 +200,14 @@ RULES:
                                 error.message?.contains("Unable to resolve") == true ->
                                     "Network error — check connection"
 
-                                else ->
-                                    error.message ?: "Unknown error"
+                                else -> {
+                                    val detail = error.message?.takeIf { it.isNotBlank() }
+                                        ?: error.cause?.message?.takeIf { it.isNotBlank() }
+                                        ?: error.javaClass.simpleName
+                                    if (universalAdapter.getProviderName() == "Ollama (Local)") {
+                                        "Ollama error: $detail"
+                                    } else detail.ifBlank { "Unknown error" }
+                                }
                             }
 
                             _state.value = AgentState.Error(msg)
@@ -220,13 +221,18 @@ RULES:
                         }
                     )
                 } catch (e: Exception) {
-                    _state.value = AgentState.Error(
-                        e.message ?: "Unknown error"
-                    )
+                    Log.e(TAG, "Task execution crashed for command: $cleanCommand", e)
+                    val detail = e.message?.takeIf { it.isNotBlank() }
+                        ?: e.cause?.message?.takeIf { it.isNotBlank() }
+                        ?: e.javaClass.simpleName
+                    val errorMessage = if (universalAdapter.getProviderName() == "Ollama (Local)") {
+                        "Ollama error: $detail"
+                    } else detail.ifBlank { "Unknown error" }
+                    _state.value = AgentState.Error(errorMessage)
 
                     graphifyRepo.logTask(
                         cleanCommand,
-                        "failed: ${e.message}",
+                        "failed: $errorMessage",
                         "",
                         0
                     )
@@ -392,6 +398,25 @@ RULES:
 
             kotlinx.coroutines.delay(500)
         }
+    }
+
+    private fun tryFastOpenApp(command: String): String? {
+        val target = FastCommandParser.openAppTarget(command) ?: return null
+        val packageName = if (target.equals("settings", ignoreCase = true)) {
+            "com.android.settings"
+        } else {
+            findPackageByLabel(target)
+        } ?: return null
+        val launchIntent = context.packageManager.getLaunchIntentForPackage(packageName) ?: return null
+        return runCatching {
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(launchIntent)
+            target
+        }.getOrNull()
+    }
+
+    companion object {
+        private const val TAG = "OpenJarvisAgent"
     }
 
     private fun findPackageByLabel(label: String): String? {
