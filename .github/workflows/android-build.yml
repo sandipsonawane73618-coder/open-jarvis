@@ -10,7 +10,7 @@ on:
       - "settings.gradle"
       - ".github/workflows/android-build.yml"
   pull_request:
-    branches: [feature/jarvis-stable-1.0, feature/jarvis-stable-1.0-phase2-wakeword]
+    branches: [feature/jarvis-stable-1.0, feature/jarvis-stable-1.0-phase2-wakeword, feature/jarvis-stable-1.0-phase3-ollama]
     paths:
       - "app/**"
       - "scripts/**"
@@ -89,7 +89,7 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: open-jarvis-debug-apk
+          name: jarvis-candidate-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
@@ -104,7 +104,7 @@ jobs:
       - name: Download debug APK
         uses: actions/download-artifact@v4
         with:
-          name: open-jarvis-debug-apk
+          name: jarvis-candidate-debug-apk
           path: app/build/outputs/apk/debug
 
       - name: Install, resume MainActivity, and check for crashes
@@ -123,6 +123,28 @@ jobs:
           path: artifacts/minimal-smoke-logcat.txt
           if-no-files-found: error
 
+
+  release-ready-apk:
+    name: release-ready-m8-apk
+    needs: smoke-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download smoke-tested candidate APK
+        uses: actions/download-artifact@v4
+        with:
+          name: jarvis-candidate-debug-apk
+          path: app/build/outputs/apk/debug
+
+      - name: Verify APK artifact exists
+        run: test -s app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Publish verified M8 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Open-Jarvis-M8-Verified-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
   euronics-ui-optional:
     name: euronics-ui-optional (non-blocking)
     needs: apk-build
@@ -135,7 +157,7 @@ jobs:
       - name: Download debug APK
         uses: actions/download-artifact@v4
         with:
-          name: open-jarvis-debug-apk
+          name: jarvis-candidate-debug-apk
           path: app/build/outputs/apk/debug
 
       - name: Android emulator Euronics V32 UI tap validation

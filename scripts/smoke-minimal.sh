@@ -12,6 +12,9 @@ mkdir -p "$ARTIFACT_DIR"
 echo "Installing debug APK."
 adb install -r "$APK_PATH"
 
+echo "Pre-granting microphone permission so the first-run dialog cannot block the startup smoke test."
+adb shell pm grant com.openjarvis android.permission.RECORD_AUDIO
+
 echo "Clearing logcat before app launch."
 adb logcat -c
 

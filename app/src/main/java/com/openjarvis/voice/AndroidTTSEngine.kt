@@ -73,13 +73,7 @@ class AndroidTTSEngine(private val context: Context) {
     }
 
     private fun configureVoiceForText(text: String) {
-        val hasDevanagari = text.any { it in '\u0900'..'\u097F' }
-        val marathiMarkers = listOf("आहे", "आणि", "मला", "काय", "करा", "झाले", "झालं", "नाही", "दाखवा", "उघडा", "करायचे", "माझे", "तुम्ही", "सांगा", "नको")
-        val language = when {
-            !hasDevanagari -> "en"
-            marathiMarkers.any { text.contains(it) } -> "mr"
-            else -> "hi"
-        }
+        val language = SpeechLanguage.languageForText(text)
         val locale = Locale.forLanguageTag("$language-IN")
         val engine = tts ?: return
         val bestVoice = engine.voices

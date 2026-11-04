@@ -7,6 +7,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
+import android.content.ClipboardManager
+import android.content.ClipData
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
@@ -118,7 +120,7 @@ class OverlayService : Service() {
                         voiceManager.speak(if (responseLanguage == "mr") "काम पूर्ण झाले आहे" else "काम पूरा हुआ") { resumeWakeWordAfterResponse() }
                     }
                     is com.openjarvis.agent.AgentState.Error -> {
-                        statusText?.text = "Jarvis error: ${state.message}"
+                        statusText?.text = "Jarvis error: ${state.message} • tap to copy debug log"
                         voiceManager.speak(if (responseLanguage == "mr") "कमांड पूर्ण झाली नाही. ${state.message}" else "कमांड पूरी नहीं हुई। ${state.message}") { resumeWakeWordAfterResponse() }
                     }
                 }
@@ -183,6 +185,7 @@ class OverlayService : Service() {
                 ellipsize = TextUtils.TruncateAt.END
             }
             statusText = status
+            status.setOnClickListener { copyLatestDebugLog() }
             commandPanel.addView(status)
 
             val input = EditText(this).apply {
@@ -352,6 +355,13 @@ class OverlayService : Service() {
             delay(500)
             startWakeWordListening()
         }
+    }
+
+    private fun copyLatestDebugLog() {
+        val report = com.openjarvis.agent.AgentDiagnostics.latest(this)
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("JARVIS Debug Log", report))
+        Toast.makeText(this, "Debug log copied. Paste it here in ChatGPT.", Toast.LENGTH_LONG).show()
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()

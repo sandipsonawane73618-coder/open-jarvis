@@ -26,6 +26,11 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.PI
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
@@ -46,11 +51,13 @@ fun DashboardScreen(
     onOpenSettings: () -> Unit,
     onOpenEuronics: () -> Unit,
     graphifyRepo: GraphifyRepository,
+    isSystemActive: Boolean,
     modifier: Modifier = Modifier
 ) {
     var recentTasks by remember { mutableStateOf<List<TaskNode>>(emptyList()) }
     var mostUsedApps by remember { mutableStateOf<List<AppNode>>(emptyList()) }
-    var isSystemActive by remember { mutableStateOf(true) }
+    var totalAppCount by remember { mutableIntStateOf(0) }
+    var activePatternCount by remember { mutableIntStateOf(0) }
     
     var heroAlpha by remember { mutableFloatStateOf(0f) }
     var statsAlpha by remember { mutableFloatStateOf(0f) }
@@ -60,6 +67,8 @@ fun DashboardScreen(
     LaunchedEffect(Unit) {
         recentTasks = graphifyRepo.getRecentTasks(10)
         mostUsedApps = graphifyRepo.getMostUsedApps(4)
+        totalAppCount = graphifyRepo.getMostUsedApps(1000).size
+        activePatternCount = graphifyRepo.getAllPatterns().size
     }
     
     LaunchedEffect(Unit) {
@@ -90,7 +99,11 @@ fun DashboardScreen(
         ) {
             Spacer(modifier = Modifier.height(56.dp))
             
-            HeroSection(isSystemActive = isSystemActive)
+            HeroSection(
+                isSystemActive = isSystemActive,
+                taskCount = recentTasks.size,
+                appCount = totalAppCount
+            )
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -104,7 +117,12 @@ fun DashboardScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
             
-            StatsRow(tasks = recentTasks, alpha = statsAlpha)
+            StatsRow(
+                tasks = recentTasks,
+                appCount = totalAppCount,
+                patternCount = activePatternCount,
+                alpha = statsAlpha
+            )
             
             Spacer(modifier = Modifier.height(24.dp))
             
@@ -166,16 +184,112 @@ private fun OrbBackground() {
     }
 }
 
+
 @Composable
-private fun HeroSection(isSystemActive: Boolean) {
+private fun ArcReactorHud(isActive: Boolean) {
+    val transition = rememberInfiniteTransition(label = "arc_reactor")
+    val rotation by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(9000, easing = LinearEasing)),
+        label = "reactor_rotation"
+    )
+    val pulse by transition.animateFloat(
+        initialValue = 0.92f,
+        targetValue = 1.04f,
+        animationSpec = infiniteRepeatable(
+            tween(1800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "reactor_pulse"
+    )
+    val glow = if (isActive) VoidColor.Cyan else VoidColor.Amber
+    Box(
+        modifier = Modifier.fillMaxWidth().height(176.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.size(160.dp).scale(pulse)) {
+            val center = Offset(size.width / 2f, size.height / 2f)
+            val radius = size.minDimension * 0.43f
+            drawCircle(glow.copy(alpha = 0.08f), radius = radius * 1.18f, center = center)
+            drawCircle(VoidColor.Void700, radius = radius, center = center, style = Stroke(width = 2.dp.toPx()))
+            drawCircle(glow.copy(alpha = 0.65f), radius = radius * 0.78f, center = center, style = Stroke(width = 2.dp.toPx()))
+            drawArc(
+                color = glow,
+                startAngle = rotation,
+                sweepAngle = 245f,
+                useCenter = false,
+                topLeft = Offset(center.x - radius * 0.92f, center.y - radius * 0.92f),
+                size = androidx.compose.ui.geometry.Size(radius * 1.84f, radius * 1.84f),
+                style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round)
+            )
+            for (tick in 0 until 16) {
+                val angle = (tick * 22.5f + rotation) * (PI.toFloat() / 180f)
+                val inner = radius * 0.84f
+                val outer = radius * if (tick % 4 == 0) 1.02f else 0.94f
+                val start = Offset(center.x + cos(angle) * inner, center.y + sin(angle) * inner)
+                val end = Offset(center.x + cos(angle) * outer, center.y + sin(angle) * outer)
+                drawLine(glow.copy(alpha = if (tick % 4 == 0) 0.9f else 0.45f), start, end, strokeWidth = if (tick % 4 == 0) 2.dp.toPx() else 1.dp.toPx())
+            }
+            drawCircle(glow.copy(alpha = 0.22f), radius = radius * 0.48f, center = center)
+            drawCircle(glow, radius = radius * 0.14f, center = center)
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = "J",
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 34.sp,
+                    color = Color.White
+                )
+            )
+            Text(
+                text = "J.A.R.V.I.S.",
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 8.sp,
+                    letterSpacing = 2.sp,
+                    color = glow
+                )
+            )
+        }
+    }
+}
+
+@Composable
+private fun HeroSection(isSystemActive: Boolean, taskCount: Int, appCount: Int) {
     Column {
+        ArcReactorHud(isActive = isSystemActive)
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text = "STARK SYSTEMS  •  PERSONAL AI",
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight(500),
+                fontSize = 9.sp,
+                letterSpacing = 2.sp,
+                color = VoidColor.Cyan
+            )
+        )
+        Text(
+            text = "CORE  ${if (isSystemActive) "ONLINE" else "STANDBY"}  •  $taskCount TASKS  •  $appCount APPS",
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                fontSize = 9.sp,
+                letterSpacing = 1.sp,
+                color = VoidColor.TextDisabled
+            )
+        )
+        Spacer(modifier = Modifier.height(12.dp))
         Surface(
             shape = RoundedCornerShape(999.dp),
             color = VoidColor.Void800,
             border = androidx.compose.foundation.BorderStroke(1.dp, VoidColor.BorderGlow)
         ) {
             Text(
-                text = "AI AGENT v0.1",
+                text = "JARVIS STABLE 1.0",
                 style = TextStyle(
                     fontFamily = FontFamily.Default,
                     fontWeight = FontWeight(500),
@@ -294,11 +408,21 @@ private fun StatusBadge(isActive: Boolean) {
 }
 
 @Composable
-private fun StatsRow(tasks: List<TaskNode>, alpha: Float) {
+private fun StatsRow(tasks: List<TaskNode>, appCount: Int, patternCount: Int, alpha: Float) {
     val animatedCount by animateIntAsState(
         targetValue = tasks.size.coerceAtLeast(0),
         animationSpec = tween(500, easing = EaseOutQuart),
         label = "count"
+    )
+    val animatedApps by animateIntAsState(
+        targetValue = appCount.coerceAtLeast(0),
+        animationSpec = tween(500, easing = EaseOutQuart),
+        label = "apps_count"
+    )
+    val animatedPatterns by animateIntAsState(
+        targetValue = patternCount.coerceAtLeast(0),
+        animationSpec = tween(500, easing = EaseOutQuart),
+        label = "patterns_count"
     )
     
     Column(modifier = Modifier.alpha(alpha)) {
@@ -312,12 +436,12 @@ private fun StatsRow(tasks: List<TaskNode>, alpha: Float) {
                 modifier = Modifier.weight(1f)
             )
             StatCard(
-                count = 0,
+                count = animatedApps,
                 label = "Apps Used",
                 modifier = Modifier.weight(1f)
             )
             StatCard(
-                count = 0,
+                count = animatedPatterns,
                 label = "Patterns",
                 modifier = Modifier.weight(1f)
             )
@@ -410,7 +534,9 @@ private fun RecentTasksSection(tasks: List<TaskNode>, alpha: Float) {
 
 @Composable
 private fun TaskCard(task: TaskNode) {
-    val isSuccess = task.result.contains("Opened") || task.result.contains("Success")
+    val isSuccess = task.result.contains("opened", ignoreCase = true) ||
+        task.result.contains("success", ignoreCase = true) ||
+        task.result.contains("completed", ignoreCase = true)
     val outcomeColor = if (isSuccess) VoidColor.Green else VoidColor.Red
     
     Surface(

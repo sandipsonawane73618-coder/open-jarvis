@@ -21,7 +21,12 @@ data class Action(
 ) {
     companion object {
         const val OPEN_APP = "open_app"
-        const val TAP = "tap"
+        const val CLICK = "click"
+        const val TAP = "tap" // legacy alias
+        const val TYPE_TEXT = "type_text"
+        const val BACK = "back"
+        const val HOME = "home"
+        const val WAIT = "wait"
         const val TAP_COORDS = "tap_coords"
         const val TYPE = "type"
         const val CLEAR_TYPE = "clear_type"

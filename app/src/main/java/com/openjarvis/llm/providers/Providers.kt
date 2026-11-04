@@ -241,6 +241,8 @@ class OllamaProvider(
     private val appContext: android.content.Context? = null
 ) : LLMProvider {
 
+    @Volatile private var cachedOllamaVersion: String? = null
+
     private val client = okhttp3.OkHttpClient.Builder()
         .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
         .readTimeout(180, java.util.concurrent.TimeUnit.SECONDS)
@@ -255,11 +257,13 @@ class OllamaProvider(
         userMessage: String
     ): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
+            val ollamaVersion = getOllamaVersion()
+            val structuredOutputSupported = OllamaResponseParser.supportsStructuredOutputs(ollamaVersion)
             val request = Request.Builder()
                 .url(OllamaResponseParser.buildUrl(baseUrl, "/api/chat"))
                 .addHeader("Content-Type", "application/json")
                 .post(
-                    OllamaResponseParser.buildChatRequestBody(model, systemPrompt, userMessage)
+                    OllamaResponseParser.buildChatRequestBody(model, systemPrompt, userMessage, structuredOutputSupported)
                         .toRequestBody("application/json".toMediaType())
                 )
                 .build()
@@ -311,6 +315,23 @@ class OllamaProvider(
                 throw IllegalStateException("Ollama not reachable - Termux mein ollama serve chalao. ${error.message.orEmpty()}", error)
             }
         }
+    }
+
+    private fun getOllamaVersion(): String? {
+        cachedOllamaVersion?.let { return it }
+        return runCatching {
+            val request = Request.Builder()
+                .url(OllamaResponseParser.buildUrl(baseUrl, "/api/version"))
+                .get()
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use null
+                val version = JSONObject(response.body?.string().orEmpty()).optString("version")
+                    .takeIf { it.isNotBlank() }
+                if (version != null) cachedOllamaVersion = version
+                version
+            }
+        }.getOrNull()
     }
 
     override suspend fun testConnection(): Result<Long> = withContext(Dispatchers.IO) {

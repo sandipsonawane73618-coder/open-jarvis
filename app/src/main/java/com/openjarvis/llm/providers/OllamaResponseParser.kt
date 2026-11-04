@@ -27,7 +27,37 @@ internal object OllamaResponseParser {
         return "$base/$cleanPath"
     }
 
-    fun buildChatRequestBody(model: String, systemPrompt: String, userMessage: String): String =
+    fun supportsStructuredOutputs(version: String?): Boolean {
+        val parts = version?.removePrefix("v")?.split(".")?.mapNotNull { it.toIntOrNull() } ?: return false
+        if (parts.size < 2) return false
+        return parts[0] > 0 || parts[1] >= 5
+    }
+
+    fun actionPlanSchema(): JSONObject = JSONObject().apply {
+        put("type", "object")
+        put("properties", JSONObject().apply {
+            put("steps", JSONObject().apply {
+                put("type", "array")
+                put("items", JSONObject().apply {
+                    put("type", "object")
+                    put("properties", JSONObject().apply {
+                        put("action", JSONObject().apply {
+                            put("type", "string")
+                            put("enum", JSONArray(listOf("open_app", "click", "type_text", "scroll", "back", "home", "wait", "read_screen", "error")))
+                        })
+                        put("target", JSONObject().put("type", "string"))
+                        put("value", JSONObject().put("type", "string"))
+                    })
+                    put("required", JSONArray(listOf("action", "target", "value")))
+                    put("additionalProperties", false)
+                })
+            })
+        })
+        put("required", JSONArray(listOf("steps")))
+        put("additionalProperties", false)
+    }
+
+    fun buildChatRequestBody(model: String, systemPrompt: String, userMessage: String, structuredOutput: Boolean = true): String =
         JSONObject().apply {
             put("model", model)
             put("messages", JSONArray().apply {
@@ -42,8 +72,13 @@ internal object OllamaResponseParser {
             })
             put("stream", true)
             put("think", false)
+            if (structuredOutput) put("format", actionPlanSchema())
             put("keep_alive", "30m")
-            put("options", JSONObject().put("num_ctx", 2048))
+            put("options", JSONObject().apply {
+                put("num_ctx", 2048)
+                put("num_predict", 192)
+                put("temperature", 0.1)
+            })
         }.toString()
 
     fun stripThinkBlocks(content: String): String = thinkBlock.replace(content, "").trim()

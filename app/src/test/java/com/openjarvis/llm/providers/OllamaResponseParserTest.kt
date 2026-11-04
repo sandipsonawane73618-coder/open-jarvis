@@ -104,4 +104,27 @@ class OllamaResponseParserTest {
         )
     }
 
+    @Test fun enablesStructuredOutputOnlyForSupportedOllamaVersions() {
+        assertFalse(OllamaResponseParser.supportsStructuredOutputs("0.4.9"))
+        assertTrue(OllamaResponseParser.supportsStructuredOutputs("0.5.0"))
+        assertTrue(OllamaResponseParser.supportsStructuredOutputs("0.10.1"))
+        assertTrue(OllamaResponseParser.supportsStructuredOutputs("1.0.0"))
+        assertFalse(OllamaResponseParser.supportsStructuredOutputs(null))
+    }
+
+    @Test fun structuredRequestUsesStepsSchemaAndKeepsThinkDisabled() {
+        val request = org.json.JSONObject(
+            OllamaResponseParser.buildChatRequestBody("qwen3:1.7b", "system", "hello", true)
+        )
+        assertFalse(request.getBoolean("think"))
+        val schema = request.getJSONObject("format")
+        assertEquals("object", schema.getString("type"))
+        assertTrue(schema.getJSONObject("properties").has("steps"))
+        assertFalse(
+            org.json.JSONObject(
+                OllamaResponseParser.buildChatRequestBody("qwen3:1.7b", "system", "hello", false)
+            ).has("format")
+        )
+    }
+
 }

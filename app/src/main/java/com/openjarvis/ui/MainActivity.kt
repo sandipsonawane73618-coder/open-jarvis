@@ -81,6 +81,7 @@ class MainActivity : ComponentActivity() {
                         onOpenSettings = { openSettings() },
                         onOpenEuronics = { startOverlayService(); startActivity(Intent(this, EuronicsActivity::class.java)) },
                         graphifyRepo = graphifyRepo,
+                        isSystemActive = accessibilityEnabled && overlayEnabled,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
