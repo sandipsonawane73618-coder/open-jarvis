@@ -17,10 +17,12 @@ import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
@@ -38,6 +40,8 @@ import com.openjarvis.graphify.GraphifyRepository
 import com.openjarvis.graphify.nodes.TaskNode
 import com.openjarvis.voice.VoiceManager
 import com.openjarvis.voice.PorcupineWakeWordController
+import com.openjarvis.voice.WakeWordEngine
+import com.openjarvis.voice.SherpaOnnxWakeWordController
 import com.openjarvis.voice.WakeWordConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -58,8 +62,9 @@ class OverlayService : Service() {
     private lateinit var agentCore: AgentCore
     private lateinit var voiceManager: VoiceManager
     private lateinit var graphifyRepo: GraphifyRepository
-    private var wakeWordController: PorcupineWakeWordController? = null
+    private var wakeWordController: WakeWordEngine? = null
     private var wakeWordControllerKey: String? = null
+    private var wakeWordCpuLock: PowerManager.WakeLock? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var wakeWordCommandPending = false
     private var wakeWordResponsePending = false
@@ -67,6 +72,7 @@ class OverlayService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var isExpanded = false
     private var responseLanguage = "hi"
+    @Volatile private var mutedUntilWakeWord = false
 
     override fun onCreate() {
         super.onCreate()
@@ -86,6 +92,11 @@ class OverlayService : Service() {
             voiceManager.state.collect { state ->
                 when (state) {
                     is VoiceManager.VoiceState.Result -> {
+                        if (MuteCommandPolicy.isMuteCommand(state.text)) {
+                            wakeWordCommandPending = false
+                            enterMuteMode()
+                            return@collect
+                        }
                         if (wakeWordCommandPending) {
                             wakeWordCommandPending = false
                             voiceManager.stopListening()
@@ -116,12 +127,12 @@ class OverlayService : Service() {
                     is com.openjarvis.agent.AgentState.Idle -> statusText?.text = "Ready — type a command or use mic"
                     is com.openjarvis.agent.AgentState.Running -> statusText?.text = state.step
                     is com.openjarvis.agent.AgentState.Done -> {
-                        statusText?.text = state.result
-                        voiceManager.speak(com.openjarvis.agent.AgentResultSpeech.textForDone(state.result)) { resumeWakeWordAfterResponse() }
+                        statusText?.text = if (mutedUntilWakeWord) "MUTED — say Jarvis to wake" else state.result
+                        if (!mutedUntilWakeWord) voiceManager.speak(com.openjarvis.agent.AgentResultSpeech.textForDone(state.result)) { resumeWakeWordAfterResponse() }
                     }
                     is com.openjarvis.agent.AgentState.Error -> {
-                        statusText?.text = "Jarvis error: ${state.message} • tap to copy debug log"
-                        voiceManager.speak(if (responseLanguage == "mr") "कमांड पूर्ण झाली नाही. ${state.message}" else "कमांड पूरी नहीं हुई। ${state.message}") { resumeWakeWordAfterResponse() }
+                        statusText?.text = if (mutedUntilWakeWord) "MUTED — say Jarvis to wake" else "Jarvis error: ${state.message} • tap to copy debug log"
+                        if (!mutedUntilWakeWord) voiceManager.speak(if (responseLanguage == "mr") "कमांड पूर्ण झाली नाही. ${state.message}" else "कमांड पूरी नहीं हुई। ${state.message}") { resumeWakeWordAfterResponse() }
                     }
                 }
             }
@@ -155,19 +166,52 @@ class OverlayService : Service() {
             val root = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(8), dp(8), dp(8), dp(8))
-                minimumWidth = dp(WakeWordConfig.OVERLAY_WIDTH_DP)
+                minimumWidth = dp(64)
                 minimumHeight = dp(48)
                 background = rounded(Color.rgb(20, 18, 35), 24)
                 elevation = 18f
             }
             val pill = TextView(this).apply {
-                text = "●  JARVIS  ▾"
+                text = "● JARVIS"
                 textSize = 14f
                 setTextColor(Color.WHITE)
                 gravity = Gravity.CENTER
                 setPadding(dp(22), dp(14), dp(22), dp(14))
                 background = rounded(Color.rgb(55, 35, 95), 40)
-                setOnClickListener { togglePanel() }
+            }
+            var downRawX = 0f
+            var downRawY = 0f
+            var downWindowX = 0
+            var downWindowY = 0
+            var dragged = false
+            pill.setOnTouchListener { _, event ->
+                val params = windowParams
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        downRawX = event.rawX
+                        downRawY = event.rawY
+                        downWindowX = params?.x ?: 0
+                        downWindowY = params?.y ?: 0
+                        dragged = false
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = event.rawX - downRawX
+                        val dy = event.rawY - downRawY
+                        if (kotlin.math.abs(dx) > dp(6) || kotlin.math.abs(dy) > dp(6)) dragged = true
+                        if (dragged && params != null) {
+                            params.x = (downWindowX - dx.toInt()).coerceAtLeast(0)
+                            params.y = (downWindowY + dy.toInt()).coerceAtLeast(0)
+                            runCatching { windowManager?.updateViewLayout(overlayView, params) }
+                        }
+                        true
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        if (!dragged) togglePanel()
+                        true
+                    }
+                    else -> true
+                }
             }
             root.addView(pill, LinearLayout.LayoutParams(-2, -2))
 
@@ -245,6 +289,7 @@ class OverlayService : Service() {
             commandPanel.addView(actions, LinearLayout.LayoutParams(-1, -2))
             root.addView(commandPanel)
             panel = commandPanel
+            isExpanded = false
 
             val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -272,11 +317,22 @@ class OverlayService : Service() {
         isExpanded = !isExpanded
         panel?.visibility = if (isExpanded) android.view.View.VISIBLE else android.view.View.GONE
         windowParams?.let { params ->
+            params.width = if (isExpanded) dp(304) else WindowManager.LayoutParams.WRAP_CONTENT
             params.flags = if (isExpanded) WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                 else WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
             try { windowManager?.updateViewLayout(overlayView, params) } catch (_: Exception) { }
         }
         if (isExpanded) commandInput?.requestFocus()
+    }
+
+    private fun enterMuteMode() {
+        mutedUntilWakeWord = true
+        wakeWordCommandPending = false
+        wakeWordResponsePending = false
+        voiceManager.stopListening()
+        voiceManager.stopSpeaking()
+        statusText?.text = "MUTED — say Jarvis to wake"
+        startWakeWordListening()
     }
 
     private fun submitCommand(voiceCommand: String? = null) {
@@ -305,24 +361,38 @@ class OverlayService : Service() {
     }
 
     private fun startWakeWordListening() {
-        if (!voiceManager.isVoiceEnabled()) return
+        if (!voiceManager.isVoiceEnabled()) {
+            stopWakeWordListening()
+            return
+        }
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            stopWakeWordListening()
             statusText?.text = "Microphone permission is required for Jarvis"
             return
         }
         val accessKey = voiceManager.getPicovoiceAccessKey()
-        if (accessKey.isBlank()) {
-            statusText?.text = "Add your Picovoice AccessKey in Settings to enable offline Jarvis"
-            return
-        }
         if (Build.VERSION.SDK_INT >= 34) {
             val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
             ServiceCompat.startForeground(this, NOTIFICATION_ID, createNotification(), types)
         }
-        // Settings can update the key while this foreground service remains alive.
-        // Porcupine captures its AccessKey at construction, so rebuild it when the key changes.
-        if (wakeWordController == null || wakeWordControllerKey != accessKey) {
-            wakeWordController?.stop()
+
+        // Key-free sherpa-onnx is primary. Porcupine remains an optional fallback
+        // until the new engine passes the user's phone gate.
+        if (wakeWordController is PorcupineWakeWordController && wakeWordControllerKey != accessKey) {
+            stopWakeWordListening()
+            wakeWordController = null
+            wakeWordControllerKey = null
+        }
+        if (wakeWordController == null) {
+            wakeWordController = SherpaOnnxWakeWordController(
+                this,
+                onWakeWord = { mainHandler.post { handleWakeWordDetected() } },
+                onError = { message -> mainHandler.post { statusText?.text = "Wake-word error: $message"; if (wakeWordController?.isRunning() != true) stopWakeWordListening() } }
+            )
+        }
+        var error = wakeWordController?.start()
+        if (error != null && accessKey.isNotBlank() && wakeWordController !is PorcupineWakeWordController) {
+            stopWakeWordListening()
             wakeWordController = PorcupineWakeWordController(
                 this,
                 accessKey,
@@ -330,13 +400,21 @@ class OverlayService : Service() {
                 onError = { message -> mainHandler.post { statusText?.text = "Wake-word error: $message" } }
             )
             wakeWordControllerKey = accessKey
+            error = wakeWordController?.start()
         }
-        val error = wakeWordController?.start()
-        statusText?.text = error ?: "Standby — say Jarvis (offline)"
+        if (error == null) acquireWakeWordCpuLock() else releaseWakeWordCpuLock()
+        statusText?.text = error ?: if (mutedUntilWakeWord) {
+            "MUTED — say Jarvis to wake"
+        } else if (wakeWordController is SherpaOnnxWakeWordController) {
+            "Standby — say Jarvis (offline, no key)"
+        } else {
+            "Standby — say Jarvis (Porcupine fallback)"
+        }
     }
 
     private fun handleWakeWordDetected() {
         if (!voiceManager.isVoiceEnabled() || wakeWordCommandPending) return
+        mutedUntilWakeWord = false
         stopWakeWordListening()
         wakeWordCommandPending = true
         wakeWordResponsePending = true
@@ -346,6 +424,23 @@ class OverlayService : Service() {
 
     private fun stopWakeWordListening() {
         wakeWordController?.stop()
+        releaseWakeWordCpuLock()
+    }
+
+    /** Keep the CPU alive while the foreground service is actively listening with screen off. */
+    private fun acquireWakeWordCpuLock() {
+        if (wakeWordCpuLock?.isHeld == true) return
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        val lock = wakeWordCpuLock ?: powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "OpenJarvis:WakeWord"
+        ).apply { setReferenceCounted(false) }.also { wakeWordCpuLock = it }
+        if (!lock.isHeld) lock.acquire()
+    }
+
+    private fun releaseWakeWordCpuLock() {
+        val lock = wakeWordCpuLock ?: return
+        if (lock.isHeld) lock.release()
     }
 
     private fun resumeWakeWordAfterResponse() {

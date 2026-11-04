@@ -1,22 +1,48 @@
 package com.openjarvis.agent
 
+import java.text.Normalizer
+import java.util.Locale
+
 internal data class InstalledAppTarget(val label: String, val packageName: String)
 
-/** Resolves only explicit app names from the user's command; ambiguity is rejected. */
+/** Resolves explicit app mentions using installed labels, stable aliases and learned aliases. */
 internal object AppTargetResolver {
     private data class Hit(val start: Int, val end: Int, val alias: String, val app: InstalledAppTarget)
-    private val placeholders = setOf("", "app", "application", "target", "target app", "app name", "application name", "exact installed app label", "app_name")
+    private val placeholders = setOf(
+        "", "app", "application", "target", "target app", "app name",
+        "application name", "exact installed app label", "app_name"
+    )
+
+    // Stable spoken nicknames. Package matching keeps this independent of translated app labels.
+    private val packageAliases = mapOf(
+        "com.instagram.android" to setOf("insta", "instagram", "इंस्टा", "इन्स्टा", "इंस्टाग्राम"),
+        "com.whatsapp" to setOf("wa", "whatsapp", "whats app", "व्हाट्सएप", "व्हॉट्सअॅप", "व्हॉट्सॲप"),
+        "com.google.android.youtube" to setOf("yt", "youtube", "you tube", "यूट्यूब"),
+        "com.facebook.katana" to setOf("fb", "facebook", "फेसबुक"),
+        "com.google.android.apps.nbu.paisa.user" to setOf("gpay", "google pay", "googlepay", "जीपे", "गूगल पे")
+    )
 
     fun isPlaceholder(value: String?): Boolean = normalize(value.orEmpty()) in placeholders
 
-    fun findMentionedApps(command: String, installedApps: List<InstalledAppTarget>): List<InstalledAppTarget>? {
+    /**
+     * learnedAliases is an injection point for the future LearnedAliases store.
+     * It is queried per installed app and must return aliases scoped to that app.
+     */
+    fun findMentionedApps(
+        command: String,
+        installedApps: List<InstalledAppTarget>,
+        learnedAliases: (InstalledAppTarget) -> Set<String> = { emptySet() }
+    ): List<InstalledAppTarget>? {
         val query = normalize(command)
         if (query.isBlank()) return emptyList()
         val hits = installedApps.flatMap { app ->
-            aliasesFor(app).mapNotNull { alias ->
+            aliasesFor(app, learnedAliases(app)).mapNotNull { alias ->
                 val phrase = normalize(alias)
                 if (phrase.isBlank()) return@mapNotNull null
-                val pattern = Regex("(?<![\\p{L}\\p{N}\\p{M}])" + Regex.escape(phrase) + "(?![\\p{L}\\p{N}\\p{M}])")
+                val pattern = Regex(
+                    "(?<![\\p{L}\\p{N}\\p{M}])" + Regex.escape(phrase) +
+                        "(?![\\p{L}\\p{N}\\p{M}])"
+                )
                 val match = pattern.find(query) ?: return@mapNotNull null
                 Hit(match.range.first, match.range.last + 1, phrase, app)
             }
@@ -42,33 +68,42 @@ internal object AppTargetResolver {
         return output
     }
 
-    private fun aliasesFor(app: InstalledAppTarget): Set<String> {
+    private fun aliasesFor(
+        app: InstalledAppTarget,
+        learned: Set<String>
+    ): Set<String> {
         val label = normalize(app.label)
         val aliases = linkedSetOf(label)
+        aliases.addAll(packageAliases[app.packageName].orEmpty())
+        aliases.addAll(learned)
         when (label) {
             "chrome", "google chrome" -> aliases.addAll(listOf("chrome", "google chrome"))
             "whatsapp", "whats app" -> aliases.addAll(listOf("whatsapp", "whats app", "व्हाट्सएप", "व्हॉट्सअॅप"))
             "youtube", "you tube" -> aliases.addAll(listOf("youtube", "you tube", "यूट्यूब"))
-            "settings", "setting" -> aliases.addAll(listOf("settings", "setting", "सेटिंग", "सेटिंग्स", "सेटिंग्ज"))
+            "settings", "setting" -> aliases.addAll(listOf("settings", "setting", "सेटिंग", "सेटिंग्स", "सेटिंग्ज", "सेटिंग्ज"))
             "phone", "dialer" -> aliases.addAll(listOf("phone", "dialer", "फोन"))
-            "messages", "messaging" -> aliases.addAll(listOf("messages", "messaging", "sms", "संदेश"))
+            "messages", "messaging" -> aliases.addAll(listOf("messages", "messaging", "sms", "संदेश", "मेसेजेस"))
             "contacts" -> aliases.addAll(listOf("contacts", "contact", "संपर्क"))
-            "photos", "google photos" -> aliases.addAll(listOf("photos", "google photos"))
-            "gallery" -> aliases.add("gallery")
+            "photos", "google photos" -> aliases.addAll(listOf("photos", "google photos", "फोटो"))
+            "gallery" -> aliases.addAll(listOf("gallery", "गॅलरी"))
             "files", "file manager", "my files" -> aliases.addAll(listOf("files", "file manager", "my files"))
-            "play store", "google play store" -> aliases.addAll(listOf("play store", "google play store"))
-            "gmail" -> aliases.add("gmail")
-            "maps", "google maps" -> aliases.addAll(listOf("maps", "google maps"))
-            "camera" -> aliases.addAll(listOf("camera", "कैमरा"))
+            "play store", "google play store" -> aliases.addAll(listOf("play store", "google play store", "प्ले स्टोर"))
+            "gmail" -> aliases.addAll(listOf("gmail", "जीमेल"))
+            "maps", "google maps" -> aliases.addAll(listOf("maps", "google maps", "नकाशे"))
+            "camera" -> aliases.addAll(listOf("camera", "कैमरा", "कॅमेरा"))
             "calculator" -> aliases.addAll(listOf("calculator", "कैलकुलेटर"))
-            "clock" -> aliases.addAll(listOf("clock", "घड़ी"))
-            "telegram" -> aliases.add("telegram")
-            "instagram" -> aliases.add("instagram")
-            "facebook" -> aliases.add("facebook")
+            "clock" -> aliases.addAll(listOf("clock", "घड़ी", "घड्याळ"))
+            "telegram" -> aliases.addAll(listOf("telegram", "टेलीग्राम"))
+            "instagram" -> aliases.addAll(listOf("instagram", "इंस्टाग्राम"))
+            "facebook" -> aliases.addAll(listOf("facebook", "फेसबुक"))
         }
-        return aliases.filter { it.length >= 2 }.toSet()
+        return aliases.filter { normalize(it).length >= 2 }.toSet()
     }
 
-    private fun normalize(value: String): String = value.lowercase()
-        .replace(Regex("[^\\p{L}\\p{N}\\p{M}]+"), " ").trim().replace(Regex("\\s+"), " ")
+    private fun normalize(value: String): String =
+        Normalizer.normalize(value, Normalizer.Form.NFKC)
+            .lowercase(Locale.ROOT)
+            .replace(Regex("[^\\p{L}\\p{N}\\p{M}]+"), " ")
+            .trim()
+            .replace(Regex("\\s+"), " ")
 }

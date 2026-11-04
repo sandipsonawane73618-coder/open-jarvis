@@ -11,7 +11,10 @@ class AppTargetResolverTest {
         InstalledAppTarget("Chrome", "com.android.chrome"),
         InstalledAppTarget("WhatsApp", "com.whatsapp"),
         InstalledAppTarget("YouTube", "com.google.android.youtube"),
-        InstalledAppTarget("Settings", "com.android.settings")
+        InstalledAppTarget("Settings", "com.android.settings"),
+        InstalledAppTarget("Instagram", "com.instagram.android"),
+        InstalledAppTarget("Facebook", "com.facebook.katana"),
+        InstalledAppTarget("Google Pay", "com.google.android.apps.nbu.paisa.user")
     )
 
     @Test fun resolvesAppsExplicitlyNamedInCommandInSpokenOrder() {
@@ -22,6 +25,27 @@ class AppTargetResolverTest {
     @Test fun matchesHindiAndMarathiFriendlyAliases() {
         val result = AppTargetResolver.findMentionedApps("व्हॉट्सअॅप kholo", apps)
         assertEquals("com.whatsapp", result?.singleOrNull()?.packageName)
+    }
+
+    @Test fun resolvesShortAliasesByInstalledPackage() {
+        val commands = mapOf(
+            "insta kholo" to "com.instagram.android",
+            "wa kholo" to "com.whatsapp",
+            "yt kholo" to "com.google.android.youtube",
+            "fb kholo" to "com.facebook.katana",
+            "gpay kholo" to "com.google.android.apps.nbu.paisa.user"
+        )
+        commands.forEach { (command, expected) ->
+            assertEquals(command, expected, AppTargetResolver.findMentionedApps(command, apps)?.singleOrNull()?.packageName)
+        }
+    }
+
+    @Test fun learnedAliasesCanBeProvidedWithoutChangingResolver() {
+        val result = AppTargetResolver.findMentionedApps(
+            "photo app kholo",
+            apps
+        ) { app -> if (app.packageName == "com.google.android.apps.nbu.paisa.user") setOf("photo app") else emptySet() }
+        assertEquals("com.google.android.apps.nbu.paisa.user", result?.singleOrNull()?.packageName)
     }
 
     @Test fun rejectsGenericModelPlaceholderLabels() {

@@ -15,13 +15,13 @@ class PorcupineWakeWordController(
     accessKey: String,
     private val onWakeWord: () -> Unit,
     private val onError: (String) -> Unit
-) {
+) : WakeWordEngine {
     private val appContext = context.applicationContext
     private val key = WakeWordConfig.normalizeAccessKey(accessKey)
     @Volatile private var manager: PorcupineManager? = null
 
     @Synchronized
-    fun start(): String? {
+    override fun start(): String? {
         if (manager != null) return null
         WakeWordConfig.validateAccessKey(key)?.let { return it }
         return try {
@@ -49,14 +49,14 @@ class PorcupineWakeWordController(
     }
 
     @Synchronized
-    fun stop() {
+    override fun stop() {
         val current = manager ?: return
         manager = null
         runCatching { current.stop() }
         runCatching { current.delete() }
     }
 
-    fun isRunning(): Boolean = manager != null
+    override fun isRunning(): Boolean = manager != null
 
     companion object {
         private const val TAG = "JarvisWakeWord"

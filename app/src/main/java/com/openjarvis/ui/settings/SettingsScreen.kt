@@ -290,15 +290,27 @@ fun SettingsScreen(
                 
                 SettingsToggleRow(
                     title = "Voice Assistant",
-                    subtitle = "Push to Talk · VAD supported",
+                    subtitle = "Say “Jarvis” to activate — offline wake word",
                     enabled = voiceEnabled,
-                    onToggle = { voiceEnabled = !voiceEnabled; voicePrefs.edit().putBoolean("voice_enabled", voiceEnabled).apply() }
+                    onToggle = {
+                        voiceEnabled = !voiceEnabled
+                        voicePrefs.edit().putBoolean("voice_enabled", voiceEnabled).apply()
+                        // Apply the toggle immediately. Disabling voice stops the foreground
+                        // microphone service; enabling starts it and re-arms offline wake word.
+                        runCatching {
+                            if (voiceEnabled) {
+                                com.openjarvis.ui.OverlayService.start(context)
+                            } else {
+                                context.stopService(android.content.Intent(context, com.openjarvis.ui.OverlayService::class.java))
+                            }
+                        }
+                    }
                 )
                 
                 if (voiceEnabled) {
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    SectionLabel("OFFLINE WAKE WORD")
+                    SectionLabel("KEY-FREE OFFLINE WAKE WORD")
                     Spacer(modifier = Modifier.height(8.dp))
                     FloatingLabelTextField(
                         value = wakeWordAccessKey,
@@ -309,7 +321,7 @@ fun SettingsScreen(
                                 WakeWordConfig.normalizeAccessKey(it)
                             ).apply()
                         },
-                        label = "Picovoice AccessKey (free)",
+                        label = "Optional Picovoice fallback AccessKey",
                         isFocused = false,
                         isPassword = true,
                         showPassword = showWakeWordKey,
@@ -317,7 +329,7 @@ fun SettingsScreen(
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Required once. Wake-word detection runs on-device; no paid API subscription.",
+                        text = "Primary engine: sherpa-onnx — no key needed. Add a Picovoice key only for optional fallback.",
                         style = TextStyle(fontSize = 11.sp, color = VoidColor.TextDisabled)
                     )
                     Spacer(modifier = Modifier.height(12.dp))

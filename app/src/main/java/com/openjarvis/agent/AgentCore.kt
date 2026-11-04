@@ -71,13 +71,16 @@ INSTALLED APPS: {INSTALLED_APPS}
         Regex("^(hi|hello|hey|hello jarvis|hi jarvis|how are you|what's up|नमस्ते|नमस्कार|हाय|कसे आहात|काय चाललंय)[.!? ]*$", RegexOption.IGNORE_CASE)
             .matches(command.trim())
 
+    private fun remainingLlmBudgetMs(budgetStartMs: Long): Long =
+        SharedLlmBudget.remainingMs(budgetStartMs, System.currentTimeMillis())
+
     private suspend fun completeWithinBudget(
         system: String,
         user: String,
         budgetStartMs: Long,
         conversation: Boolean = false
     ): Result<String> {
-        val remaining = 45_000L - (System.currentTimeMillis() - budgetStartMs)
+        val remaining = remainingLlmBudgetMs(budgetStartMs)
         if (remaining <= 0L) return Result.failure(IllegalStateException("LLM time budget exceeded (45 seconds). Try a shorter command."))
         return withTimeoutOrNull(remaining) {
             universalAdapter.completeWithDeadline(system, user, remaining, conversation)
@@ -96,6 +99,9 @@ INSTALLED APPS: {INSTALLED_APPS}
     ): Pair<String, LLMResponseValidator.ValidationResult> {
         val initial = LLMResponseValidator.validate(rawResponse)
         if (initial.isValid) return rawResponse to initial
+        // Validation repair shares the original request's 45-second deadline.
+        // If the budget is spent, keep the validation failure and do not start another LLM call.
+        if (remainingLlmBudgetMs(budgetStartMs) <= 0L) return rawResponse to initial
 
         val repairPrompt = """
 You are a strict JSON syntax repairer for Android action plans.
@@ -109,9 +115,7 @@ ${rawResponse.take(1000)}
 """.trimIndent()
 
         val repairResult = completeWithinBudget(repairPrompt, userCommand, budgetStartMs)
-        if (repairResult.isFailure && repairResult.exceptionOrNull()?.message.orEmpty().contains("time budget", ignoreCase = true)) {
-            throw repairResult.exceptionOrNull()!!
-        }
+        // A failed/expired repair must not consume time with another retry or replan.
         val repaired = repairResult.getOrNull() ?: return rawResponse to initial
 
         val repairedValidation = LLMResponseValidator.validate(repaired)
@@ -209,6 +213,23 @@ ${rawResponse.take(1000)}
                             _state.value = AgentState.Error("Could not open web search: " + (error.message ?: error.javaClass.simpleName))
                         }
                         return@withLock
+                    }
+
+                    when (val messageRequest = MessageCommandParser.parse(safeCommand)) {
+                        null -> Unit
+                        else -> {
+                            try {
+                                val result = executeMessageRequest(messageRequest)
+                                Log.i(TAG, "path=rule skill=message channel=${messageRequest.channel} send=${messageRequest.sendNow}")
+                                graphifyRepo.logTask(safeCommand, "success (message intent prepared)", "Android messaging intent", 0)
+                                _state.value = AgentState.Done(result)
+                            } catch (error: Exception) {
+                                val detail = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
+                                AgentDiagnostics.record(context, "message-intent", safeCommand, detail, error = error, provider = "Android messaging intent", model = "Not used")
+                                _state.value = AgentState.Error(detail)
+                            }
+                            return@withLock
+                        }
                     }
 
                     when (val callRequest = ContactCommandParser.parse(safeCommand)) {
@@ -401,11 +422,23 @@ ${rawResponse.take(1000)}
                             // append an error marker after a partial plan or emit a long mixed
                             // navigation chain. Re-observe and ask once for a short executable
                             // plan before refusing or touching the device.
+                            var screenlessResolvedAppLaunchAllowed = false
                             if (AgentPlanPolicy.needsCompactReplan(actions, safeCommand)) {
                                 _state.value = AgentState.Running("clarifying action plan...")
                                 val planScreen = runCatching { screenReader.extractAllText() }.getOrDefault("")
                                 val planElements = runCatching { screenReader.extractInteractiveElements() }.getOrDefault("")
-                                if (planScreen.isNotBlank()) {
+                                if (planScreen.isBlank()) {
+                                    screenlessResolvedAppLaunchAllowed =
+                                        AgentPlanPolicy.canLaunchResolvedAppWithoutScreen(actions)
+                                    if (!screenlessResolvedAppLaunchAllowed) {
+                                        val rule = "RULE_SCREEN_OBSERVATION"
+                                        val reason = "$rule: " + AgentPlanPolicy.userGuidance(rule)
+                                        AgentDiagnostics.record(context, "action-plan-final-guard", safeCommand, reason, effectiveRawJson, provider = universalAdapter.getProviderName(), model = "qwen3:1.7b")
+                                        _state.value = AgentState.Error(AgentPlanPolicy.userGuidance(rule))
+                                        graphifyRepo.logTask(safeCommand, "failed: accessibility screen unavailable", universalAdapter.getProviderName(), latency)
+                                        return@fold
+                                    }
+                                } else if (remainingLlmBudgetMs(startTime) > 0L) {
                                     val compactPrompt = systemPrompt
                                         .replace("{PERSONAL_MEMORY}", memoryPrompt)
                                         .replace("{SCREEN_OCR}", planScreen.take(150))
@@ -427,12 +460,16 @@ ${rawResponse.take(1000)}
                                     if (validation.isValid && AgentPlanPolicy.isExecutablePlan(groundedCompactActions, safeCommand)) {
                                         actions = groundedCompactActions
                                     } else {
-                                        val reason = validation.errors.firstOrNull()
+                                        val rule = if (!validation.isValid) "RULE_REPLAN_INVALID"
+                                            else AgentPlanPolicy.failureRule(groundedCompactActions, safeCommand) ?: "RULE_REPLAN_REJECTED"
+                                        val guidance = AgentPlanPolicy.userGuidance(rule)
+                                        val detail = validation.errors.firstOrNull()
                                             ?: validation.actions.firstOrNull { it.action == Action.ERROR }?.message
                                             ?: "The local model could not produce a short, safe action plan."
+                                        val reason = "$rule: $guidance Detail: $detail"
                                         AgentDiagnostics.record(context, "action-plan-repair", safeCommand, reason, effectiveRawJson, provider = universalAdapter.getProviderName(), model = "qwen3:1.7b")
-                                        _state.value = AgentState.Error("Jarvis could not safely plan this task: " + reason)
-                                        graphifyRepo.logTask(safeCommand, "failed: compact plan rejected", universalAdapter.getProviderName(), latency)
+                                        _state.value = AgentState.Error(guidance)
+                                        graphifyRepo.logTask(safeCommand, "failed: $rule", universalAdapter.getProviderName(), latency)
                                         return@fold
                                     }
                                 }
@@ -464,11 +501,13 @@ ${rawResponse.take(1000)}
 
                             // Final fail-closed gate: no unresolved app target or partial
                             // observation plan may reach the Android action executor.
-                            if (!AgentPlanPolicy.isExecutablePlan(actions, safeCommand)) {
-                                val reason = "The local model did not produce a complete, grounded action plan. Name the target app explicitly and try again. No device action was run."
-                                AgentDiagnostics.record(context, "action-plan-final-guard", safeCommand, reason, effectiveRawJson, provider = universalAdapter.getProviderName(), model = "qwen3:1.7b")
-                                _state.value = AgentState.Error(reason)
-                                graphifyRepo.logTask(safeCommand, "failed: final plan guard rejected actions", universalAdapter.getProviderName(), latency)
+                            if (!AgentPlanPolicy.isExecutablePlan(actions, safeCommand) && !screenlessResolvedAppLaunchAllowed) {
+                                val rule = AgentPlanPolicy.failureRule(actions, safeCommand) ?: "RULE_NOT_EXECUTABLE"
+                                val guidance = AgentPlanPolicy.userGuidance(rule)
+                                val diagnosticReason = "$rule: $guidance"
+                                AgentDiagnostics.record(context, "action-plan-final-guard", safeCommand, diagnosticReason, effectiveRawJson, provider = universalAdapter.getProviderName(), model = "qwen3:1.7b")
+                                _state.value = AgentState.Error(guidance)
+                                graphifyRepo.logTask(safeCommand, "failed: $rule", universalAdapter.getProviderName(), latency)
                                 return@fold
                             }
 
@@ -539,8 +578,11 @@ ${rawResponse.take(1000)}
                             runCatching { analysisEngine.analyzeLastTask() }
                                 .onFailure { Log.e(TAG, "Post-task analysis failed", it) }
 
-                            _state.value =
+                            _state.value = if (screenlessResolvedAppLaunchAllowed) {
+                                AgentState.Done("Opened ${actions.single().label}. Accessibility screen nahi padh pa rahi, isliye aage ke steps run nahi hue.")
+                            } else {
                                 AgentState.Done("Completed ${actions.size} actions • done in ${latency}ms")
+                            }
                         },
 
                         onFailure = { error ->
@@ -974,7 +1016,60 @@ ${rawResponse.take(1000)}
         }
     }
 
-    private suspend fun resolveContactNumber(requestedName: String): String {
+    /**
+     * Messaging uses Android intents, never the LLM action planner.
+     * A send request is intentionally one-shot: no retry is permitted after opening
+     * the composer or attempting the Send control, preventing duplicate messages.
+     */
+    private suspend fun executeMessageRequest(request: MessageRequest): String {
+        val number = resolveContactNumber(request.contactName, "message")
+        val digits = number.filter { it.isDigit() }
+        if (digits.length < 7) throw IllegalStateException("Contact number is not valid; check the saved phone number.")
+        val intent = when (request.channel) {
+            MessageRequest.Channel.WHATSAPP -> {
+                val whatsappPackage = "com.whatsapp"
+                val installed = runCatching { context.packageManager.getPackageInfo(whatsappPackage, 0) }.isSuccess
+                if (!installed) throw IllegalStateException("WhatsApp is not installed; install it or use SMS.")
+                val encoded = java.net.URLEncoder.encode(request.message, "UTF-8")
+                Intent(
+                    Intent.ACTION_VIEW,
+                    Uri.parse("https://wa.me/$digits?text=$encoded")
+                ).setPackage(whatsappPackage)
+            }
+            MessageRequest.Channel.SMS -> {
+                Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${Uri.encode(number)}"))
+                    .putExtra("sms_body", request.message)
+            }
+        }.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        if (intent.resolveActivity(context.packageManager) == null) {
+            throw IllegalStateException("No app is available to open this message composer.")
+        }
+        context.startActivity(intent)
+        if (!request.sendNow) {
+            return when (request.channel) {
+                MessageRequest.Channel.WHATSAPP -> "WhatsApp chat opened for ${request.contactName}; message prefilled. Bhejne ke liye Send dabao."
+                MessageRequest.Channel.SMS -> "SMS composer opened for ${request.contactName}; message prefilled. Bhejne ke liye Send dabao."
+            }
+        }
+
+        // Give the target composer a moment to appear, then click at most once.
+        kotlinx.coroutines.delay(900)
+        val service = JarvisAccessibilityService.instance
+            ?: throw IllegalStateException("Message prefilled, but Accessibility is unavailable; message NOT sent.")
+        val sendLabel = when (java.util.Locale.getDefault().language) {
+            "hi" -> "भेजें"
+            "mr" -> "पाठवा"
+            else -> "Send"
+        }
+        val sendClicked = service.tapByText(sendLabel)
+        if (!sendClicked) {
+            throw IllegalStateException("Message prefilled, but Send control was not verified; message NOT sent. Tap Send manually.")
+        }
+        return "Send control clicked once for ${request.contactName}. Check the messaging app to confirm delivery."
+    }
+
+    private suspend fun resolveContactNumber(requestedName: String, purpose: String = "dial"): String {
         if (context.checkSelfPermission(android.Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
             val prefs = context.getSharedPreferences("jarvis_contact_permission", Context.MODE_PRIVATE)
             prefs.edit().putBoolean("completed", false).putBoolean("granted", false).apply()
@@ -1014,7 +1109,7 @@ ${rawResponse.take(1000)}
                 val lastDigits = match.second.filter { it.isDigit() }.takeLast(4)
                 if (lastDigits.isBlank()) match.first else "${match.first} (ending $lastDigits)"
             }
-            throw IllegalStateException("Multiple contacts found: $names. Which one should I dial? Please say one exact/full name; I will not choose automatically.")
+            throw IllegalStateException("Multiple contacts found: $names. Which one should I $purpose? Please say one exact/full name; I will not choose automatically.")
         }
         return unique.single().second
     }
