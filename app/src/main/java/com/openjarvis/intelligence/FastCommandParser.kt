@@ -10,6 +10,8 @@ internal object FastCommandParser {
         object CloseCurrentApp : Command()
         object Back : Command()
         object Home : Command()
+        object ShowRecents : Command()
+        object ShowNotifications : Command()
         data class Scroll(val direction: String) : Command()
         data class OpenSettings(val action: String) : Command()
         data class Dial(val number: String) : Command()
@@ -60,6 +62,12 @@ internal object FastCommandParser {
         val forget = Regex("^(?:forget|bhool jao|bhul jao|भूल जाओ|विसर)\\s+(.+)$", RegexOption.IGNORE_CASE).matchEntire(normalized)
         if (forget != null) return Command.Forget(forget.groupValues[1].trim())
 
+        if (Regex("^(?:show|open|display)\\s+(?:recent apps|recents)$|^(?:recent apps|recents)\\s+(?:dikhao|dikha do|kholo)$|^अलीकडील अॅप्स\\s+(?:दाखवा|उघडा)$", RegexOption.IGNORE_CASE).matches(normalized)) {
+            return Command.ShowRecents
+        }
+        if (Regex("^(?:show|open)\\s+(?:notification panel|notification shade|notifications)$|^(?:notification panel|notifications)\\s+(?:kholo|dikhao|khol do)$|^(?:नोटिफिकेशन पैनल खोलो|सूचना पॅनेल उघडा)$", RegexOption.IGNORE_CASE).matches(normalized)) {
+            return Command.ShowNotifications
+        }
         if (close.matches(normalized)) return Command.CloseCurrentApp
         if (normalized.matches(Regex("^(?:back|go back|pichhe|peeche|wapas|वापस|मागे|मागे जा)$", RegexOption.IGNORE_CASE))) return Command.Back
         if (normalized.matches(Regex("^(?:home|go home|ghar|होम|मुख्यपृष्ठ|घरी जा)$", RegexOption.IGNORE_CASE))) return Command.Home

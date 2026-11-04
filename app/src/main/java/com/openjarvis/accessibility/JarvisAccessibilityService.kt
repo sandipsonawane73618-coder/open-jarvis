@@ -271,6 +271,7 @@ class JarvisAccessibilityService : AccessibilityService() {
     fun pressBack() = performGlobalAction(GLOBAL_ACTION_BACK)
     fun pressHome() = performGlobalAction(GLOBAL_ACTION_HOME)
     fun pressRecents() = performGlobalAction(GLOBAL_ACTION_RECENTS)
+    fun pressNotifications() = performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
 
     /** Scroll the first target-app scrollable container, not the floating overlay. */
     fun scrollScreen(direction: String): Boolean {

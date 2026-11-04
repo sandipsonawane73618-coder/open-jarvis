@@ -33,9 +33,42 @@ internal object PersonalMemoryCodec {
         return existing.filterNot { it.contains(normalized, ignoreCase = true) }
     }
 
-    fun promptContext(items: List<String>): String {
-        if (items.isEmpty()) return "No user-saved preferences."
-        return items.take(8).joinToString(separator = "\n") { "- $it" }.take(650)
+    private val stopWords = setOf(
+        "the", "and", "for", "with", "that", "this", "you", "your", "please", "jarvis",
+        "hai", "ho", "ka", "ki", "ke", "ko", "me", "mein", "mujhe", "mera", "meri",
+        "aur", "karo", "kar", "batao", "bolo", "open", "please", "remember",
+        "याद", "मुझे", "मेरा", "मेरी", "और", "करो", "है", "को", "में",
+        "लक्षात", "ठेव", "मला", "आणि", "कर", "आहे"
+    )
+
+    private fun tokens(value: String): Set<String> =
+        Regex("[\\p{L}\\p{M}\\p{N}]{2,}")
+            .findAll(value.lowercase())
+            .map { it.value }
+            .filterNot { it in stopWords }
+            .toSet()
+
+    /** Lightweight on-device semantic-style recall: bounded token overlap, no model or network. */
+    fun retrieve(items: List<String>, query: String, limit: Int = 3): List<String> {
+        val queryTokens = tokens(query)
+        if (queryTokens.isEmpty() || items.isEmpty() || limit <= 0) return emptyList()
+
+        return items.withIndex()
+            .mapNotNull { (index, item) ->
+                val itemTokens = tokens(item)
+                val overlap = queryTokens.intersect(itemTokens).size
+                if (overlap == 0) null
+                else Triple(item, overlap.toFloat() / queryTokens.size + if (item.contains(query, true)) 0.5f else 0f, index)
+            }
+            .sortedWith(compareByDescending<Triple<String, Float, Int>> { it.second }.thenBy { it.third })
+            .take(limit)
+            .map { it.first }
+    }
+
+    fun promptContext(items: List<String>, query: String): String {
+        val matches = retrieve(items, query)
+        if (matches.isEmpty()) return ""
+        return matches.joinToString(separator = "\n") { "- $it" }.take(360)
     }
 }
 
@@ -85,7 +118,7 @@ class PersonalMemoryStore(context: Context) {
 
     fun getAll(): List<String> = read()
 
-    fun promptContext(): String = PersonalMemoryCodec.promptContext(read())
+    fun promptContext(query: String): String = PersonalMemoryCodec.promptContext(read(), query)
 
     companion object {
         private const val KEY_ITEMS = "items_json"
