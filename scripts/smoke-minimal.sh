@@ -15,8 +15,10 @@ echo "Waiting for Android boot and Package Manager readiness."
 adb wait-for-device
 PACKAGE_READY=0
 for ((attempt=1; attempt<=120; attempt++)); do
-  BOOTED="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
-  PACKAGE_SERVICE="$(adb shell service check package 2>/dev/null | tr -d '\r' || true)"
+  BOOTED=""
+  PACKAGE_SERVICE=""
+  if BOOTED="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"; then :; fi
+  if PACKAGE_SERVICE="$(adb shell service check package 2>/dev/null | tr -d '\r')"; then :; fi
   if [[ "$BOOTED" == "1" && "$PACKAGE_SERVICE" == *"found"* ]] &&
      adb shell cmd package list packages >/dev/null 2>&1; then
     PACKAGE_READY=1
@@ -27,10 +29,10 @@ for ((attempt=1; attempt<=120; attempt++)); do
 done
 if [[ "$PACKAGE_READY" -ne 1 ]]; then
   echo "Package Manager did not become ready within 120 seconds." >&2
-  adb devices -l || true
-  adb shell getprop sys.boot_completed || true
-  adb shell service check package || true
-  adb logcat -b all -d -t 1200 > "$LOGCAT_PATH" || true
+  if ! adb devices -l; then echo "Could not collect adb device diagnostics." >&2; fi
+  if ! adb shell getprop sys.boot_completed; then echo "Could not read boot state." >&2; fi
+  if ! adb shell service check package; then echo "Could not query Package Manager." >&2; fi
+  if ! adb logcat -b all -d -t 1200 > "$LOGCAT_PATH"; then echo "Could not collect startup logcat." >&2; fi
   exit 15
 fi
 
@@ -43,7 +45,7 @@ for ((attempt=1; attempt<=3; attempt++)); do
     break
   fi
   echo "APK install attempt $attempt failed; reconnecting emulator ADB and rechecking Package Manager." >&2
-  adb reconnect device || true
+  if ! adb reconnect device; then echo "ADB reconnect command failed; retrying device wait anyway." >&2; fi
   adb wait-for-device
   sleep $((attempt * 5))
   if ! adb shell cmd package list packages >/dev/null 2>&1; then
@@ -52,9 +54,9 @@ for ((attempt=1; attempt<=3; attempt++)); do
 done
 if [[ "$INSTALL_OK" -ne 1 ]]; then
   echo "APK installation failed after 3 attempts." >&2
-  adb devices -l || true
-  adb shell service check package || true
-  adb logcat -b all -d -t 1600 > "$LOGCAT_PATH" || true
+  if ! adb devices -l; then echo "Could not collect adb device diagnostics." >&2; fi
+  if ! adb shell service check package; then echo "Could not query Package Manager." >&2; fi
+  if ! adb logcat -b all -d -t 1600 > "$LOGCAT_PATH"; then echo "Could not collect install logcat." >&2; fi
   exit 16
 fi
 

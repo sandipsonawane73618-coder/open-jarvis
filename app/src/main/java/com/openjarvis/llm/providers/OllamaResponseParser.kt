@@ -27,7 +27,13 @@ internal object OllamaResponseParser {
         return "$base/$cleanPath"
     }
 
-    fun buildChatRequestBody(model: String, systemPrompt: String, userMessage: String): String =
+    fun buildChatRequestBody(
+        model: String,
+        systemPrompt: String,
+        userMessage: String,
+        useJsonSchema: Boolean = false,
+        numPredict: Int = 128
+    ): String =
         JSONObject().apply {
             put("model", model)
             put("messages", JSONArray().apply {
@@ -41,14 +47,47 @@ internal object OllamaResponseParser {
                 })
             })
             put("stream", true)
+            if (useJsonSchema) put("format", actionPlanSchema())
             put("think", false)
             put("keep_alive", "30m")
             put("options", JSONObject().apply {
                 put("num_ctx", 2048)
-                put("num_predict", 192)
+                put("num_predict", numPredict.coerceIn(32, 512))
                 put("temperature", 0.1)
             })
         }.toString()
+
+    fun actionPlanSchema(): JSONObject = JSONObject().apply {
+        put("type", "array")
+        put("items", JSONObject().apply {
+            put("type", "object")
+            put("properties", JSONObject().apply {
+                put("action", JSONObject().put("type", "string").put("enum", JSONArray(listOf(
+                    "open_app", "click", "tap", "type_text", "type", "scroll", "back",
+                    "press_back", "home", "press_home", "press_recents", "wait", "wait_for",
+                    "read_screen", "ai_prompt", "extract_text", "error"
+                ))))
+                put("label", JSONObject().put("type", "string"))
+                put("target", JSONObject().put("type", "string"))
+                put("text", JSONObject().put("type", "string"))
+                put("element", JSONObject().put("type", "string"))
+                put("value", JSONObject().put("type", "string"))
+                put("input", JSONObject().put("type", "string"))
+                put("direction", JSONObject().put("type", "string"))
+                put("distance", JSONObject().put("type", "string"))
+                put("timeout_ms", JSONObject().put("type", "integer"))
+                put("message", JSONObject().put("type", "string"))
+                put("reason", JSONObject().put("type", "string"))
+                put("prompt", JSONObject().put("type", "string"))
+                put("outputKey", JSONObject().put("type", "string"))
+                put("output_key", JSONObject().put("type", "string"))
+                put("package", JSONObject().put("type", "string"))
+                put("hint", JSONObject().put("type", "string"))
+            })
+            put("required", JSONArray(listOf("action")))
+            put("additionalProperties", false)
+        })
+    }
 
     fun stripThinkBlocks(content: String): String = thinkBlock.replace(content, "").trim()
 

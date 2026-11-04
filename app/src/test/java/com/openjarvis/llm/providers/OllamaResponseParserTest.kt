@@ -97,6 +97,28 @@ class OllamaResponseParserTest {
         assertEquals(2048, request.getJSONObject("options").getInt("num_ctx"))
     }
 
+    @Test fun actionPlanRequestUsesStreamingJsonSchemaAndShortOutputLimit() {
+        val request = org.json.JSONObject(OllamaResponseParser.buildChatRequestBody(
+            "qwen3:1.7b", "system", "open Chrome", useJsonSchema = true, numPredict = 112
+        ))
+        assertTrue(request.getBoolean("stream"))
+        val properties = request.getJSONObject("format").getJSONObject("items").getJSONObject("properties")
+        assertTrue(properties.has("action"))
+        assertTrue(properties.has("text"))
+        assertTrue(properties.has("prompt"))
+        assertEquals(112, request.getJSONObject("options").getInt("num_predict"))
+        assertEquals(2048, request.getJSONObject("options").getInt("num_ctx"))
+    }
+
+    @Test fun plainConversationRequestUsesLargerOutputLimitAndNoSchema() {
+        val request = org.json.JSONObject(OllamaResponseParser.buildChatRequestBody(
+            "qwen3:1.7b", "system", "hello", useJsonSchema = false, numPredict = 256
+        ))
+        assertTrue(request.getBoolean("stream"))
+        assertFalse(request.has("format"))
+        assertEquals(256, request.getJSONObject("options").getInt("num_predict"))
+    }
+
     @Test fun stripsThinkBlocksEvenWhenTheyAreSurroundedByWhitespace() {
         assertEquals(
             "Final answer",

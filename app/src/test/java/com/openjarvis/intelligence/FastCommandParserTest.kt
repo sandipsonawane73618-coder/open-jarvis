@@ -35,6 +35,9 @@ class FastCommandParserTest {
         assertEquals(FastCommandParser.Command.OpenSettings("wifi"), FastCommandParser.parse("wifi settings kholo"))
         assertEquals(FastCommandParser.Command.OpenSettings("bluetooth"), FastCommandParser.parse("bluetooth settings"))
         assertEquals(FastCommandParser.Command.OpenSettings("notifications"), FastCommandParser.parse("open notification access settings"))
+        assertEquals(FastCommandParser.Command.OpenSettings("wifi"), FastCommandParser.parse("वायफाय सेटिंग्ज उघडा"))
+        assertEquals(FastCommandParser.Command.OpenSettings("bluetooth"), FastCommandParser.parse("ब्लूटूथ सेटिंग्ज उघडा"))
+        assertEquals(FastCommandParser.Command.OpenSettings("general"), FastCommandParser.parse("सेटिंग्ज उघडा"))
     }
 
     @Test fun recognizesExplicitPersonalMemoryCommands() {
@@ -42,6 +45,25 @@ class FastCommandParserTest {
         assertEquals(FastCommandParser.Command.Forget("Marathi"), FastCommandParser.parse("forget Marathi"))
         assertTrue(FastCommandParser.parse("show my memory") is FastCommandParser.Command.ShowMemory)
         assertEquals(FastCommandParser.Command.Remember("मला मराठी आवडते"), FastCommandParser.parse("लक्षात ठेव मला मराठी आवडते"))
+    }
+
+    @Test fun recognizesYoutubeAndContactFastSkills() {
+        assertEquals(FastCommandParser.Command.YoutubeSearch("lofi"), FastCommandParser.parse("YouTube par lofi search karo"))
+        assertEquals(FastCommandParser.Command.YoutubeSearch("lofi"), FastCommandParser.parse("YouTube kholo aur lofi search karo"))
+        assertEquals(FastCommandParser.Command.DialContact("Rahul"), FastCommandParser.parse("Rahul ko call karo"))
+        assertEquals(FastCommandParser.Command.DialContact("राहुल"), FastCommandParser.parse("राहुल को कॉल करो"))
+        assertEquals(FastCommandParser.Command.DialContact("राहुल"), FastCommandParser.parse("राहुल ला कॉल करा"))
+        assertEquals(FastCommandParser.Command.DialContact("Rahul"), FastCommandParser.parse("call Rahul"))
+    }
+
+    @Test fun splitsRecognizedCompoundCommandsAndStopsAtUnknown() {
+        assertEquals(listOf(FastCommandParser.Command.OpenApp("Chrome"), FastCommandParser.Command.Back), FastCommandParser.parseSequence("Chrome kholo aur back"))
+        assertEquals(
+            listOf(FastCommandParser.Command.OpenSettings("general"), FastCommandParser.Command.OpenSettings("wifi")),
+            FastCommandParser.parseSequence("Settings kholo aur WiFi settings kholo")
+        )
+        assertNull(FastCommandParser.parseSequence("Chrome kholo aur unknown action"))
+        assertNull(FastCommandParser.parseSequence("back then home then back then home then back then home"))
     }
 
     @Test fun recognizesDialNumberWithoutPlacingCall() {

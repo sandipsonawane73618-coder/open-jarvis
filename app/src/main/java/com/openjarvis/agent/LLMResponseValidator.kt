@@ -13,8 +13,15 @@ object LLMResponseValidator {
     )
 
     fun validate(rawResponse: String): ValidationResult {
-        val clean = extractJson(rawResponse)
-            ?: return invalid("Response is not JSON: no action array/object found")
+        val withoutThink = Regex("(?is)<think>.*?</think>").replace(rawResponse, "").trim()
+        val normalized = normalizeSingleQuotedJson(withoutThink)
+        var clean = extractJson(normalized)
+        var wasRepaired = false
+        if (clean == null) {
+            clean = repairCertainMixedArray(normalized)
+            wasRepaired = clean != null
+        }
+        clean = clean ?: return invalid("Response is not JSON: no action array/object found")
 
         val parsed = try {
             when {
@@ -47,7 +54,62 @@ object LLMResponseValidator {
             if (type !in knownActions) return invalid("Unsupported action type: $rawType")
             actions.add(parseAction(item, type))
         }
-        return ValidationResult(true, actions, emptyList(), false)
+        return ValidationResult(true, actions, emptyList(), wasRepaired)
+    }
+
+    /**
+     * Convert single-quoted JSON strings to JSON double quotes. This is only a syntax
+     * normalization; action names and values are not changed.
+     */
+    private fun normalizeSingleQuotedJson(source: String): String {
+        val output = StringBuilder(source.length)
+        var inSingle = false
+        var inDouble = false
+        var escaped = false
+        for (ch in source) {
+            if (escaped) {
+                output.append(ch)
+                escaped = false
+                continue
+            }
+            if ((inSingle || inDouble) && ch == '\\') {
+                output.append(ch)
+                escaped = true
+                continue
+            }
+            when (ch) {
+                '\'' -> {
+                    if (!inDouble) {
+                        inSingle = !inSingle
+                        output.append('"')
+                    } else output.append(ch)
+                }
+                '"' -> {
+                    if (!inSingle) inDouble = !inDouble
+                    output.append(ch)
+                }
+                else -> output.append(ch)
+            }
+        }
+        return output.toString()
+    }
+
+    /**
+     * Repair only the known small-model shape ["action_name","field":"value"].
+     * The first item must be a supported action and the second key must be a known
+     * action field; otherwise the validator rejects the response unchanged.
+     */
+    private fun repairCertainMixedArray(source: String): String? {
+        val match = Regex(
+            """^\s*\[\s*"([a-zA-Z_ -]+)"\s*,\s*"([a-zA-Z_]+)"\s*:\s*"((?:\\.|[^"\\])*)"\s*\]\s*$""",
+            RegexOption.DOT_MATCHES_ALL
+        ).matchEntire(source) ?: return null
+        val action = match.groupValues[1].trim()
+        val key = match.groupValues[2].trim()
+        val value = match.groupValues[3]
+        if (normalizeAction(action) !in knownActions) return null
+        if (key !in setOf("value", "target", "label", "direction", "message", "hint", "package")) return null
+        return JSONArray().put(JSONObject().put("action", action).put(key, value)).toString()
     }
 
     private fun extractJson(raw: String): String? {

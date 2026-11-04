@@ -61,6 +61,29 @@ class LLMResponseValidatorTest {
         assertEquals("Empty action plan", empty.errors.first())
     }
 
+    @Test fun repairsOnlyTheKnownMixedArrayActionShape() {
+        val repaired = LLMResponseValidator.validate("""["type_text","value":"hello"]""")
+        assertTrue(repaired.errors.toString(), repaired.isValid)
+        assertTrue(repaired.wasRepaired)
+        assertEquals(Action.TYPE_TEXT, repaired.actions.single().action)
+        assertEquals("hello", repaired.actions.single().value)
+
+        val uncertain = LLMResponseValidator.validate("""["unknown_action","value":"hello"]""")
+        assertFalse(uncertain.isValid)
+    }
+
+    @Test fun stripsThinkBlocksAndNormalizesSingleQuotedJson() {
+        val result = LLMResponseValidator.validate("<think>hidden</think> [{'action':'type_text','value':'hello'}]")
+        assertTrue(result.errors.toString(), result.isValid)
+        assertEquals("hello", result.actions.single().value)
+    }
+
+    @Test fun preservesTheSpecificNoJsonDiagnostic() {
+        val result = LLMResponseValidator.validate("model returned plain prose")
+        assertFalse(result.isValid)
+        assertEquals("Response is not JSON: no action array/object found", result.errors.first())
+    }
+
     @Test fun reportsNonObjectItemsWithoutCrashing() {
         val result = LLMResponseValidator.validate("""["click"]""")
         assertFalse(result.isValid)

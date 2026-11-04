@@ -13,19 +13,44 @@ internal object FastCommandParser {
         data class Scroll(val direction: String) : Command()
         data class OpenSettings(val action: String) : Command()
         data class Dial(val number: String) : Command()
+        data class DialContact(val name: String) : Command()
+        data class YoutubeSearch(val query: String) : Command()
         data class Remember(val fact: String) : Command()
         data class Forget(val query: String) : Command()
         object ShowMemory : Command()
     }
 
     private val englishOpen = Regex("^(?:please\\s+)?(?:open|launch|start)\\s+(.+)$", RegexOption.IGNORE_CASE)
-    private val hindiOpen = Regex("^(.+?)\\s+(?:kholo|khol\\s+do|open\\s+karo)$", RegexOption.IGNORE_CASE)
+    private val hindiOpen = Regex("^(.+?)\\s+(?:kholo|khol\\s+do|open\\s+karo|उघडा|उघड)$", RegexOption.IGNORE_CASE)
     private val close = Regex("^(?:please\\s+)?(?:close|exit|band\\s+karo|band\\s+kar\\s+do)(?:\\s+(?:the\\s+)?app)?$", RegexOption.IGNORE_CASE)
     private val dial = Regex("^(?:call|dial|phone|mujhe\\s+call\\s+karo|call\\s+karo)\\s+([+0-9][+0-9() .-]{4,})$", RegexOption.IGNORE_CASE)
+    private val youtubeSearch = Regex("^youtube\\s+(?:par\\s+)?(.+?)\\s+(?:search|dhundo|khojo)(?:\\s+karo)?$", RegexOption.IGNORE_CASE)
+    private val youtubeSearchWithOpen = Regex("^youtube\\s+kholo\\s+(?:aur|then)\\s+(.+?)\\s+(?:search|dhundo|khojo)(?:\\s+karo)?$", RegexOption.IGNORE_CASE)
+    private val contactCall = Regex("^(?:please\\s+)?(?:call|dial|phone)\\s+([\\p{L}][\\p{L}\\p{M} .'-]{1,59})$|^([\\p{L}][\\p{L}\\p{M} .'-]{1,59})\\s+(?:ko\\s+call\\s+karo|ko\\s+phone\\s+karo|ला\\s+कॉल\\s+करा|को\\s+कॉल\\s+करो)$", RegexOption.IGNORE_CASE)
+
+    fun parseSequence(command: String): List<Command>? {
+        val normalized = normalize(command)
+        if (normalized.isBlank()) return null
+
+        // Keep the supported YouTube compound phrase as one ACTION_VIEW skill.
+        if (youtubeSearchWithOpen.matches(normalized) || youtubeSearch.matches(normalized)) {
+            return listOf(parse(normalized) ?: return null)
+        }
+
+        val parts = normalized.split(Regex("\\s+(?:aur|phir|ani|then)\\s+", RegexOption.IGNORE_CASE))
+        if (parts.size > 1) {
+            if (parts.size !in 2..5) return null
+            return parts.map { parse(it) ?: return null }
+        }
+        return parse(normalized)?.let(::listOf)
+    }
 
     fun parse(command: String): Command? {
         val normalized = normalize(command)
         if (normalized.isBlank()) return null
+
+        youtubeSearchWithOpen.matchEntire(normalized)?.let { return Command.YoutubeSearch(it.groupValues[1].trim()) }
+        youtubeSearch.matchEntire(normalized)?.let { return Command.YoutubeSearch(it.groupValues[1].trim()) }
 
         if (Regex("^(?:show|read) (?:my )?memory$|^what do you remember$|^मुझे क्या याद है$|^मला काय लक्षात आहे$", RegexOption.IGNORE_CASE).matches(normalized)) {
             return Command.ShowMemory
@@ -36,13 +61,13 @@ internal object FastCommandParser {
         if (forget != null) return Command.Forget(forget.groupValues[1].trim())
 
         if (close.matches(normalized)) return Command.CloseCurrentApp
-        if (normalized.matches(Regex("^(?:back|go back|pichhe|peeche|wapas|वापस)$", RegexOption.IGNORE_CASE))) return Command.Back
-        if (normalized.matches(Regex("^(?:home|go home|ghar|होम)$", RegexOption.IGNORE_CASE))) return Command.Home
+        if (normalized.matches(Regex("^(?:back|go back|pichhe|peeche|wapas|वापस|मागे|मागे जा)$", RegexOption.IGNORE_CASE))) return Command.Back
+        if (normalized.matches(Regex("^(?:home|go home|ghar|होम|मुख्यपृष्ठ|घरी जा)$", RegexOption.IGNORE_CASE))) return Command.Home
 
-        val scroll = Regex("^(?:scroll|स्क्रॉल)\\s*(up|down|upar|neeche|ऊपर|नीचे)?$", RegexOption.IGNORE_CASE).matchEntire(normalized)
+        val scroll = Regex("^(?:scroll|स्क्रॉल)\\s*(up|down|upar|neeche|ऊपर|नीचे|वर|खाली)?$", RegexOption.IGNORE_CASE).matchEntire(normalized)
         if (scroll != null) {
             val direction = when (scroll.groupValues[1].lowercase()) {
-                "up", "upar", "ऊपर" -> "up"
+                "up", "upar", "ऊपर", "वर" -> "up"
                 else -> "down"
             }
             return Command.Scroll(direction)
@@ -57,6 +82,11 @@ internal object FastCommandParser {
             if (number.count { it.isDigit() } in 5..15) return Command.Dial(number)
         }
 
+        val contact = contactCall.matchEntire(normalized)
+        if (contact != null) {
+            val name = contact.groupValues.drop(1).firstOrNull { it.isNotBlank() }?.trim()
+            if (!name.isNullOrBlank()) return Command.DialContact(name)
+        }
         val target = openAppTarget(normalized)
         if (target != null) return Command.OpenApp(target)
         return null
@@ -81,15 +111,15 @@ internal object FastCommandParser {
     private fun settingsAction(command: String): String? {
         val q = command.lowercase()
         return when {
-            listOf("wifi", "wi-fi", "वाईफाई").any { q.contains(it) } && listOf("setting", "settings", "on karo", "kholo", "khol").any { q.contains(it) } -> "wifi"
-            listOf("bluetooth", "ब्लूटूथ").any { q.contains(it) } && listOf("setting", "settings", "kholo", "khol").any { q.contains(it) } -> "bluetooth"
+            listOf("wifi", "wi-fi", "वाईफाई", "वायफाय", "वाय-फाय").any { q.contains(it) } && listOf("setting", "settings", "सेटिंग", "सेटिंग्ज", "on karo", "kholo", "khol", "उघडा", "उघड").any { q.contains(it) } -> "wifi"
+            listOf("bluetooth", "ब्लूटूथ").any { q.contains(it) } && listOf("setting", "settings", "सेटिंग", "सेटिंग्ज", "kholo", "khol", "उघडा", "उघड").any { q.contains(it) } -> "bluetooth"
             listOf("display settings", "display setting", "screen settings", "brightness settings").any { q.contains(it) } -> "display"
             listOf("sound settings", "sound setting", "volume settings", "audio settings").any { q.contains(it) } -> "sound"
             listOf("location setting", "location settings", "gps setting", "gps settings").any { q.contains(it) } -> "location"
             listOf("accessibility setting", "accessibility settings").any { q.contains(it) } -> "accessibility"
             listOf("notification access", "notification listener", "notification settings", "notifications settings").any { q.contains(it) } -> "notifications"
             listOf("app settings", "applications setting", "manage apps").any { q.contains(it) } -> "apps"
-            q in listOf("settings", "open settings", "settings kholo", "settings khol do", "सेटिंग खोलो") -> "general"
+            q in listOf("settings", "open settings", "settings kholo", "settings khol do", "सेटिंग खोलो", "सेटिंग्ज उघडा", "सेटिंग्स उघडा") -> "general"
             else -> null
         }
     }

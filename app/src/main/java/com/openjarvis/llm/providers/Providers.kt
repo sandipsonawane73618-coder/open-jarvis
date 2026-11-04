@@ -247,80 +247,151 @@ class OllamaProvider(
         .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build()
+    private val versionClient = okhttp3.OkHttpClient.Builder()
+        .connectTimeout(2, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(2, java.util.concurrent.TimeUnit.SECONDS)
+        .callTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
 
     override val name: String = "Ollama"
 
-    override suspend fun complete(
+    override suspend fun complete(systemPrompt: String, userMessage: String): Result<String> =
+        completeInternal(systemPrompt, userMessage, actionPlan = true, timeoutMs = 120_000L)
+
+    override suspend fun completeConversation(systemPrompt: String, userMessage: String): Result<String> =
+        completeInternal(systemPrompt, userMessage, actionPlan = false, timeoutMs = 120_000L)
+
+    override suspend fun completeWithDeadline(
         systemPrompt: String,
-        userMessage: String
-    ): Result<String> = withContext(Dispatchers.IO) {
-        runCatching {
-            val request = Request.Builder()
-                .url(OllamaResponseParser.buildUrl(baseUrl, "/api/chat"))
-                .addHeader("Content-Type", "application/json")
-                .post(
-                    OllamaResponseParser.buildChatRequestBody(model, systemPrompt, userMessage)
-                        .toRequestBody("application/json".toMediaType())
-                )
-                .build()
-            val started = System.nanoTime()
-            try {
-                client.newCall(request).execute().use { response ->
-                    val body = response.body ?: throw java.io.IOException("Empty Ollama response")
-                    if (!response.isSuccessful) {
-                        throw IllegalStateException(OllamaResponseParser.httpError(response.code, body.string()))
+        userMessage: String,
+        timeoutMs: Long,
+        conversation: Boolean
+    ): Result<String> = completeInternal(systemPrompt, userMessage, actionPlan = !conversation, timeoutMs = timeoutMs)
+
+    private suspend fun completeInternal(
+        systemPrompt: String,
+        userMessage: String,
+        actionPlan: Boolean,
+        timeoutMs: Long
+    ): Result<String> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val deadlineNanos = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(timeoutMs.coerceAtLeast(1L))
+                val schemaAvailable = actionPlan && supportsJsonSchema(deadlineNanos)
+                if (schemaAvailable) {
+                    runCatching {
+                        executeChat(systemPrompt, userMessage, useSchema = true, numPredict = 128, timeoutMs = remainingMs(deadlineNanos))
+                    }.getOrElse { schemaError ->
+                        android.util.Log.w("OllamaFormat", "JSON schema request failed; retrying without schema: ${schemaError.message}")
+                        executeChat(systemPrompt, userMessage, useSchema = false, numPredict = 128, timeoutMs = remainingMs(deadlineNanos))
                     }
-                    val source = body.source()
-                    val answer = StringBuilder()
-                    var firstTokenMs = -1L
-                    var promptTokens = -1
-                    var promptEvalMs = -1L
-                    var generationMs = -1L
-                    var outputTokens = 0
-                    while (!source.exhausted()) {
-                        val line = source.readUtf8Line() ?: break
-                        if (line.isBlank()) continue
-                        val chunk = JSONObject(line)
-                        val piece = chunk.optJSONObject("message")?.optString("content").orEmpty()
-                        if (piece.isNotEmpty()) {
-                            if (firstTokenMs < 0) firstTokenMs = (System.nanoTime() - started) / 1_000_000
-                            answer.append(piece)
-                        }
-                        if (chunk.optBoolean("done", false)) {
-                            promptTokens = chunk.optInt("prompt_eval_count", -1)
-                            promptEvalMs = chunk.optLong("prompt_eval_duration", 0L) / 1_000_000
-                            generationMs = chunk.optLong("eval_duration", 0L) / 1_000_000
-                            outputTokens = chunk.optInt("eval_count", 0)
-                        }
-                    }
-                    val totalMs = (System.nanoTime() - started) / 1_000_000
-                    val cleaned = OllamaResponseParser.stripThinkBlocks(answer.toString())
-                    if (cleaned.isBlank()) throw IllegalStateException("Ollama returned no answer.")
-                    appContext?.let { ctx ->
-                        val prefs = ctx.getSharedPreferences("ollama_diagnostics", android.content.Context.MODE_PRIVATE)
-                        val old = prefs.getString("recent_requests", "").orEmpty()
-                        val log = "Prompt: $promptTokens tokens | first token: $firstTokenMs ms | total: $totalMs ms | prompt eval: $promptEvalMs ms | generation: $generationMs ms | output: $outputTokens tokens"
-                        prefs.edit().putString("recent_requests", (listOf(log) + old.lineSequence().filter { it.isNotBlank() }.take(11)).joinToString("\n")).apply()
-                        android.util.Log.i("OllamaPerf", log)
-                    }
-                    cleaned
+                } else {
+                    executeChat(systemPrompt, userMessage, useSchema = false, numPredict = if (actionPlan) 128 else 256, timeoutMs = remainingMs(deadlineNanos))
                 }
-            } catch (error: java.net.SocketTimeoutException) {
-                throw IllegalStateException("Ollama slow hai, 180s mein jawab nahi aaya", error)
-            } catch (error: java.io.IOException) {
-                throw IllegalStateException("Ollama not reachable - Termux mein ollama serve chalao. ${error.message.orEmpty()}", error)
             }
+        }
+
+    private fun remainingMs(deadlineNanos: Long): Long {
+        val remaining = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime())
+        if (remaining <= 0L) throw IllegalStateException("LLM time budget exceeded (45 seconds). Try a shorter command.")
+        return remaining
+    }
+
+    private fun supportsJsonSchema(deadlineNanos: Long): Boolean {
+        return try {
+            val request = Request.Builder()
+                .url(OllamaResponseParser.buildUrl(baseUrl, "/api/version"))
+                .get().build()
+            val versionCall = versionClient.newCall(request)
+            versionCall.timeout().timeout(minOf(3_000L, remainingMs(deadlineNanos)), java.util.concurrent.TimeUnit.MILLISECONDS)
+            versionCall.execute().use { response ->
+                if (!response.isSuccessful) {
+                    android.util.Log.w("OllamaFormat", "/api/version unavailable (HTTP ${response.code}); using plain JSON prompt")
+                    return false
+                }
+                val version = JSONObject(response.body?.string().orEmpty()).optString("version")
+                val parts = version.split(".").map { it.toIntOrNull() ?: 0 }
+                val supported = parts.getOrElse(0) { 0 } > 0 ||
+                    (parts.getOrElse(0) { 0 } == 0 && parts.getOrElse(1) { 0 } >= 5)
+                if (!supported) android.util.Log.w("OllamaFormat", "Ollama $version is older than 0.5.0; using plain JSON prompt")
+                supported
+            }
+        } catch (error: Exception) {
+            android.util.Log.w("OllamaFormat", "/api/version check failed; continuing without schema: ${error.message}")
+            false
+        }
+    }
+
+    private fun executeChat(
+        systemPrompt: String,
+        userMessage: String,
+        useSchema: Boolean,
+        numPredict: Int,
+        timeoutMs: Long
+    ): String {
+        val request = Request.Builder()
+            .url(OllamaResponseParser.buildUrl(baseUrl, "/api/chat"))
+            .addHeader("Content-Type", "application/json")
+            .post(
+                OllamaResponseParser.buildChatRequestBody(model, systemPrompt, userMessage, useSchema, numPredict)
+                    .toRequestBody("application/json".toMediaType())
+            ).build()
+        val started = System.nanoTime()
+        try {
+            val chatCall = client.newCall(request)
+            chatCall.timeout().timeout(timeoutMs.coerceAtLeast(1L), java.util.concurrent.TimeUnit.MILLISECONDS)
+            chatCall.execute().use { response ->
+                val body = response.body ?: throw java.io.IOException("Empty Ollama response")
+                if (!response.isSuccessful) {
+                    throw IllegalStateException(OllamaResponseParser.httpError(response.code, body.string()))
+                }
+                val source = body.source()
+                val answer = StringBuilder()
+                var firstTokenMs = -1L
+                var promptTokens = -1
+                var promptEvalMs = -1L
+                var generationMs = -1L
+                var outputTokens = 0
+                while (!source.exhausted()) {
+                    val line = source.readUtf8Line() ?: break
+                    if (line.isBlank()) continue
+                    val chunk = JSONObject(line)
+                    val piece = chunk.optJSONObject("message")?.optString("content").orEmpty()
+                    if (piece.isNotEmpty()) {
+                        if (firstTokenMs < 0) firstTokenMs = (System.nanoTime() - started) / 1_000_000
+                        answer.append(piece)
+                    }
+                    if (chunk.optBoolean("done", false)) {
+                        promptTokens = chunk.optInt("prompt_eval_count", -1)
+                        promptEvalMs = chunk.optLong("prompt_eval_duration", 0L) / 1_000_000
+                        generationMs = chunk.optLong("eval_duration", 0L) / 1_000_000
+                        outputTokens = chunk.optInt("eval_count", 0)
+                    }
+                }
+                val totalMs = (System.nanoTime() - started) / 1_000_000
+                android.util.Log.i("OllamaTiming", "time_to_first_token_ms=${firstTokenMs.coerceAtLeast(0)} total_ms=${totalMs} prompt_tokens=${promptTokens} cached_prompt_tokens=not-reported-by-ollama output_tokens=${outputTokens} prompt_eval_ms=${promptEvalMs} generation_ms=${generationMs}")
+                val cleaned = OllamaResponseParser.stripThinkBlocks(answer.toString())
+                if (cleaned.isBlank()) throw IllegalStateException("Ollama returned no answer.")
+                appContext?.let { ctx ->
+                    val prefs = ctx.getSharedPreferences("ollama_diagnostics", android.content.Context.MODE_PRIVATE)
+                    val old = prefs.getString("recent_requests", "").orEmpty()
+                    val log = "Prompt: $promptTokens tokens | first token: $firstTokenMs ms | total: $totalMs ms | prompt eval: $promptEvalMs ms | generation: $generationMs ms | output: $outputTokens tokens | schema: $useSchema"
+                    prefs.edit().putString("recent_requests", (listOf(log) + old.lineSequence().filter { it.isNotBlank() }.take(11)).joinToString("\n")).apply()
+                    android.util.Log.i("OllamaPerf", log)
+                }
+                return cleaned
+            }
+        } catch (error: java.net.SocketTimeoutException) {
+            throw IllegalStateException("Ollama request timed out within the remaining task budget.", error)
+        } catch (error: java.io.IOException) {
+            throw IllegalStateException("Ollama not reachable - Termux mein ollama serve chalao. ${error.message.orEmpty()}", error)
         }
     }
 
     override suspend fun testConnection(): Result<Long> = withContext(Dispatchers.IO) {
         runCatching {
             val startTime = System.currentTimeMillis()
-            val request = Request.Builder()
-                .url(OllamaResponseParser.buildUrl(baseUrl, "/api/tags"))
-                .get()
-                .build()
-
+            val request = Request.Builder().url(OllamaResponseParser.buildUrl(baseUrl, "/api/tags")).get().build()
             val body = executeWithRetry(request)
             if (!OllamaResponseParser.hasModel(body, model)) {
                 throw IllegalStateException("Model $model not found. Termux mein 'ollama pull $model' chalao.")
@@ -337,17 +408,10 @@ class OllamaProvider(
                     val body = response.body?.string().orEmpty()
                     if (!response.isSuccessful) {
                         val message = OllamaResponseParser.httpError(response.code, body)
-                        if (response.code == 404 && message.contains("model", ignoreCase = true)) {
-                            throw IllegalStateException("Model $model not found. Termux mein 'ollama pull $model' chalao.")
-                        }
-                        if (response.code == 429 || response.code >= 500) {
-                            throw java.io.IOException(message)
-                        }
+                        if (response.code == 429 || response.code >= 500) throw java.io.IOException(message)
                         throw IllegalStateException(message)
                     }
-                    if (body.isBlank()) {
-                        throw java.io.IOException("Ollama returned an empty HTTP response.")
-                    }
+                    if (body.isBlank()) throw java.io.IOException("Ollama returned an empty HTTP response.")
                     return body
                 }
             } catch (error: java.io.IOException) {
@@ -356,12 +420,7 @@ class OllamaProvider(
                 kotlinx.coroutines.delay(500L * (attempt + 1))
             }
         }
-
-        val detail = lastError?.message.orEmpty()
-        throw IllegalStateException(
-            "Ollama not reachable - Termux mein ollama serve chalao. $detail",
-            lastError
-        )
+        throw IllegalStateException("Ollama not reachable - Termux mein ollama serve chalao. ${lastError?.message.orEmpty()}", lastError)
     }
 
     companion object {

@@ -117,7 +117,7 @@ class OverlayService : Service() {
                     is com.openjarvis.agent.AgentState.Running -> statusText?.text = state.step
                     is com.openjarvis.agent.AgentState.Done -> {
                         statusText?.text = state.result
-                        voiceManager.speak(if (responseLanguage == "mr") "काम पूर्ण झाले आहे" else "काम पूरा हुआ") { resumeWakeWordAfterResponse() }
+                        voiceManager.speak(com.openjarvis.agent.AgentResultSpeech.textForDone(state.result)) { resumeWakeWordAfterResponse() }
                     }
                     is com.openjarvis.agent.AgentState.Error -> {
                         statusText?.text = "Jarvis error: ${state.message} • tap to copy debug log"
