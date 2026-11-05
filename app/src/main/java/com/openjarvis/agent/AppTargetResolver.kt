@@ -19,7 +19,8 @@ internal object AppTargetResolver {
         "com.whatsapp" to setOf("wa", "whatsapp", "whats app", "व्हाट्सएप", "व्हॉट्सअॅप", "व्हॉट्सॲप"),
         "com.google.android.youtube" to setOf("yt", "youtube", "you tube", "यूट्यूब"),
         "com.facebook.katana" to setOf("fb", "facebook", "फेसबुक"),
-        "com.google.android.apps.nbu.paisa.user" to setOf("gpay", "google pay", "googlepay", "जीपे", "गूगल पे")
+        "com.google.android.apps.nbu.paisa.user" to setOf("gpay", "google pay", "googlepay", "जीपे", "गूगल पे"),
+        "com.openai.chatgpt" to setOf("chatgpt", "chat gpt", "chat-gpt", "चैटजीपीटी", "चैट जीपीटी")
     )
 
     fun isPlaceholder(value: String?): Boolean = normalize(value.orEmpty()) in placeholders

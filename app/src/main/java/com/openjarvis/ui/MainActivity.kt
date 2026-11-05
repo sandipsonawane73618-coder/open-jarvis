@@ -36,6 +36,17 @@ class MainActivity : ComponentActivity() {
             if (granted) "Microphone enabled" else "Microphone permission is required for voice input",
             Toast.LENGTH_LONG
         ).show()
+        requestNotificationPermissionIfNeeded()
+    }
+
+    private val requestNotificationPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        Toast.makeText(
+            this,
+            if (granted) "JARVIS proactive alerts enabled" else "Allow notifications to receive reminders and battery alerts",
+            Toast.LENGTH_LONG
+        ).show()
     }
     
     private lateinit var graphifyRepo: GraphifyRepository
@@ -46,6 +57,8 @@ class MainActivity : ComponentActivity() {
 
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestMicPermission.launch(Manifest.permission.RECORD_AUDIO)
+        } else {
+            requestNotificationPermissionIfNeeded()
         }
         
         enableEdgeToEdge()
@@ -89,6 +102,13 @@ class MainActivity : ComponentActivity() {
         }
     }
     
+    private fun requestNotificationPermissionIfNeeded() {
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     private fun isAccessibilityServiceEnabled(): Boolean {
         val enabledServices = Settings.Secure.getString(
             contentResolver,

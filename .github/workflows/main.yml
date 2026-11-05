@@ -6,6 +6,7 @@ on:
     branches:
       - feature/jarvis-stable-1.0
       - feature/jarvis-stable-1.0-phase2-wakeword
+      - feature/jarvis-jandal-memory-recall
 
 permissions:
   contents: read
@@ -15,6 +16,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Prepare sherpa-onnx runtime and required offline JARVIS KWS model
+        run: |
+          bash scripts/prepare-sherpa.sh all
+          test -s app/src/main/assets/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01/encoder-epoch-12-avg-2-chunk-16-left-64.onnx
 
       - uses: actions/setup-java@v4
         with:
@@ -42,6 +48,25 @@ jobs:
           target: google_apis
           arch: x86_64
           script: bash scripts/smoke-minimal.sh
+
+      # Always collect diagnostics, including when the smoke test fails.
+      - name: Capture emulator crash diagnostics
+        if: always()
+        run: |
+          mkdir -p emulator-diagnostics
+          adb logcat -b all -d -v threadtime > emulator-diagnostics/logcat.txt 2>&1 || true
+          adb shell dumpsys activity activities > emulator-diagnostics/activities.txt 2>&1 || true
+          adb shell dumpsys activity services > emulator-diagnostics/services.txt 2>&1 || true
+          adb shell dumpsys package com.openjarvis > emulator-diagnostics/package.txt 2>&1 || true
+          grep -Ei "FATAL EXCEPTION|AndroidRuntime|am_crash|ANR in|Process .* has died|Fatal signal" emulator-diagnostics/logcat.txt > emulator-diagnostics/crash-summary.txt || true
+
+      - name: Upload emulator diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-emulator-crash-diagnostics
+          path: emulator-diagnostics/
+          if-no-files-found: warn
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

@@ -4,6 +4,10 @@
 
     <queries>
         <package android:name="com.google.android.youtube" />
+        <package android:name="com.openai.chatgpt" />
+        <package android:name="com.instagram.android" />
+        <package android:name="com.whatsapp" />
+        <package android:name="com.facebook.katana" />
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
@@ -90,6 +94,17 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="ai_assistant_overlay" />
         </service>
+
+        <receiver
+            android:name=".proactive.ProactiveBatteryReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BATTERY_LOW" />
+                <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
+                <action android:name="android.intent.action.ACTION_POWER_DISCONNECTED" />
+            </intent-filter>
+        </receiver>
 
         <service
             android:name=".local.DownloadService"

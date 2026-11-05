@@ -20,6 +20,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
@@ -43,6 +44,7 @@ import com.openjarvis.graphify.nodes.AppNode
 import com.openjarvis.graphify.nodes.TaskNode
 import com.openjarvis.ui.theme.VoidColor
 import kotlinx.coroutines.delay
+import com.openjarvis.proactive.ProactiveAssistant
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -114,6 +116,10 @@ fun DashboardScreen(
             ) {
                 Text("EURONICS SERVICE REPORT", color = Color.White, fontWeight = FontWeight.Bold)
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            ProactiveAssistantCard(taskCount = recentTasks.size)
 
             Spacer(modifier = Modifier.height(16.dp))
             
@@ -789,5 +795,117 @@ private fun formatRelativeTime(timestamp: Long): String {
         minutes < 1 -> "now"
         minutes < 60 -> "${minutes}m"
         else -> "${minutes / 60}h"
+    }
+}
+
+@Composable
+private fun ProactiveAssistantCard(taskCount: Int) {
+    val context = LocalContext.current
+    var briefingEnabled by remember { mutableStateOf(ProactiveAssistant.isDailyBriefingEnabled(context)) }
+    var showReminder by remember { mutableStateOf(false) }
+    var reminderTitle by remember { mutableStateOf("") }
+    var reminderMessage by remember { mutableStateOf("") }
+    var reminderMinutes by remember { mutableStateOf("30") }
+    var notice by remember { mutableStateOf("Local reminders • battery alerts • daily briefing") }
+    val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+    val suggestion = when {
+        taskCount == 0 -> "Try a voice command to start your first task, then save a reminder for its follow-up."
+        hour < 12 -> "Morning suggestion: choose today's top priority and set a reminder for it."
+        hour < 18 -> "Suggestion: review your recent tasks and schedule a follow-up before the day ends."
+        else -> "Evening suggestion: review completed tasks and set tomorrow's first reminder."
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = VoidColor.Void900,
+        border = androidx.compose.foundation.BorderStroke(1.dp, VoidColor.Cyan.copy(alpha = 0.28f))
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                "PROACTIVE ASSISTANT",
+                color = VoidColor.Cyan,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+                letterSpacing = 1.5.sp
+            )
+            Text(
+                "JARVIS can remind you and alert you about battery or charging events.",
+                color = VoidColor.TextSecondary,
+                fontSize = 12.sp
+            )
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f)) {
+                    Text("Daily briefing", color = VoidColor.TextPrimary, fontWeight = FontWeight.SemiBold)
+                    Text("One local notification every 24 hours", color = VoidColor.TextDisabled, fontSize = 11.sp)
+                }
+                Switch(
+                    checked = briefingEnabled,
+                    onCheckedChange = {
+                        briefingEnabled = it
+                        ProactiveAssistant.enableDailyBriefing(context, it)
+                        notice = if (it) "Daily briefing scheduled" else "Daily briefing disabled"
+                    }
+                )
+            }
+            Button(
+                onClick = { showReminder = true },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = VoidColor.Violet)
+            ) { Text("＋  Create reminder", color = Color.White) }
+            Text(notice, color = VoidColor.TextDisabled, fontSize = 11.sp)
+            Text(
+                "Suggestion: create a reminder for an important task; keep daily briefing enabled for a daily check-in.",
+                color = VoidColor.Cyan.copy(alpha = 0.85f),
+                fontSize = 11.sp
+            )
+        }
+    }
+
+    if (showReminder) {
+        AlertDialog(
+            onDismissRequest = { showReminder = false },
+            title = { Text("New JARVIS reminder") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = reminderTitle,
+                        onValueChange = { reminderTitle = it.take(80) },
+                        label = { Text("Title") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = reminderMessage,
+                        onValueChange = { reminderMessage = it.take(240) },
+                        label = { Text("Reminder details") },
+                        minLines = 2
+                    )
+                    OutlinedTextField(
+                        value = reminderMinutes,
+                        onValueChange = { reminderMinutes = it.filter(Char::isDigit).take(5) },
+                        label = { Text("Remind me in minutes") },
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val minutes = reminderMinutes.toLongOrNull()
+                    if (reminderTitle.isNotBlank() && reminderMessage.isNotBlank() && minutes != null && minutes in 1..10080) {
+                        ProactiveAssistant.scheduleReminder(context, reminderTitle, reminderMessage, minutes)
+                        notice = "Reminder scheduled in $minutes minute(s)"
+                        showReminder = false
+                        reminderTitle = ""
+                        reminderMessage = ""
+                    } else {
+                        notice = "Enter title, details and a delay from 1 to 10080 minutes"
+                    }
+                }) { Text("Schedule") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showReminder = false }) { Text("Cancel") }
+            }
+        )
     }
 }

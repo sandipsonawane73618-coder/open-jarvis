@@ -58,6 +58,18 @@ class OverlayService : Service() {
     private var windowParams: WindowManager.LayoutParams? = null
     private var commandInput: EditText? = null
     private var statusText: TextView? = null
+    private var waveformText: TextView? = null
+    private var visualState: String = "IDLE"
+    private var waveformFrame: Int = 0
+    private val waveformRunnable = object : Runnable {
+        override fun run() {
+            val view = waveformText ?: return
+            if (visualState == "IDLE") return
+            val frames = arrayOf("▁ ▃ ▆ ▄ ▂", "▃ ▆ ▄ ▂ ▅", "▆ ▄ ▂ ▅ ▃", "▄ ▂ ▅ ▃ ▆")
+            view.text = frames[waveformFrame++ % frames.size]
+            mainHandler.postDelayed(this, if (visualState == "THINKING") 420L else 150L)
+        }
+    }
     private var panel: LinearLayout? = null
     private lateinit var agentCore: AgentCore
     private lateinit var voiceManager: VoiceManager
@@ -73,6 +85,7 @@ class OverlayService : Service() {
     private var isExpanded = false
     private var responseLanguage = "hi"
     @Volatile private var mutedUntilWakeWord = false
+    @Volatile private var awaitingUnmuteCommand = false
 
     override fun onCreate() {
         super.onCreate()
@@ -92,6 +105,29 @@ class OverlayService : Service() {
             voiceManager.state.collect { state ->
                 when (state) {
                     is VoiceManager.VoiceState.Result -> {
+                        if (awaitingUnmuteCommand) {
+                            wakeWordCommandPending = false
+                            voiceManager.stopListening()
+                            if (MuteCommandPolicy.isUnmuteCommand(state.text)) {
+                                awaitingUnmuteCommand = false
+                                mutedUntilWakeWord = false
+                                statusText?.text = "JARVIS active"
+                                voiceManager.speak("Jarvis is active. I am listening.") { resumeWakeWordAfterResponse() }
+                            } else {
+                                statusText?.text = "Still muted — say Jarvis, then say unmute ho ja"
+                                wakeWordResponsePending = false
+                                startWakeWordListening()
+                            }
+                            return@collect
+                        }
+                        if (MuteCommandPolicy.isUnmuteCommand(state.text)) {
+                            wakeWordCommandPending = false
+                            voiceManager.stopListening()
+                            mutedUntilWakeWord = false
+                            statusText?.text = "JARVIS active"
+                            voiceManager.speak("Jarvis is active. I am listening.") { resumeWakeWordAfterResponse() }
+                            return@collect
+                        }
                         if (MuteCommandPolicy.isMuteCommand(state.text)) {
                             wakeWordCommandPending = false
                             enterMuteMode()
@@ -114,10 +150,10 @@ class OverlayService : Service() {
                             serviceScope.launch { delay(700); startWakeWordListening() }
                         }
                     }
-                    is VoiceManager.VoiceState.Recording -> statusText?.text = "Listening… speak now"
-                    is VoiceManager.VoiceState.Transcribing -> statusText?.text = "Thinking…"
-                    is VoiceManager.VoiceState.Speaking -> statusText?.text = "Speaking…"
-                    is VoiceManager.VoiceState.Idle -> Unit
+                    is VoiceManager.VoiceState.Recording -> setVisualState("LISTENING", "Listening… speak now")
+                    is VoiceManager.VoiceState.Transcribing -> setVisualState("THINKING", "Thinking…")
+                    is VoiceManager.VoiceState.Speaking -> setVisualState("SPEAKING", "Speaking…")
+                    is VoiceManager.VoiceState.Idle -> setVisualState("IDLE", "Ready — type a command or use mic")
                 }
             }
         }
@@ -125,13 +161,13 @@ class OverlayService : Service() {
             agentCore.state.collect { state ->
                 when (state) {
                     is com.openjarvis.agent.AgentState.Idle -> statusText?.text = "Ready — type a command or use mic"
-                    is com.openjarvis.agent.AgentState.Running -> statusText?.text = state.step
+                    is com.openjarvis.agent.AgentState.Running -> setVisualState("THINKING", state.step)
                     is com.openjarvis.agent.AgentState.Done -> {
-                        statusText?.text = if (mutedUntilWakeWord) "MUTED — say Jarvis to wake" else state.result
+                        setVisualState(if (mutedUntilWakeWord) "IDLE" else "SPEAKING", if (mutedUntilWakeWord) "MUTED — say Jarvis to wake" else state.result)
                         if (!mutedUntilWakeWord) voiceManager.speak(com.openjarvis.agent.AgentResultSpeech.textForDone(state.result)) { resumeWakeWordAfterResponse() }
                     }
                     is com.openjarvis.agent.AgentState.Error -> {
-                        statusText?.text = if (mutedUntilWakeWord) "MUTED — say Jarvis to wake" else "Jarvis error: ${state.message} • tap to copy debug log"
+                        setVisualState(if (mutedUntilWakeWord) "IDLE" else "SPEAKING", if (mutedUntilWakeWord) "MUTED — say Jarvis to wake" else "Jarvis error: ${state.message} • tap to copy debug log")
                         if (!mutedUntilWakeWord) voiceManager.speak(if (responseLanguage == "mr") "कमांड पूर्ण झाली नाही. ${state.message}" else "कमांड पूरी नहीं हुई। ${state.message}") { resumeWakeWordAfterResponse() }
                     }
                 }
@@ -153,6 +189,9 @@ class OverlayService : Service() {
     override fun onDestroy() {
         try { overlayView?.let { windowManager?.removeView(it) } } catch (_: Exception) { }
         overlayView = null
+        visualState = "IDLE"
+        mainHandler.removeCallbacks(waveformRunnable)
+        waveformText = null
         stopWakeWordListening()
         voiceManager.release()
         serviceScope.cancel()
@@ -231,6 +270,18 @@ class OverlayService : Service() {
             statusText = status
             status.setOnClickListener { copyLatestDebugLog() }
             commandPanel.addView(status)
+            val waveform = TextView(this).apply {
+                text = "▁ ▃ ▆ ▄ ▂"
+                textSize = 19f
+                letterSpacing = 0.16f
+                gravity = Gravity.CENTER
+                setTextColor(Color.rgb(70, 220, 255))
+                setPadding(dp(8), 0, dp(8), dp(2))
+                visibility = android.view.View.GONE
+                contentDescription = "JARVIS voice activity waveform"
+            }
+            waveformText = waveform
+            commandPanel.addView(waveform, LinearLayout.LayoutParams(-1, dp(30)))
 
             val input = EditText(this).apply {
                 hint = "Ask Jarvis to do something…"
@@ -313,6 +364,17 @@ class OverlayService : Service() {
         }
     }
 
+    private fun setVisualState(state: String, label: String) {
+        visualState = state
+        statusText?.text = label
+        waveformText?.visibility = if (state == "IDLE") android.view.View.GONE else android.view.View.VISIBLE
+        mainHandler.removeCallbacks(waveformRunnable)
+        if (state != "IDLE") {
+            waveformFrame = 0
+            waveformRunnable.run()
+        }
+    }
+
     private fun togglePanel() {
         isExpanded = !isExpanded
         panel?.visibility = if (isExpanded) android.view.View.VISIBLE else android.view.View.GONE
@@ -327,6 +389,7 @@ class OverlayService : Service() {
 
     private fun enterMuteMode() {
         mutedUntilWakeWord = true
+        awaitingUnmuteCommand = false
         wakeWordCommandPending = false
         wakeWordResponsePending = false
         voiceManager.stopListening()
@@ -414,11 +477,16 @@ class OverlayService : Service() {
 
     private fun handleWakeWordDetected() {
         if (!voiceManager.isVoiceEnabled() || wakeWordCommandPending) return
-        mutedUntilWakeWord = false
+        val wasMuted = mutedUntilWakeWord
+        if (wasMuted) awaitingUnmuteCommand = true
         stopWakeWordListening()
         wakeWordCommandPending = true
         wakeWordResponsePending = true
-        statusText?.text = "Yes? Listening for your command…"
+        statusText?.text = if (wasMuted) {
+            "Jarvis heard — say unmute ho ja"
+        } else {
+            "Yes? Listening for your command…"
+        }
         voiceManager.startListening()
     }
 

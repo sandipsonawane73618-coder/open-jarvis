@@ -26,6 +26,7 @@ class SherpaOnnxWakeWordController(
     private var stream: com.k2fsa.sherpa.onnx.OnlineStream? = null
     private var recorder: AudioRecord? = null
     private var worker: Thread? = null
+    @Volatile private var lastWakeWordAtMs = 0L
 
     @Synchronized
     override fun start(): String? {
@@ -57,7 +58,7 @@ class SherpaOnnxWakeWordController(
                 throw IllegalStateException("Android microphone buffer is unavailable")
             }
             val audio = AudioRecord(
-                MediaRecorder.AudioSource.MIC,
+                MediaRecorder.AudioSource.VOICE_RECOGNITION,
                 sampleRate,
                 AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT,
@@ -114,8 +115,12 @@ class SherpaOnnxWakeWordController(
                     val keyword = kws.getResult(inputStream).keyword
                     if (keyword.isNotBlank()) {
                         kws.reset(inputStream)
-                        Log.i(TAG, "Offline wake word detected")
-                        onWakeWord()
+                        val now = System.currentTimeMillis()
+                        if (now - lastWakeWordAtMs >= WAKE_WORD_COOLDOWN_MS) {
+                            lastWakeWordAtMs = now
+                            Log.i(TAG, "Offline wake word detected")
+                            onWakeWord()
+                        }
                     }
                 }
             }
@@ -148,5 +153,6 @@ class SherpaOnnxWakeWordController(
 
     companion object {
         private const val TAG = "JarvisSherpaKws"
+        private const val WAKE_WORD_COOLDOWN_MS = 2_000L
     }
 }

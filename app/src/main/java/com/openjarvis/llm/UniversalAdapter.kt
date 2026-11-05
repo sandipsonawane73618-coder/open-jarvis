@@ -61,6 +61,15 @@ class UniversalAdapter(private val context: Context) {
         }
     }
 
+    /** Create an opt-in LocalAI provider without changing the active Ollama default. */
+    fun createLocalAiProvider(baseUrl: String, model: String, apiKey: String = ""): LLMProvider {
+        return LocalAiProvider(
+            baseUrl = LocalAiProvider.normalizeBaseUrl(baseUrl),
+            model = model.trim(),
+            apiKey = apiKey
+        )
+    }
+
     fun getProviderName(): String = "Ollama (Local)"
     
     companion object {

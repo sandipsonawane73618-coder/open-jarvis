@@ -35,6 +35,20 @@ class AgentPlanPolicyTest {
         assertTrue(AgentPlanPolicy.isExecutablePlan(openInstagram, "Instagram kholo aur batao"))
     }
 
+    @Test fun detectsOnlyALoneErrorAsModelRefusal() {
+        assertTrue(AgentPlanPolicy.isSingleModelRefusal(listOf(Action(action = Action.ERROR, message = "not recognized"))))
+        assertFalse(AgentPlanPolicy.isSingleModelRefusal(openInstagram))
+        assertFalse(AgentPlanPolicy.isSingleModelRefusal(listOf(Action(action = Action.ERROR), Action(action = Action.BACK))))
+    }
+
+    @Test fun blocksModelGeneratedSendButtonTap() {
+        val sendTap = listOf(Action(action = Action.CLICK, text = "Send"))
+        assertTrue(AgentPlanPolicy.hasMessageSendTap(sendTap))
+        assertFalse(AgentPlanPolicy.isExecutablePlan(sendTap, "send this message"))
+        assertEquals("RULE_MESSAGE_SEND_CONFIRMATION", AgentPlanPolicy.failureRule(sendTap, "send this message"))
+        assertTrue(AgentPlanPolicy.userGuidance("RULE_MESSAGE_SEND_CONFIRMATION").contains("manually"))
+    }
+
     @Test fun mixedErrorAndActionNeedsReplan() {
         val mixed = listOf(
             Action(action = Action.OPEN_APP, label = "Instagram", packageName = "com.instagram.android"),

@@ -10,10 +10,28 @@ internal object AgentPlanPolicy {
     fun hasUnresolvedAppLaunch(actions: List<Action>): Boolean =
         actions.any { it.action == Action.OPEN_APP && AppTargetResolver.isPlaceholder(it.label) }
 
+    /** Never let a model-generated tap send a message; the user reviews and taps Send manually. */
+    fun hasMessageSendTap(actions: List<Action>): Boolean {
+        val sendTarget = Regex("(?<![\\\\p{L}\\\\p{N}\\\\p{M}])(send|send message|भेजें|भेजो|पाठवा|पाठव)(?![\\\\p{L}\\\\p{N}\\\\p{M}])", RegexOption.IGNORE_CASE)
+        return actions.any { action ->
+            action.action == Action.CLICK || action.action == Action.TAP
+        }.let { hasClick ->
+            hasClick && actions.any { action ->
+                (action.action == Action.CLICK || action.action == Action.TAP) &&
+                    listOfNotNull(action.text, action.hint, action.value).any(sendTarget::containsMatchIn)
+            }
+        }
+    }
+
+    /** A lone error marker is a model planning refusal, not an executable action. */
+    fun isSingleModelRefusal(actions: List<Action>): Boolean =
+        actions.size == 1 && actions.single().action == Action.ERROR
+
     fun needsCompactReplan(actions: List<Action>): Boolean =
         actions.size > MAX_ACTIONS ||
             (actions.any { it.action == Action.ERROR } && actions.any { it.action != Action.ERROR }) ||
-            hasUnresolvedAppLaunch(actions)
+            hasUnresolvedAppLaunch(actions) ||
+            hasMessageSendTap(actions)
 
     private val multiStepConnector = Regex(
         "(?<![\\p{L}\\p{N}\\p{M}])(and|then|after|also|aur|phir|fir|uske baad|iske baad|baad me|baad mein)(?![\\p{L}\\p{N}\\p{M}])",
@@ -39,6 +57,7 @@ internal object AgentPlanPolicy {
         actions.isNotEmpty() &&
             actions.size <= MAX_ACTIONS &&
             !hasUnresolvedAppLaunch(actions) &&
+            !hasMessageSendTap(actions) &&
             actions.none {
                 it.action == Action.ERROR ||
                     it.action == Action.READ_SCREEN ||
@@ -59,6 +78,7 @@ internal object AgentPlanPolicy {
         actions.size > MAX_ACTIONS -> "RULE_MAX_ACTIONS"
         actions.any { it.action == Action.ERROR } && actions.any { it.action != Action.ERROR } -> "RULE_MIXED_ERROR"
         hasUnresolvedAppLaunch(actions) -> "RULE_UNRESOLVED_APP"
+        hasMessageSendTap(actions) -> "RULE_MESSAGE_SEND_CONFIRMATION"
         isLikelyUnderPlanned(command, actions) -> "RULE_UNDER_PLANNED"
         actions.isEmpty() -> "RULE_EMPTY_PLAN"
         actions.any { it.action == Action.READ_SCREEN || it.action == Action.EXTRACT_TEXT } -> "RULE_SCREEN_OBSERVATION"
@@ -69,6 +89,7 @@ internal object AgentPlanPolicy {
         "RULE_MAX_ACTIONS" -> "Plan mein 10 se zyada steps hain; command ko chhote parts mein bolo."
         "RULE_MIXED_ERROR" -> "Plan mein action aur error mix hain; ek clear command do."
         "RULE_UNRESOLVED_APP" -> "App ka installed naam nahi mila; app ka exact naam bolo."
+        "RULE_MESSAGE_SEND_CONFIRMATION" -> "Jarvis message khud send nahi karega. Message review karke Send manually dabao."
         "RULE_UNDER_PLANNED" -> "Command ke kuch steps plan nahi hue; ek baar mein ek chhota task bolo."
         "RULE_SCREEN_OBSERVATION" -> "Accessibility screen read nahi kar pa rahi; Jarvis Accessibility enable karke target app kholo."
         "RULE_EMPTY_PLAN" -> "Koi action plan nahi bana; command ko specific tarike se bolo."
