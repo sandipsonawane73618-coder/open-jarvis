@@ -38,6 +38,26 @@ class WakeWordConfigTest {
             WakeWordConfig.accessKeyDiagnostic("abcd0123456789abcdef0123456789"))
     }
 
+    @Test fun sensitivityPreferencesMapToKnownConservativeThresholds() {
+        assertEquals(0.28f, WakeWordConfig.Sensitivity.fromPreference("LOW").threshold, 0.0001f)
+        assertEquals(0.10f, WakeWordConfig.Sensitivity.fromPreference("medium").threshold, 0.0001f)
+        assertEquals(0.05f, WakeWordConfig.Sensitivity.fromPreference("HIGH").threshold, 0.0001f)
+        assertEquals(WakeWordConfig.Sensitivity.MEDIUM, WakeWordConfig.Sensitivity.fromPreference("unknown"))
+        assertTrue(WakeWordConfig.Sensitivity.HIGH.threshold < WakeWordConfig.Sensitivity.MEDIUM.threshold)
+    }
+
+    @Test fun acceptsFiveTokenizedKeywordLines() {
+        val generatedTokens = listOf("1 2 3", "4 5 6", "7 8", "9 10", "11 12")
+        assertTrue(WakeWordConfig.isValidTokenizedKeywordAsset(generatedTokens))
+    }
+
+    @Test fun rejectsMissingOrRawUnTokenizedKeywordAsset() {
+        assertTrue(!WakeWordConfig.isValidTokenizedKeywordAsset(listOf("1 2 3", "4 5")))
+        assertTrue(!WakeWordConfig.isValidTokenizedKeywordAsset(
+            listOf("JARVIS", "4 5 6", "7 8", "9 10", "11 12")
+        ))
+    }
+
     @Test fun wakePhraseAndEngineKeywordAreStable() {
         assertEquals("Jarvis", WakeWordConfig.DISPLAY_PHRASE)
         assertEquals("JARVIS", WakeWordConfig.ENGINE_KEYWORD)

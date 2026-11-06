@@ -25,13 +25,20 @@ if [[ "$MODE" == "all" ]]; then
   # Passing plain "JARVIS" to createStream() is not valid token syntax.
   python3 -m venv /tmp/jarvis-sherpa-tokenizer
   /tmp/jarvis-sherpa-tokenizer/bin/pip install --disable-pip-version-check sherpa-onnx click sentencepiece pypinyin
-  printf 'JARVIS\n' > /tmp/jarvis-wake-keywords.raw
+  # Canonical phrase plus likely Indian-English pronunciations. The GigaSpeech
+  # BPE tokenizer turns each phrase into the model's required token sequence.
+  printf 'JARVIS\nHEY JARVIS\nJARVISS\nJARVEES\nJARVIZ\n' > /tmp/jarvis-wake-keywords.raw
   /tmp/jarvis-sherpa-tokenizer/bin/sherpa-onnx-cli text2token \
     --tokens "$MODEL_DIR/tokens.txt" \
     --tokens-type bpe \
     --bpe-model "$MODEL_DIR/bpe.model" \
     /tmp/jarvis-wake-keywords.raw "$MODEL_DIR/keywords.txt"
   test -s "$MODEL_DIR/keywords.txt"
+  KEYWORD_LINES="$(wc -l < "$MODEL_DIR/keywords.txt" | tr -d ' ')"
+  if [[ "$KEYWORD_LINES" -lt 5 ]]; then
+    echo "Expected 5 tokenized Jarvis keyword phrases, got $KEYWORD_LINES" >&2
+    exit 1
+  fi
   if grep -qx 'JARVIS' "$MODEL_DIR/keywords.txt"; then
     echo "Wake keyword file was not BPE-tokenized" >&2
     exit 1

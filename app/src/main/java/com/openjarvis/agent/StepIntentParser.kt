@@ -56,7 +56,7 @@ object StepIntentParser {
         "maps" to "maps", "google maps" to "google maps",
         "telegram" to "telegram",
         "facebook" to "facebook", "fb" to "facebook",
-        "settings" to "settings", "phone" to "phone", "camera" to "camera",
+        "settings" to "settings", "setting" to "settings", "phone" to "phone", "camera" to "camera",
         "gallery" to "gallery", "calculator" to "calculator",
         "gpay" to "google pay", "google pay" to "google pay"
     )

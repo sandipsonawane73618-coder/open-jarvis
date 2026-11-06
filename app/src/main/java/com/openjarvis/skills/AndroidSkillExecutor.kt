@@ -93,6 +93,7 @@ class AndroidSkillExecutor(private val context: Context) : SkillRegistry.SkillEx
     private fun resolvePackage(label: String): String {
         val normalized = label.trim().lowercase(java.util.Locale.ROOT)
         val known = when (normalized) {
+            "settings", "setting" -> "com.android.settings"
             "youtube" -> "com.google.android.youtube"
             "whatsapp" -> "com.whatsapp"
             "chrome" -> "com.android.chrome"

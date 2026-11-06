@@ -104,6 +104,8 @@ class StepIntentParserTest {
         assertNull(p("Rahul ko call karo"))
         assertNull(p("YouTube par lofi search karo"))
         assertEquals(StepIntent.AppLaunch("chrome"), p("Chrome kholo"))
+        assertEquals(StepIntent.AppLaunch("settings"), p("open settings"))
+        assertEquals(StepIntent.AppLaunch("settings"), p("setting kholo"))
         assertNull(p("hello"))
         assertNull(p("open instagram and tell me what to do dear"))
         assertNull(p(""))
