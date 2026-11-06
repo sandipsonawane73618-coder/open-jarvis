@@ -48,6 +48,36 @@ object AgentDiagnostics {
         Log.e(TAG, report)
     }
 
+    fun recordPipeline(
+        context: Context,
+        command: String,
+        traces: List<StepTrace>,
+        skipped: List<String>
+    ) {
+        val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+        val report = buildString {
+            appendLine("OPEN JARVIS DEBUG REPORT")
+            appendLine("Time: $timestamp")
+            appendLine("Stage: multi-step-pipeline")
+            appendLine("Provider: Android deterministic pipeline")
+            appendLine("Model: Not used")
+            appendLine("Command: [redacted; ${command.length} chars]")
+            appendLine("--- STEP ROUTE TRACE ---")
+            traces.forEach { trace ->
+                appendLine("Step ${trace.index + 1}: ${trace.step.take(180)}")
+                appendLine("Route: ${trace.route} | ok=${trace.ok}")
+                appendLine("Reply: ${trace.reply.take(500)}")
+            }
+            if (skipped.isNotEmpty()) {
+                appendLine("--- SKIPPED STEPS ---")
+                skipped.forEachIndexed { index, step -> appendLine("${traces.size + index + 1}: ${step.take(180)}") }
+            }
+        }.trim()
+        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY_LATEST, report).apply()
+        if (traces.all { it.ok } && skipped.isEmpty()) Log.i(TAG, report) else Log.e(TAG, report)
+    }
+
     fun latest(context: Context): String =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getString(KEY_LATEST, "No debug log saved yet. Run a command first.").orEmpty()

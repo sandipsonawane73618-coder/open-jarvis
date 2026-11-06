@@ -49,6 +49,12 @@ class UniversalAdapter(private val context: Context) {
         conversation: Boolean = false
     ): Result<String> = getActiveProvider().completeWithDeadline(systemPrompt, userMessage, timeoutMs, conversation)
 
+    suspend fun completeSkillWithDeadline(
+        systemPrompt: String,
+        userMessage: String,
+        timeoutMs: Long
+    ): Result<String> = getActiveProvider().completeSkillWithDeadline(systemPrompt, userMessage, timeoutMs)
+
     suspend fun testConnection(): Result<Long> = getActiveProvider().testConnection()
     
     fun saveSettings(name: String, baseUrl: String, apiKey: String, model: String) {

@@ -15,13 +15,17 @@ class JarvisAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         
-        val info = AccessibilityServiceInfo().apply {
-            eventTypes = AccessibilityEvent.TYPES_ALL_MASK
-            feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-            flags = AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or 
-                   AccessibilityServiceInfo.FLAG_REQUEST_ENHANCED_WEB_ACCESSIBILITY
-            notificationTimeout = 100
-        }
+        // Start from the XML-declared service info. Replacing it with a fresh
+        // AccessibilityServiceInfo can discard manifest capabilities such as
+        // CAPABILITY_CAN_RETRIEVE_WINDOW_CONTENT, leaving the service connected
+        // but unable to read the target app's accessibility tree.
+        val info = serviceInfo
+        info.eventTypes = AccessibilityEvent.TYPES_ALL_MASK
+        info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
+        info.flags = info.flags or
+            AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
+            AccessibilityServiceInfo.FLAG_REQUEST_ENHANCED_WEB_ACCESSIBILITY
+        info.notificationTimeout = 100
         serviceInfo = info
     }
 

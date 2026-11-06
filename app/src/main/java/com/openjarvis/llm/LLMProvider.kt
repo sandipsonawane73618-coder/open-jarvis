@@ -23,6 +23,12 @@ interface LLMProvider {
         } ?: Result.failure(IllegalStateException("LLM time budget exceeded (45 seconds)."))
     }
 
+    suspend fun completeSkillWithDeadline(
+        systemPrompt: String,
+        userMessage: String,
+        timeoutMs: Long
+    ): Result<String> = completeWithDeadline(systemPrompt, userMessage, timeoutMs, conversation = false)
+
     suspend fun testConnection(): Result<Long>
 }
 

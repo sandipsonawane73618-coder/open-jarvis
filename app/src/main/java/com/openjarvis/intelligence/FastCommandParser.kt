@@ -15,6 +15,7 @@ internal object FastCommandParser {
         data class Scroll(val direction: String) : Command()
         data class OpenSettings(val action: String) : Command()
         data class Dial(val number: String) : Command()
+        data class SetTimer(val seconds: Int) : Command()
         data class DialContact(val name: String) : Command()
         data class YoutubeSearch(val query: String) : Command()
         data class Remember(val fact: String) : Command()
@@ -28,6 +29,7 @@ internal object FastCommandParser {
     private val dial = Regex("^(?:call|dial|phone|mujhe\\s+call\\s+karo|call\\s+karo)\\s+([+0-9][+0-9() .-]{4,})$", RegexOption.IGNORE_CASE)
     private val youtubeSearch = Regex("^youtube\\s+(?:par\\s+)?(.+?)\\s+(?:search|dhundo|khojo)(?:\\s+karo)?$", RegexOption.IGNORE_CASE)
     private val youtubeSearchWithOpen = Regex("^youtube\\s+kholo\\s+(?:aur|then)\\s+(.+?)\\s+(?:search|dhundo|khojo)(?:\\s+karo)?$", RegexOption.IGNORE_CASE)
+    private val timer = Regex("^(?:(?:please )?set )?(?:a )?timer(?: for)? (\\d{1,4}) (seconds?|secs?|minutes?|mins?|hours?|hrs?)$|^(\\d{1,4}) (seconds?|secs?|minutes?|mins?|hours?|hrs?) timer$", RegexOption.IGNORE_CASE)
     private val contactCall = Regex("^(?:please\\s+)?(?:call|dial|phone)\\s+([\\p{L}][\\p{L}\\p{M} .'-]{1,59})$|^([\\p{L}][\\p{L}\\p{M} .'-]{1,59})\\s+(?:ko\\s+call\\s+karo|ko\\s+phone\\s+karo|ला\\s+कॉल\\s+करा|को\\s+कॉल\\s+करो)$", RegexOption.IGNORE_CASE)
 
     fun parseSequence(command: String): List<Command>? {
@@ -51,6 +53,18 @@ internal object FastCommandParser {
         val normalized = normalize(command)
         if (normalized.isBlank()) return null
 
+        timer.matchEntire(normalized)?.let { match ->
+            val amount = (match.groupValues[1].ifBlank { match.groupValues[3] }).toIntOrNull() ?: return null
+            val unit = (match.groupValues[2].ifBlank { match.groupValues[4] }).lowercase()
+            val multiplier = when {
+                unit.startsWith("sec") -> 1
+                unit.startsWith("min") -> 60
+                else -> 3600
+            }
+            val seconds = amount * multiplier
+            if (seconds !in 1..86400) return null
+            return Command.SetTimer(seconds)
+        }
         youtubeSearchWithOpen.matchEntire(normalized)?.let { return Command.YoutubeSearch(it.groupValues[1].trim()) }
         youtubeSearch.matchEntire(normalized)?.let { return Command.YoutubeSearch(it.groupValues[1].trim()) }
 

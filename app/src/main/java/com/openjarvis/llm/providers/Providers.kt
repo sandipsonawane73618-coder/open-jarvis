@@ -268,25 +268,45 @@ class OllamaProvider(
         conversation: Boolean
     ): Result<String> = completeInternal(systemPrompt, userMessage, actionPlan = !conversation, timeoutMs = timeoutMs)
 
+    override suspend fun completeSkillWithDeadline(
+        systemPrompt: String,
+        userMessage: String,
+        timeoutMs: Long
+    ): Result<String> = completeInternal(
+        systemPrompt, userMessage, actionPlan = false, timeoutMs = timeoutMs, skillPlan = true
+    )
+
     private suspend fun completeInternal(
         systemPrompt: String,
         userMessage: String,
         actionPlan: Boolean,
-        timeoutMs: Long
+        timeoutMs: Long,
+        skillPlan: Boolean = false
     ): Result<String> =
         withContext(Dispatchers.IO) {
             runCatching {
                 val deadlineNanos = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(timeoutMs.coerceAtLeast(1L))
-                val schemaAvailable = actionPlan && supportsJsonSchema(deadlineNanos)
+                val schemaAvailable = (actionPlan || skillPlan) && supportsJsonSchema(deadlineNanos)
+                val predictionLimit = if (skillPlan) 96 else if (actionPlan) 128 else 256
                 if (schemaAvailable) {
                     runCatching {
-                        executeChat(systemPrompt, userMessage, useSchema = true, numPredict = 128, timeoutMs = remainingMs(deadlineNanos))
+                        executeChat(
+                            systemPrompt, userMessage, useSchema = actionPlan,
+                            numPredict = predictionLimit, timeoutMs = remainingMs(deadlineNanos),
+                            useSkillSchema = skillPlan
+                        )
                     }.getOrElse { schemaError ->
-                        android.util.Log.w("OllamaFormat", "JSON schema request failed; retrying without schema: ${schemaError.message}")
-                        executeChat(systemPrompt, userMessage, useSchema = false, numPredict = 128, timeoutMs = remainingMs(deadlineNanos))
+                        android.util.Log.w("OllamaFormat", "Structured schema request failed; retrying with strict prompt: ${schemaError.message}")
+                        executeChat(
+                            systemPrompt, userMessage, useSchema = false, numPredict = predictionLimit,
+                            timeoutMs = remainingMs(deadlineNanos), useSkillSchema = false
+                        )
                     }
                 } else {
-                    executeChat(systemPrompt, userMessage, useSchema = false, numPredict = if (actionPlan) 128 else 256, timeoutMs = remainingMs(deadlineNanos))
+                    executeChat(
+                        systemPrompt, userMessage, useSchema = false, numPredict = predictionLimit,
+                        timeoutMs = remainingMs(deadlineNanos), useSkillSchema = false
+                    )
                 }
             }
         }
@@ -327,13 +347,16 @@ class OllamaProvider(
         userMessage: String,
         useSchema: Boolean,
         numPredict: Int,
-        timeoutMs: Long
+        timeoutMs: Long,
+        useSkillSchema: Boolean = false
     ): String {
         val request = Request.Builder()
             .url(OllamaResponseParser.buildUrl(baseUrl, "/api/chat"))
             .addHeader("Content-Type", "application/json")
             .post(
-                OllamaResponseParser.buildChatRequestBody(model, systemPrompt, userMessage, useSchema, numPredict)
+                OllamaResponseParser.buildChatRequestBody(
+                    model, systemPrompt, userMessage, useSchema, numPredict, useSkillSchema
+                )
                     .toRequestBody("application/json".toMediaType())
             ).build()
         val started = System.nanoTime()

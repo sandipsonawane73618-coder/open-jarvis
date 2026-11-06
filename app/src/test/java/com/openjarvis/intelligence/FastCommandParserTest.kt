@@ -73,6 +73,15 @@ class FastCommandParserTest {
         assertNull(FastCommandParser.parseSequence("back then home then back then home then back then home"))
     }
 
+    @Test fun recognizesEnglishTimerCommandsAndRejectsInvalidDurations() {
+        assertEquals(FastCommandParser.Command.SetTimer(120), FastCommandParser.parse("Set a timer for 2 minutes"))
+        assertEquals(FastCommandParser.Command.SetTimer(30), FastCommandParser.parse("timer 30 seconds"))
+        assertEquals(FastCommandParser.Command.SetTimer(3600), FastCommandParser.parse("1 hour timer"))
+        assertNull(FastCommandParser.parse("set a timer for many minutes"))
+        assertNull(FastCommandParser.parse("set a timer for 0 seconds"))
+        assertNull(FastCommandParser.parse("set a timer for 25 hours"))
+    }
+
     @Test fun recognizesDialNumberWithoutPlacingCall() {
         assertEquals(FastCommandParser.Command.Dial("+919876543210"), FastCommandParser.parse("call +91 98765 43210"))
     }

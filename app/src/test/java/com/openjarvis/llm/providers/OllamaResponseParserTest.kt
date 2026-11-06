@@ -110,6 +110,22 @@ class OllamaResponseParserTest {
         assertEquals(2048, request.getJSONObject("options").getInt("num_ctx"))
     }
 
+    @Test fun skillRequestUsesOnlySkillAndArgsStructuredSchema() {
+        val request = org.json.JSONObject(OllamaResponseParser.buildChatRequestBody(
+            "qwen3:1.7b", "skill system", "turn on torch",
+            useJsonSchema = false, numPredict = 96, useSkillSchema = true
+        ))
+        val schema = request.getJSONObject("format")
+        val properties = schema.getJSONObject("properties")
+        assertTrue(properties.has("skill"))
+        assertTrue(properties.has("args"))
+        assertFalse(properties.has("action"))
+        assertTrue(schema.getJSONArray("required").toString().contains("skill"))
+        assertTrue(schema.getJSONArray("required").toString().contains("args"))
+        assertEquals(96, request.getJSONObject("options").getInt("num_predict"))
+        assertFalse(request.getBoolean("think"))
+    }
+
     @Test fun plainConversationRequestUsesLargerOutputLimitAndNoSchema() {
         val request = org.json.JSONObject(OllamaResponseParser.buildChatRequestBody(
             "qwen3:1.7b", "system", "hello", useJsonSchema = false, numPredict = 256

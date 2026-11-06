@@ -41,7 +41,9 @@ class SherpaOnnxWakeWordController(
                 keywordsFile = getKeywordsFile(type = 1)
             )
             val createdSpotter = KeywordSpotter(assetManager = appContext.assets, config = config)
-            val createdStream = createdSpotter.createStream("JARVIS")
+            // prepare-sherpa.sh generates the model-compatible BPE keyword file
+            // containing JARVIS. Use the configured file instead of passing raw text.
+            val createdStream = createdSpotter.createStream()
             if (createdStream.ptr == 0L) {
                 createdSpotter.release()
                 throw IllegalStateException("Could not create JARVIS keyword stream")

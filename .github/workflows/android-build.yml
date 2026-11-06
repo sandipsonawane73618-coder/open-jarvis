@@ -10,7 +10,7 @@ on:
       - "settings.gradle"
       - ".github/workflows/android-build.yml"
   pull_request:
-    branches: [feature/jarvis-stable-1.0, feature/jarvis-stable-1.0-phase2-wakeword, feature/jarvis-stable-1.0-phase3-ollama, feature/jarvis-stable-1.0-phase4-command-execution, feature/jarvis-jandal-memory-recall]
+    branches: [feature/jarvis-m3-m5-proactive-hud, feature/jarvis-stable-1.0, feature/jarvis-stable-1.0-phase2-wakeword, feature/jarvis-stable-1.0-phase3-ollama, feature/jarvis-stable-1.0-phase4-command-execution, feature/jarvis-jandal-memory-recall]
     paths:
       - "app/**"
       - "scripts/**"

@@ -32,7 +32,8 @@ internal object OllamaResponseParser {
         systemPrompt: String,
         userMessage: String,
         useJsonSchema: Boolean = false,
-        numPredict: Int = 128
+        numPredict: Int = 128,
+        useSkillSchema: Boolean = false
     ): String =
         JSONObject().apply {
             put("model", model)
@@ -47,7 +48,7 @@ internal object OllamaResponseParser {
                 })
             })
             put("stream", true)
-            if (useJsonSchema) put("format", actionPlanSchema())
+            if (useSkillSchema) put("format", skillPlanSchema()) else if (useJsonSchema) put("format", actionPlanSchema())
             put("think", false)
             put("keep_alive", "30m")
             put("options", JSONObject().apply {
@@ -87,6 +88,47 @@ internal object OllamaResponseParser {
             put("required", JSONArray(listOf("action")))
             put("additionalProperties", false)
         })
+    }
+
+
+    fun skillPlanSchema(): JSONObject {
+        fun actionItemSchema() = JSONObject().apply {
+            put("type", "object")
+            put("properties", JSONObject().apply {
+                put("action", JSONObject().put("type", "string").put("enum", JSONArray(listOf(
+                    "open_app", "click", "tap", "type_text", "type", "scroll", "back",
+                    "press_back", "home", "press_home", "press_recents", "wait", "wait_for",
+                    "read_screen", "ai_prompt", "extract_text", "error"
+                ))))
+                listOf("label", "target", "text", "element", "value", "input", "direction",
+                    "distance", "message", "reason", "prompt", "outputKey", "output_key",
+                    "package", "hint").forEach { put(it, JSONObject().put("type", "string")) }
+                put("timeout_ms", JSONObject().put("type", "integer"))
+            })
+            put("required", JSONArray(listOf("action")))
+            put("additionalProperties", false)
+        }
+        return JSONObject().apply {
+            put("type", "object")
+            put("properties", JSONObject().apply {
+                put("skill", JSONObject().put("type", "string").put("enum", JSONArray(listOf(
+                    "OPEN_APP", "SETTINGS", "CALL", "SEARCH", "WHATSAPP_MESSAGE", "SMS_MESSAGE",
+                    "ALARM", "TIMER", "TORCH", "VOLUME", "MAPS", "ANDROID_UI_ACTIONS", "UNKNOWN"
+                ))))
+                put("args", JSONObject().apply {
+                    put("type", "object")
+                    put("properties", JSONObject().apply {
+                        listOf("app", "screen", "contact", "text", "hour", "minute", "seconds",
+                            "direction", "destination").forEach { put(it, JSONObject().put("type", "string")) }
+                        put("enabled", JSONObject().put("type", "boolean"))
+                        put("actions", JSONObject().put("type", "array").put("items", actionItemSchema()))
+                    })
+                    put("additionalProperties", false)
+                })
+            })
+            put("required", JSONArray(listOf("skill", "args")))
+            put("additionalProperties", false)
+        }
     }
 
     fun stripThinkBlocks(content: String): String = thinkBlock.replace(content, "").trim()
