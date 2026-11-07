@@ -11,6 +11,7 @@ sealed class StepIntent {
     data class Navigate(val place: String) : StepIntent()
     data class Message(val app: String?, val contact: String?, val text: String?) : StepIntent()
     data class AppLaunch(val label: String) : StepIntent()
+    object ScreenRead : StepIntent()
 }
 
 /**
@@ -102,6 +103,13 @@ object StepIntentParser {
         "kam", "kamm", "decrease", "down", "ghatao", "dheema", "कम", "घटाओ", "धीमा"
     )
 
+    private val SCREEN_WORDS = words("screen", "screenshot", "display", "स्क्रीन", "स्क्रीनशॉट", "पडदा")
+    private val SCREEN_ACTION_WORDS = words(
+        "read", "scan", "analyze", "analyse", "capture", "take", "check", "see",
+        "what", "whats", "kya", "dikhta", "dikhao", "padho", "padh",
+        "पढ़ो", "पढो", "दिखाओ", "बताओ", "क्या", "काय", "वाचा", "वाच", "दिसतं", "दिसते"
+    )
+
     private val NAV_WORDS = words(
         "navigate", "navigation", "directions", "direction", "route", "rasta",
         "raasta", "रास्ता", "रस्ता", "नेविगेट", "नेविगेशन"
@@ -122,7 +130,8 @@ object StepIntentParser {
     fun parse(step: String): StepIntent? {
         val tokens = tokenize(step)
         if (tokens.isEmpty()) return null
-        return parseMessage(step)
+        return parseScreenRead(tokens)
+            ?: parseMessage(step)
             ?: parseAlarm(tokens)
             ?: parseTimer(tokens)
             ?: parseTorch(tokens)
@@ -146,6 +155,13 @@ object StepIntentParser {
         while (list.isNotEmpty() && list.first() in noise) list.removeAt(0)
         while (list.isNotEmpty() && list.last() in noise) list.removeAt(list.size - 1)
         return list
+    }
+
+    private fun parseScreenRead(tokens: List<String>): StepIntent.ScreenRead? {
+        if (tokens.none { it in SCREEN_WORDS }) return null
+        val explicitScreenshot = tokens.any { it in words("screenshot", "स्क्रीनशॉट") }
+        if (!explicitScreenshot && tokens.none { it in SCREEN_ACTION_WORDS }) return null
+        return StepIntent.ScreenRead
     }
 
     private fun parseMessage(step: String): StepIntent.Message? {

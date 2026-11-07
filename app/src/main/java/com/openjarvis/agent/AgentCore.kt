@@ -25,6 +25,7 @@ import com.openjarvis.intelligence.FastCommandParser
 import com.openjarvis.intelligence.TaskWorkingMemory
 import com.openjarvis.llm.UniversalAdapter
 import com.openjarvis.vision.VisionModule
+import com.openjarvis.vision.ScreenshotCapture
 import com.openjarvis.skills.AndroidSkillExecutor
 import com.openjarvis.skills.SkillEngine
 import com.openjarvis.skills.SkillRegistry
@@ -1777,6 +1778,25 @@ ${fullSystem.substringAfter("MEMORY:")}
             is StepIntent.AppLaunch -> {
                 run(SkillRegistry.Kind.OPEN_APP, mapOf("app" to intent.label))
                 "Opened ${intent.label}"
+            }
+            StepIntent.ScreenRead -> {
+                val capture = ScreenshotCapture.getInstance(context)
+                if (!capture.isReady()) {
+                    if (!capture.startCapture()) {
+                        throw IllegalStateException("Could not open Android screen-capture permission prompt")
+                    }
+                    "Screen capture permission requested. Allow it, then ask me to read the screen again."
+                } else {
+                    val bitmap = capture.capture()
+                        ?: throw IllegalStateException("Screen capture returned no image; retry after a moment")
+                    try {
+                        val text = visionModule.extractText(bitmap)
+                        if (text.isBlank()) "I captured the screen, but could not read any text."
+                        else text
+                    } finally {
+                        if (!bitmap.isRecycled) bitmap.recycle()
+                    }
+                }
             }
             is StepIntent.Message -> {
                 val contact = intent.contact?.takeIf { it.isNotBlank() } ?: return "Kisko message bhejna hai?"
