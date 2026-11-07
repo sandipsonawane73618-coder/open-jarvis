@@ -18,25 +18,61 @@ class JarvisNotificationListener : NotificationListenerService() {
     
     companion object {
         private val PRIVACY_PROTECTED_APPS = setOf(
+            // India: bank, UPI, wallet and payment apps.
             "com.google.android.apps.nbu.paisa.user",
             "com.phonepe.app",
             "net.one97.paytm",
+            "in.org.npci.upiapp",
+            "com.sbi.lotusintouch",
+            "com.sbi.upi",
+            "com.csam.icici.bank.imobile",
+            "com.icicibank.pockets",
+            "com.snapwork.hdfc",
+            "com.enstage.wibmo.hdfc",
+            "com.axis.mobile",
+            "com.upi.axispay",
+            "com.bankofbaroda.upi",
+            "com.fss.pnbpsp",
+            "com.fss.unbipsp",
+            "com.idfcfirstbank.optimus",
+            "com.fss.idfcpsp",
+            "com.YesBank",
+            "in.irisbyyes.app",
+            "com.lcode.ucoupi",
+            "com.euronet.iobupi",
+            "com.lcode.csbupi",
+            "com.fss.jnkpsp",
+            "com.mycompany.kvb",
+            "com.mobikwik_new",
+            "com.freecharge.android",
+            "com.dreamplug.androidapp",
+            "com.hdfcbank.payzapp",
+            "com.samsung.android.spay",
+            "com.samsung.android.spaymini",
+            "in.amazon.mShop.android.shopping",
+
+            // International banking and payment apps.
             "com.bankofamerica.cashpromobile",
-            "com.chase",
-            "com.wells Fargo",
-            "com.usbank",
-            "com.citi",
-            "com.barclays",
-            "com.hsbc",
-            "com.db",
-            "com.americanexpress",
-            "com.discover",
-            "com.paypal",
-            "com.squareup",
-            "com.stripe",
+            "com.chase.sig.android",
+            "com.wf.wellsfargomobile",
+            "com.usbank.mobilebanking",
+            "com.citi.citimobile",
+            "com.barclaycardus",
+            "com.hsbc.hsbcukmobilebanking",
+            "com.dbs.sg.dbsmbanking",
+            "com.americanexpress.android.acctsvcs.us",
+            "com.discoverfinancial.mobile",
+            "com.paypal.android.p2pmobile",
+            "com.squareup.cash",
             "com.razorpay"
+        ).map { it.lowercase() }.toSet()
+
+        private val FINANCIAL_PACKAGE_MARKERS = setOf(
+            "bank", "banking", ".upi", "paisa", "wallet", "finance",
+            "paytm", "phonepe", "payzapp", "mobikwik", "freecharge",
+            "razorpay", "paypal", "cashapp"
         )
-        
+
         private val messagingApps = listOf(
             "com.whatsapp",
             "com.google.android.apps.messaging",
@@ -49,7 +85,10 @@ class JarvisNotificationListener : NotificationListenerService() {
         )
 
         fun shouldProcessNotification(packageName: String): Boolean {
-            return packageName !in PRIVACY_PROTECTED_APPS
+            val normalized = packageName.trim().lowercase()
+            if (normalized.isEmpty()) return false
+            return normalized !in PRIVACY_PROTECTED_APPS &&
+                FINANCIAL_PACKAGE_MARKERS.none { marker -> normalized.contains(marker) }
         }
     }
     

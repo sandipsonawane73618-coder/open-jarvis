@@ -37,6 +37,7 @@ import androidx.core.content.ContextCompat
 import com.openjarvis.R
 import com.openjarvis.agent.AgentCore
 import com.openjarvis.graphify.GraphifyRepository
+import com.openjarvis.bridge.SocketServer
 import com.openjarvis.graphify.nodes.TaskNode
 import com.openjarvis.voice.VoiceManager
 import com.openjarvis.voice.ActivationGate
@@ -75,6 +76,7 @@ class OverlayService : Service() {
     private lateinit var agentCore: AgentCore
     private lateinit var voiceManager: VoiceManager
     private lateinit var graphifyRepo: GraphifyRepository
+    private var socketServer: SocketServer? = null
     private var wakeWordController: WakeWordEngine? = null
     private var wakeWordControllerKey: String? = null
     private var wakeWordCpuLock: PowerManager.WakeLock? = null
@@ -94,6 +96,7 @@ class OverlayService : Service() {
         agentCore = AgentCore(this)
         voiceManager = VoiceManager(this)
         graphifyRepo = GraphifyRepository(this)
+        socketServer = SocketServer(this, agentCore, graphifyRepo).also { it.start() }
         val microphoneGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         if (Build.VERSION.SDK_INT >= 34) {
             val foregroundTypes = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
@@ -195,6 +198,8 @@ class OverlayService : Service() {
         mainHandler.removeCallbacks(waveformRunnable)
         waveformText = null
         stopWakeWordListening()
+        socketServer?.stop()
+        socketServer = null
         voiceManager.release()
         serviceScope.cancel()
         super.onDestroy()
