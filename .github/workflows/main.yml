@@ -7,6 +7,7 @@ on:
       - feature/jarvis-stable-1.0
       - feature/jarvis-stable-1.0-phase2-wakeword
       - feature/jarvis-jandal-memory-recall
+      - feature/jarvis-advanced-hud-hardening
 
 permissions:
   contents: read

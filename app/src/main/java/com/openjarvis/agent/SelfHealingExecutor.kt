@@ -1,184 +1,80 @@
 package com.openjarvis.agent
 
 import android.content.Context
-import com.openjarvis.accessibility.ScreenReader
-import com.openjarvis.graphify.GraphifyRepository
-import com.openjarvis.llm.UniversalAdapter
+import com.openjarvis.accessibility.JarvisAccessibilityService
 import kotlinx.coroutines.delay
 
+/**
+ * Fail-closed action recovery.
+ *
+ * A UI action is attempted once. If acknowledgement is lost, replaying a tap or
+ * text entry could submit/send twice. The model is never allowed to invent and
+ * execute an alternate action. Only an explicit bounded WAIT is repeatable.
+ */
 class SelfHealingExecutor(private val context: Context) {
-
-    private val screenReader = ScreenReader(context)
-    private val graphifyRepo = GraphifyRepository(context)
-    private val llm = UniversalAdapter(context)
-
-    private val maxAttempts = 3
-    private val baseDelayMs = 1000L
 
     suspend fun executeWithHealing(
         action: Action,
         context: ExecutionContext,
         attempt: Int = 1
     ): ActionResult {
+        val maxAttempts = SelfHealingSafetyPolicy.maxAttempts(action)
+        val firstAttempt = attempt.coerceAtLeast(1).coerceAtMost(maxAttempts)
 
-        val result = tryExecuteAction(action, context)
-
-        if (result is ActionResult.Success) return result
-
-        if (attempt >= maxAttempts) {
-            return ActionResult.Failed(
-                "Could not complete after $maxAttempts attempts"
-            )
-        }
-
-        val currentScreen = screenReader.extractAllText()
-
-        val healingPrompt = buildHealingPrompt(
-            action,
-            context,
-            currentScreen,
-            attempt
-        )
-
-        val alternativeResponse: String? = try {
-            llm.complete(
-                healingPrompt.first,
-                healingPrompt.second
-            ).getOrNull()
-        } catch (e: Exception) {
-            null
-        }
-
-        delay(baseDelayMs * attempt)
-
-        if (!alternativeResponse.isNullOrBlank()) {
-            val alternativeAction =
-                parseActionFromLLM(alternativeResponse)
-
-            if (alternativeAction != null) {
-                return executeWithHealing(
-                    alternativeAction,
-                    context,
-                    attempt + 1
-                )
+        for (currentAttempt in firstAttempt..maxAttempts) {
+            val result = tryExecuteAction(action)
+            if (result is ActionResult.Success) return result
+            if (currentAttempt >= maxAttempts) return result
+            if (action.action == Action.WAIT) {
+                delay(SelfHealingSafetyPolicy.boundedWaitMs(action))
             }
         }
-
-        return executeWithHealing(
-            action,
-            context,
-            attempt + 1
-        )
+        return ActionResult.Failed("Action could not be completed safely")
     }
 
-    private fun tryExecuteAction(
-        action: Action,
-        context: ExecutionContext
-    ): ActionResult {
-
+    private suspend fun tryExecuteAction(action: Action): ActionResult {
         return try {
-            val service =
-                com.openjarvis.accessibility.JarvisAccessibilityService.instance
-
             when (action.action) {
-
-                Action.TAP -> {
-                    val tapped =
-                        service?.tapByText(action.text ?: "") == true
-
-                    if (tapped) {
-                        ActionResult.Success("tapped ${action.text}")
-                    } else {
-                        ActionResult.Failed("tap failed")
-                    }
+                Action.WAIT -> {
+                    delay(SelfHealingSafetyPolicy.boundedWaitMs(action))
+                    ActionResult.Success("wait completed")
                 }
-
-                Action.TYPE -> {
-                    val typed =
-                        service?.typeText(action.value ?: "") == true
-
-                    if (typed) {
-                        ActionResult.Success("typed ${action.value}")
-                    } else {
-                        ActionResult.Failed("type failed")
-                    }
+                Action.TAP, Action.CLICK -> {
+                    val target = action.text ?: action.hint
+                    if (target.isNullOrBlank()) ActionResult.Failed("tap target missing")
+                    else if (JarvisAccessibilityService.instance?.tapByText(target) == true)
+                        ActionResult.Success("tap acknowledged")
+                    else ActionResult.Failed("tap was not acknowledged")
                 }
-
+                Action.TYPE, Action.TYPE_TEXT -> {
+                    val value = action.value
+                    if (value.isNullOrEmpty()) ActionResult.Failed("text value missing")
+                    else if (JarvisAccessibilityService.instance?.typeText(value) == true)
+                        ActionResult.Success("text entry acknowledged")
+                    else ActionResult.Failed("text entry was not acknowledged")
+                }
                 Action.OPEN_APP -> {
-                    val opened =
-                        service?.openAppByPackage(
-                            action.packageName ?: ""
-                        )
-
-                    if (opened == true) {
-                        ActionResult.Success("opened ${action.packageName}")
-                    } else {
-                        ActionResult.Failed("app open failed")
+                    val service = JarvisAccessibilityService.instance
+                    val opened = when {
+                        service == null -> false
+                        !action.packageName.isNullOrBlank() -> service.openAppByPackage(action.packageName)
+                        !action.label.isNullOrBlank() -> service.openAppByLabel(action.label)
+                        else -> false
                     }
+                    if (opened) ActionResult.Success("app launch acknowledged")
+                    else ActionResult.Failed("app launch was not acknowledged")
                 }
-
-                Action.PRESS_BACK -> {
+                Action.PRESS_BACK, Action.BACK -> {
+                    val service = JarvisAccessibilityService.instance
                     if (service != null) {
                         service.pressBack()
-                        ActionResult.Success("pressed back")
-                    } else {
-                        ActionResult.Failed("accessibility service unavailable")
-                    }
+                        ActionResult.Success("back action dispatched")
+                    } else ActionResult.Failed("accessibility service unavailable")
                 }
-
-                else -> {
-                    ActionResult.Success(
-                        "action ${action.action} executed"
-                    )
-                }
+                else -> ActionResult.Failed("unsupported action; no automatic recovery attempted")
             }
-
-        } catch (e: Exception) {
-            ActionResult.Failed(
-                e.message ?: "Unknown error"
-            )
-        }
-    }
-
-    private fun buildHealingPrompt(
-        action: Action,
-        context: ExecutionContext,
-        currentScreen: String,
-        attempt: Int
-    ): Pair<String, String> {
-
-        val system = """
-Action failed: ${action.action}
-Expected to see: ${context.expectedState ?: "task completion"}
-Current screen shows: ${currentScreen.take(500)}
-Attempt: $attempt/$maxAttempts
-
-What went wrong and what alternative action should I try?
-Respond with a single alternative Action JSON.
-        """.trimIndent()
-
-        return system to """
-The action failed. Current screen: "$currentScreen"
-Give me one alternative action that might work.
-        """.trimIndent()
-    }
-
-    private fun parseActionFromLLM(
-        llmResponse: String
-    ): Action? {
-
-        return try {
-            val json = org.json.JSONObject(llmResponse.trim())
-
-            Action(
-                action = json.getString("action"),
-                text = json.optString("text", null),
-                value = json.optString("value", null),
-                packageName = json.optString("package", null)
-            )
-
-        } catch (e: Exception) {
-            null
+        } catch (_: Exception) {
+            ActionResult.Failed("action failed; no automatic replay attempted")
         }
     }
 
