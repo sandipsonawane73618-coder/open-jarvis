@@ -160,7 +160,11 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         mainHandler.removeCallbacks(overlayWatchdog)
-        try { overlayView?.let { windowManager?.removeView(it) } } catch (_: Exception) { }
+        val viewToRemove = overlayView ?: if (activeInstance === this) attachedOverlayView else null
+        try {
+            viewToRemove?.let { (getSystemService(WINDOW_SERVICE) as WindowManager).removeViewImmediate(it) }
+        } catch (_: Exception) { }
+        if (attachedOverlayView === viewToRemove) attachedOverlayView = null
         overlayView = null
         visualState = "IDLE"
         mainHandler.removeCallbacks(waveformRunnable)
@@ -176,7 +180,22 @@ class OverlayService : Service() {
 
     private fun attachAssistant() {
         if (!Settings.canDrawOverlays(this)) return
+        // Only the currently registered service instance may own the floating window.
+        if (activeInstance !== this) return
         if (overlayView?.isAttachedToWindow == true) return
+
+        // Reconcile a previously registered window before creating another one.
+        // This covers service recreation where the instance-local view reference was lost.
+        attachedOverlayView?.let { previous ->
+            if (previous.isAttachedToWindow) {
+                try {
+                    (getSystemService(WINDOW_SERVICE) as WindowManager).removeViewImmediate(previous)
+                } catch (e: Exception) {
+                    android.util.Log.w("OpenJarvis", "Could not remove stale JARVIS overlay", e)
+                }
+            }
+            attachedOverlayView = null
+        }
         // A stale detached View must not block recreation of the floating overlay.
         overlayView = null
         try {
@@ -334,6 +353,7 @@ class OverlayService : Service() {
             windowParams = params
             windowManager?.addView(root, params)
             overlayView = root
+            attachedOverlayView = root
         } catch (e: Exception) {
             android.util.Log.e("OpenJarvis", "Unable to attach assistant overlay", e)
         }
@@ -428,6 +448,7 @@ class OverlayService : Service() {
 
     companion object {
         @Volatile private var activeInstance: OverlayService? = null
+        @Volatile private var attachedOverlayView: LinearLayout? = null
         private const val CHANNEL_ID = "jarvis_overlay_channel"
         private const val NOTIFICATION_ID = 1
         private const val OVERLAY_WATCHDOG_INTERVAL_MS = 1_500L

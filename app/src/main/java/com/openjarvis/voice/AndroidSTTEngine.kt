@@ -41,6 +41,8 @@ class AndroidSTTEngine(private val context: Context) : STTEngine {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var sessionActive = false
     private var retryAttempt = 0
+    private var recognitionFallbacks: List<String> = emptyList()
+    private var recognitionLocaleIndex = 0
     private var silenceStartTime = -1L
     private var recordingStartTime = -1L
     private var retryRunnable: Runnable? = null
@@ -81,7 +83,9 @@ class AndroidSTTEngine(private val context: Context) : STTEngine {
                     val message = when (error) {
                         SpeechRecognizer.ERROR_AUDIO -> "Audio recording error"
                         SpeechRecognizer.ERROR_CLIENT -> "Client error"
-                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Missing permissions"
+                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Missing microphone permission"
+                        SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED -> "Recognition language is not supported"
+                        SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> "Recognition language pack is unavailable"
                         SpeechRecognizer.ERROR_NETWORK -> "Network error"
                         SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network timeout"
                         SpeechRecognizer.ERROR_NO_MATCH -> "No speech detected"
@@ -90,7 +94,19 @@ class AndroidSTTEngine(private val context: Context) : STTEngine {
                         SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Speech timeout"
                         else -> "Speech recognition error ($error)"
                     }
-                    if (sessionActive && error in RECOVERABLE_ERRORS) {
+                    if (sessionActive && (error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE ||
+                            error == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED)) {
+                        if (recognitionLocaleIndex + 1 < recognitionFallbacks.size) {
+                            val failedLocale = recognitionFallbacks[recognitionLocaleIndex]
+                            recognitionLocaleIndex++
+                            val nextLocale = recognitionFallbacks[recognitionLocaleIndex]
+                            currentErrorCallback?.invoke("$failedLocale speech pack unavailable; trying $nextLocale")
+                            scheduleRetry(error)
+                        } else {
+                            sessionActive = false
+                            currentErrorCallback?.invoke("Hindi, Marathi and English offline speech packs are unavailable. Install an offline language pack in Android Speech Services settings, then retry. Jarvis will not use cloud recognition.")
+                        }
+                    } else if (sessionActive && error in RECOVERABLE_ERRORS) {
                         currentErrorCallback?.invoke("RETRYING: $message")
                         scheduleRetry(error)
                     } else {
@@ -108,6 +124,8 @@ class AndroidSTTEngine(private val context: Context) : STTEngine {
                     if (!text.isNullOrBlank()) {
                         sessionActive = false
                         retryAttempt = 0
+                        recognitionFallbacks = emptyList()
+                        recognitionLocaleIndex = 0
                         currentCallback?.invoke(text)
                     } else {
                         sessionActive = true
@@ -142,6 +160,8 @@ class AndroidSTTEngine(private val context: Context) : STTEngine {
         currentErrorCallback = onError
         pendingResult = null
         retryAttempt = 0
+        recognitionFallbacks = emptyList()
+        recognitionLocaleIndex = 0
         sessionActive = true
         mainHandler.post {
             retryRunnable?.let(mainHandler::removeCallbacks)
@@ -164,10 +184,15 @@ class AndroidSTTEngine(private val context: Context) : STTEngine {
         silenceStartTime = -1L
         val deviceLanguage = Locale.getDefault().language
         val preferredLanguage = SpeechLanguage.preferredRecognitionLocale(deviceLanguage)
+        if (recognitionFallbacks.isEmpty()) {
+            recognitionFallbacks = SpeechLanguage.recognitionFallbacks(preferredLanguage)
+            recognitionLocaleIndex = 0
+        }
+        val activeLanguage = recognitionFallbacks.getOrNull(recognitionLocaleIndex) ?: preferredLanguage
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, preferredLanguage)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, preferredLanguage)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, activeLanguage)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, activeLanguage)
             if (android.os.Build.VERSION.SDK_INT >= 34) {
                 putExtra("android.speech.extra.ENABLE_LANGUAGE_DETECTION", true)
                 putStringArrayListExtra("android.speech.extra.LANGUAGE_DETECTION_ALLOWED_LANGUAGES",
