@@ -6,6 +6,7 @@ on:
     branches:
       - feature/jarvis-stable-1.0
       - feature/jarvis-stable-1.0-phase2-wakeword
+      - feature/jarvis-jandal-memory-recall
 
 permissions:
   contents: read
@@ -42,6 +43,35 @@ jobs:
           target: google_apis
           arch: x86_64
           script: bash scripts/smoke-minimal.sh
+
+      # Always collect diagnostics, including when the smoke test fails.
+      - name: Capture emulator crash diagnostics
+        if: always()
+        timeout-minutes: 2
+        run: |
+          mkdir -p emulator-diagnostics
+          safe_adb() {
+            label="$1"
+            shift
+            if command -v timeout >/dev/null 2>&1; then
+              timeout 12s adb "$@" > "emulator-diagnostics/${label}.txt" 2>&1 || echo "Diagnostic command unavailable or timed out: adb $*" >> "emulator-diagnostics/${label}.txt"
+            else
+              adb "$@" > "emulator-diagnostics/${label}.txt" 2>&1 || echo "Diagnostic command failed: adb $*" >> "emulator-diagnostics/${label}.txt"
+            fi
+          }
+          safe_adb logcat logcat -b all -d -v threadtime
+          safe_adb activities shell dumpsys activity activities
+          safe_adb services shell dumpsys activity services
+          safe_adb package shell dumpsys package com.openjarvis
+          grep -Ei "FATAL EXCEPTION|AndroidRuntime|am_crash|ANR in|Process .* has died|Fatal signal" emulator-diagnostics/logcat.txt > emulator-diagnostics/crash-summary.txt || true
+
+      - name: Upload emulator diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-emulator-crash-diagnostics
+          path: emulator-diagnostics/
+          if-no-files-found: warn
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

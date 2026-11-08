@@ -80,6 +80,11 @@ class JarvisAccessibilityService : AccessibilityService() {
      */
     fun tapByText(text: String): Boolean {
         if (text.isBlank()) return false
+        val numberedTarget = Regex("^#?(\\d{1,2})$").matchEntire(text.trim())
+        if (numberedTarget != null) {
+            val index = numberedTarget.groupValues[1].toIntOrNull() ?: return false
+            return tapVisibleInteractiveElement(index)
+        }
         val roots = interactionRoots()
         for (index in roots.indices) {
             if (tapInRoot(roots[index], text.trim())) {
@@ -224,13 +229,46 @@ class JarvisAccessibilityService : AccessibilityService() {
         }
     }
 
+    /** Read visible text from the target app and other interactive windows.
+     * The floating assistant can own rootInActiveWindow, so inspect every window.
+     */
+    fun extractVisibleText(maxCharacters: Int = 12000): String {
+        val roots = interactionRoots()
+        val output = linkedSetOf<String>()
+        for (root in roots) {
+                val queue = ArrayDeque<AccessibilityNodeInfo>()
+                queue.add(AccessibilityNodeInfo.obtain(root))
+                try {
+                    while (queue.isNotEmpty() && output.sumOf { it.length } < maxCharacters) {
+                        val node = queue.removeFirst()
+                        if (node.isVisibleToUser) {
+                            node.text?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let(output::add)
+                            node.contentDescription?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let(output::add)
+                        }
+                        for (index in 0 until node.childCount) {
+                            node.getChild(index)?.let(queue::add)
+                        }
+                        node.recycle()
+                    }
+                } finally {
+                    while (queue.isNotEmpty()) queue.removeFirst().recycle()
+                    root.recycle()
+                }
+                if (output.sumOf { it.length } >= maxCharacters) {
+                    for (remaining in roots.dropWhile { it !== root }.drop(1)) remaining.recycle()
+                    break
+                }
+        }
+        return output.joinToString(" ").take(maxCharacters)
+    }
+
     /**
      * Compact live UI map for the planner. Includes icon descriptions and Android
      * resource ids so the model does not assume every control has a text label.
      */
     fun describeVisibleInteractiveElements(maxItems: Int = 60): String {
         val roots = interactionRoots()
-        val lines = linkedSetOf<String>()
+        val lines = mutableListOf<String>()
         for (root in roots) {
             val queue = ArrayDeque<AccessibilityNodeInfo>()
             queue.add(AccessibilityNodeInfo.obtain(root))
@@ -251,7 +289,8 @@ class JarvisAccessibilityService : AccessibilityService() {
                                 node.isClickable -> "clickable"
                                 else -> "long-clickable"
                             }
-                            lines.add("[$kind] $label")
+                            val bounds = android.graphics.Rect().also(node::getBoundsInScreen)
+                            lines.add("[#${lines.size + 1} $kind] $label bounds=${bounds.left},${bounds.top},${bounds.right},${bounds.bottom}")
                         }
                     }
                     for (index in 0 until node.childCount) {
@@ -266,6 +305,53 @@ class JarvisAccessibilityService : AccessibilityService() {
             if (lines.size >= maxItems) break
         }
         return lines.joinToString("\\n")
+    }
+
+    /** Android-use-style indexed lookup over the same visible control order shown to the planner. */
+    private fun tapVisibleInteractiveElement(targetIndex: Int): Boolean {
+        if (targetIndex !in 1..60) return false
+        val roots = interactionRoots()
+        var currentIndex = 0
+        for (rootIndex in roots.indices) {
+            val root = roots[rootIndex]
+            val queue = ArrayDeque<AccessibilityNodeInfo>()
+            queue.add(AccessibilityNodeInfo.obtain(root))
+            try {
+                while (queue.isNotEmpty()) {
+                    val node = queue.removeFirst()
+                    if (node.isVisibleToUser && (node.isClickable || node.isEditable || node.isLongClickable)) {
+                        currentIndex++
+                        if (currentIndex == targetIndex) {
+                            var candidate: AccessibilityNodeInfo? = AccessibilityNodeInfo.obtain(node)
+                            for (depth in 0..8) {
+                                val current = candidate ?: break
+                                if (current.isVisibleToUser && current.isEnabled && current.isClickable) {
+                                    val clicked = current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                                    current.recycle()
+                                    candidate = null
+                                    while (queue.isNotEmpty()) queue.removeFirst().recycle()
+                                    for (remaining in rootIndex + 1 until roots.size) roots[remaining].recycle()
+                                    return clicked
+                                }
+                                val parent = current.parent
+                                current.recycle()
+                                candidate = parent
+                            }
+                            candidate?.recycle()
+                            while (queue.isNotEmpty()) queue.removeFirst().recycle()
+                            for (remaining in rootIndex + 1 until roots.size) roots[remaining].recycle()
+                            return false
+                        }
+                    }
+                    for (index in 0 until node.childCount) node.getChild(index)?.let(queue::add)
+                    node.recycle()
+                }
+            } finally {
+                root.recycle()
+                while (queue.isNotEmpty()) queue.removeFirst().recycle()
+            }
+        }
+        return false
     }
 
     fun pressBack() = performGlobalAction(GLOBAL_ACTION_BACK)

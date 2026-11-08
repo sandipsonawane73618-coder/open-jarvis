@@ -23,7 +23,7 @@ internal object FastCommandParser {
     }
 
     private val englishOpen = Regex("^(?:please\\s+)?(?:open|launch|start)\\s+(.+)$", RegexOption.IGNORE_CASE)
-    private val hindiOpen = Regex("^(.+?)\\s+(?:kholo|khol\\s+do|open\\s+karo|उघडा|उघड)$", RegexOption.IGNORE_CASE)
+    private val hindiOpen = Regex("^(.+?)\\s+(?:kholo|khol\\s+do|open\\s+karo|खोलो|खोल\\s+दो|खोलें|उघडा|उघड|उघडा\\s+ना)$", RegexOption.IGNORE_CASE)
     private val close = Regex("^(?:please\\s+)?(?:close|exit|band\\s+karo|band\\s+kar\\s+do)(?:\\s+(?:the\\s+)?app)?$", RegexOption.IGNORE_CASE)
     private val dial = Regex("^(?:call|dial|phone|mujhe\\s+call\\s+karo|call\\s+karo)\\s+([+0-9][+0-9() .-]{4,})$", RegexOption.IGNORE_CASE)
     private val youtubeSearch = Regex("^youtube\\s+(?:par\\s+)?(.+?)\\s+(?:search|dhundo|khojo)(?:\\s+karo)?$", RegexOption.IGNORE_CASE)
@@ -69,8 +69,8 @@ internal object FastCommandParser {
             return Command.ShowNotifications
         }
         if (close.matches(normalized)) return Command.CloseCurrentApp
-        if (normalized.matches(Regex("^(?:back|go back|pichhe|peeche|wapas|वापस|मागे|मागे जा)$", RegexOption.IGNORE_CASE))) return Command.Back
-        if (normalized.matches(Regex("^(?:home|go home|ghar|होम|मुख्यपृष्ठ|घरी जा)$", RegexOption.IGNORE_CASE))) return Command.Home
+        if (normalized.matches(Regex("^(?:back|go back|pichhe|peeche|wapas|वापस|वापस जाओ|पीछे जाओ|मागे|मागे जा|मागे चला)$", RegexOption.IGNORE_CASE))) return Command.Back
+        if (normalized.matches(Regex("^(?:home|go home|ghar|होम|होम पर जाओ|घर जाओ|मुख्यपृष्ठ|घरी जा)$", RegexOption.IGNORE_CASE))) return Command.Home
 
         val scroll = Regex("^(?:scroll|स्क्रॉल)\\s*(up|down|upar|neeche|ऊपर|नीचे|वर|खाली)?$", RegexOption.IGNORE_CASE).matchEntire(normalized)
         if (scroll != null) {
@@ -104,15 +104,21 @@ internal object FastCommandParser {
         val normalized = normalize(command)
         if (normalized.isBlank()) return null
         val match = englishOpen.matchEntire(normalized) ?: hindiOpen.matchEntire(normalized) ?: return null
-        return match.groupValues[1].trim().takeIf { target ->
-            target.isNotBlank() &&
-                target.length <= 60 &&
-                // A fast-path target must be only an app label. Compound requests
-                // (open WhatsApp and send a message...) must reach the AI planner.
-                !Regex(
-                    "\\b(and|then|also|aur|phir|fir|send|message|text|reply|type|search|play|karo)\\b",
-                    RegexOption.IGNORE_CASE
-                ).containsMatchIn(target)
+        val target = match.groupValues[1].trim()
+        if (target.isBlank() || target.length > 60) return null
+        // Canonicalize common Devanagari app names so package/installed-label
+        // resolution receives a stable target instead of a translated display name.
+        val canonicalTarget = when (target.lowercase()) {
+            "यूट्यूब", "यु ट्यूब", "यूट्युब", "युट्युब" -> "YouTube"
+            else -> target
+        }
+        // A fast-path target must be only an app label. Compound requests
+        // (open WhatsApp and send a message...) must reach the AI planner.
+        return canonicalTarget.takeIf {
+            !Regex(
+                "\\b(and|then|also|aur|phir|fir|send|message|text|reply|type|search|play|karo)\\b",
+                RegexOption.IGNORE_CASE
+            ).containsMatchIn(it)
         }
     }
 

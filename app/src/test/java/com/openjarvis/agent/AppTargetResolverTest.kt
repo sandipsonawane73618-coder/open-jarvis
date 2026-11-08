@@ -40,6 +40,13 @@ class AppTargetResolverTest {
         }
     }
 
+    @Test fun resolvesChatGptByPackageAliasEvenWhenDisplayedLabelDiffers() {
+        val result = AppTargetResolver.findMentionedApps("chat gpt kholo", listOf(
+            InstalledAppTarget("OpenAI", "com.openai.chatgpt")
+        ))
+        assertEquals("com.openai.chatgpt", result?.singleOrNull()?.packageName)
+    }
+
     @Test fun learnedAliasesCanBeProvidedWithoutChangingResolver() {
         val result = AppTargetResolver.findMentionedApps(
             "photo app kholo",

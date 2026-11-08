@@ -8,6 +8,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,6 +35,7 @@ class VoiceManager(private val context: Context) {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val stateMachine = VoiceSessionStateMachine()
     private var continuousSession = false
+    private var resumeListeningJob: Job? = null
 
     private val _state = MutableStateFlow<VoiceState>(VoiceState.Idle)
     val state: StateFlow<VoiceState> = _state.asStateFlow()
@@ -68,6 +72,8 @@ class VoiceManager(private val context: Context) {
     }
 
     fun startListening() {
+        resumeListeningJob?.cancel()
+        resumeListeningJob = null
         if (!isVoiceEnabled()) {
             _state.value = VoiceState.Error("Voice disabled in settings")
             return
@@ -134,7 +140,13 @@ class VoiceManager(private val context: Context) {
     private fun resumeAfterResponse() {
         if (continuousSession) {
             stateMachine.onSpeakingFinished(true)
-            beginRecognition()
+            // Some Android speech services keep the recognizer busy briefly after TTS.
+            // Restart on the main scope after a short hand-off instead of racing onDone.
+            resumeListeningJob?.cancel()
+            resumeListeningJob = scope.launch {
+                delay(450)
+                if (continuousSession) beginRecognition()
+            }
         } else {
             stateMachine.onSpeakingFinished(false)
             _state.value = VoiceState.Idle
@@ -151,6 +163,8 @@ class VoiceManager(private val context: Context) {
 
     fun release() {
         continuousSession = false
+        resumeListeningJob?.cancel()
+        resumeListeningJob = null
         stateMachine.stop()
         sttEngine.release()
         ttsEngine.release()

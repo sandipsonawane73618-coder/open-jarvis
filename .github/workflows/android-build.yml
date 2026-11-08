@@ -10,7 +10,7 @@ on:
       - "settings.gradle"
       - ".github/workflows/android-build.yml"
   pull_request:
-    branches: [feature/jarvis-stable-1.0, feature/jarvis-stable-1.0-phase2-wakeword, feature/jarvis-stable-1.0-phase3-ollama, feature/jarvis-stable-1.0-phase4-command-execution]
+    branches: [feature/jarvis-stable-1.0, feature/jarvis-stable-1.0-phase2-wakeword, feature/jarvis-stable-1.0-phase3-ollama, feature/jarvis-stable-1.0-phase4-command-execution, feature/jarvis-jandal-memory-recall, feature/jarvis-m3-m5-proactive-hud]
     paths:
       - "app/**"
       - "scripts/**"
@@ -33,6 +33,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Prepare sherpa-onnx runtime and required offline JARVIS KWS model
+        run: |
+          bash scripts/prepare-sherpa.sh all
+          test -s app/src/main/assets/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01/encoder-epoch-12-avg-2-chunk-16-left-64.onnx
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -63,6 +68,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Prepare sherpa-onnx runtime and required offline JARVIS KWS model
+        run: |
+          bash scripts/prepare-sherpa.sh all
+          test -s app/src/main/assets/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01/encoder-epoch-12-avg-2-chunk-16-left-64.onnx
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4

@@ -1,38 +1,36 @@
 # Open-source integration record
 
-This document records selectively implemented architecture ideas. It does not imply that upstream applications or their source trees were copied into JARVIS.
+This document distinguishes JARVIS-native Android implementations and service adapters from upstream projects that require a separate host/model runtime. No upstream application is copied wholesale into the APK.
 
-## Jandal AI — local memory recall
+## LocalAI — optional OpenAI-compatible LLM connector
 
-Upstream: https://github.com/NickMonrad/kernel-ai-assistant  
-License: Apache-2.0 (see upstream LICENSE)
+- `LocalAiProvider` implements the existing `LLMProvider` contract using LocalAI's `/v1/chat/completions` and `/v1/models` endpoints.
+- Supports an optional bearer token and either a server root URL or a URL already ending in `/v1`.
+- It is an optional provider class. The active `UniversalAdapter` default remains the user's existing local Ollama / Qwen3 setup; this integration does not silently switch providers.
+- LocalAI server deployment and model weights are not bundled into the Android APK.
 
-Integrated in JARVIS:
-- Bounded local relevance retrieval over facts the user explicitly saved.
-- Query-token overlap ranking with deterministic tie-breaking.
-- English, Hindi, and Marathi stop-word handling.
-- At most three recalled facts and 360 characters are added to an action-planning prompt.
-- Retrieval runs locally; it adds no embedding model, network request, background worker, or resident LLM.
-- Existing encrypted SharedPreferences storage and explicit remember/forget controls remain authoritative.
+## android-use — native Accessibility action bridge
 
-JARVIS implementation:
-- `PersonalMemoryCodec.retrieve` and `promptContext(items, query)`
-- `AgentCore` injects only relevant saved facts into the planner context.
-- `PersonalMemoryRecallTest` covers relevance, multilingual tokens, unrelated-query privacy, and bounds.
+- `AndroidUseBridge` exposes bounded screen observation and tap/type/scroll/back/home actions through the existing `JarvisAccessibilityService`.
+- This is the Android-native on-device equivalent for the observe/act surface. It does not embed android-use's Python/ADB host runtime.
+- Android Accessibility permission remains user-controlled. The bridge does not add unattended messaging/payment actions.
 
-This is a JARVIS-native implementation of the local semantic-recall pattern, not copied Jandal source code. It is lexical relevance matching, not vector embeddings; semantic embeddings remain a future optional upgrade after on-device performance testing.
+## MobileAgent — external vision-agent adapter
 
-## OpenDroid — guarded plan re-evaluation
+- `MobileAgentClient` sends a JPEG screenshot and task to a separately hosted service and validates the returned action against a strict allow-list (`tap/type/scroll/back/home/wait/done`).
+- The adapter's JARVIS wire contract is `{task,image,image_mime_type,response_format}` and a response with `action` plus optional `target/text/rationale`.
+- The upstream MobileAgent Python/model runtime and model weights are not embedded in this APK. A compatible endpoint must be configured by a future settings/UI wiring step.
 
-Upstream: https://github.com/yashab-cyber/opendroid  
-License: Apache-2.0 (see upstream LICENSE)
+## OmniParser — external visual grounding adapter
 
-The current JARVIS branch already contains a native guarded re-evaluation policy in `AgentReEvaluationPolicy`: replanning is restricted to navigation/observation-only steps, and potentially side-effecting completed actions are not replayed. This policy predates this memory-recall integration branch; this change does not replace it with OpenDroid's application or agent loop.
+- `OmniParserClient` sends a JPEG screenshot to a separately hosted parser and validates normalized element boxes, confidence values, and a 300-element response cap.
+- Its JARVIS response contract is `{elements:[{id,label,content_description,box:{x,y,width,height},confidence}]}`; coordinates are normalized to 0..1.
+- OmniParser model weights/runtime are not embedded in the APK. A compatible endpoint must be configured before this capability can be used on-device.
 
 ## Compatibility and safety decisions
 
-- Keep the existing Java 17 / Gradle 8.2 / compileSdk 34 toolchain.
-- Do not import upstream app modules, provider stacks, databases, or model runtimes wholesale.
-- Keep Qwen3 1.7B and the existing Ollama provider path unchanged.
-- No automatic memory creation: only explicit user-saved facts can be recalled.
-- No external network access or background model loading is introduced.
+- Keep Java 17 / Gradle 8.2 / compileSdk 34 and the existing app architecture.
+- Keep Qwen3 1.7B and Ollama as the active default; all network connectors are optional.
+- Vision service calls require explicit configured HTTP(S) endpoints. Local network HTTP may be used for LAN inference; do not expose these endpoints to the public internet without authentication.
+- Vision-agent output is only a proposed UI action. It must pass through the existing JARVIS action policy and user confirmation rules before execution.
+- No external model runtime is downloaded or started automatically by the APK.
