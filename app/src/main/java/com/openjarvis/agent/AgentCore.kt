@@ -32,6 +32,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.util.Locale
 
 class AgentCore(private val context: Context) {
 
@@ -84,8 +85,18 @@ INSTALLED APPS: {INSTALLED_APPS}
     ): Result<String> {
         val remaining = remainingLlmBudgetMs(budgetStartMs)
         if (remaining <= 0L) return Result.failure(IllegalStateException("LLM time budget exceeded (45 seconds). Try a shorter command."))
+        // Compress system/context material only. Keep the user's command byte-identical.
+        // POLICY mode removes redundant blank lines but never rewrites nonblank instructions.
+        val headroom = HeadroomLite.compress(system, HeadroomLite.ContentKind.POLICY)
+        if (headroom.savedChars > 0) {
+            Log.i(
+                TAG,
+                "headroom_lite stage=system_prompt saved_chars=${headroom.savedChars} " +
+                    "saved_tokens_est=${headroom.savedTokens} ratio=${"%.3f".format(Locale.US, headroom.compressionRatio)}"
+            )
+        }
         return withTimeoutOrNull(remaining) {
-            universalAdapter.completeWithDeadline(system, user, remaining, conversation)
+            universalAdapter.completeWithDeadline(headroom.content, user, remaining, conversation)
         } ?: Result.failure(IllegalStateException("LLM time budget exceeded (45 seconds). Try a shorter command."))
     }
 

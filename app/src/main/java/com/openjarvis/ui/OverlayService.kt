@@ -153,7 +153,18 @@ class OverlayService : Service() {
                     is VoiceManager.VoiceState.Recording -> setVisualState("LISTENING", "Listening… speak now")
                     is VoiceManager.VoiceState.Transcribing -> setVisualState("THINKING", "Thinking…")
                     is VoiceManager.VoiceState.Speaking -> setVisualState("SPEAKING", "Speaking…")
-                    is VoiceManager.VoiceState.Idle -> setVisualState("IDLE", "Ready — type a command or use mic")
+                    is VoiceManager.VoiceState.Idle -> {
+                        // Voice capture can become Idle immediately after handing a command
+                        // to AgentCore. Do not let that transient event hide the HUD's
+                        // THINKING state while the agent is still executing.
+                        if (agentCore.state.value is com.openjarvis.agent.AgentState.Running) {
+                            setVisualState("THINKING", "Jarvis is working…")
+                        } else if (mutedUntilWakeWord) {
+                            setVisualState("IDLE", "MUTED — say Jarvis to wake")
+                        } else {
+                            setVisualState("IDLE", "Ready — type a command or use mic")
+                        }
+                    }
                 }
             }
         }
