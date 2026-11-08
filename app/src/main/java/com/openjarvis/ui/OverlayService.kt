@@ -321,6 +321,12 @@ class OverlayService : Service() {
             actions.addView(mic, LinearLayout.LayoutParams(actionWidth, dp(48)))
             actions.addView(send, LinearLayout.LayoutParams(actionWidth, dp(48)))
             commandPanel.addView(actions, LinearLayout.LayoutParams(-1, -2))
+            val shareReport = Button(this).apply {
+                text = "Share Diagnostic Report"
+                isAllCaps = false
+                setOnClickListener { shareLatestDiagnostic() }
+            }
+            commandPanel.addView(shareReport, LinearLayout.LayoutParams(-1, dp(42)))
             root.addView(commandPanel)
             panel = commandPanel
             isExpanded = false
@@ -395,6 +401,21 @@ class OverlayService : Service() {
         voiceManager.markThinking()
         agentCore.executeTask(command)
         commandInput?.text?.clear()
+    }
+
+    private fun shareLatestDiagnostic() {
+        val report = com.openjarvis.agent.AgentDiagnostics.latest(this)
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "Open Jarvis Diagnostic Report")
+            putExtra(Intent.EXTRA_TEXT, report)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            startActivity(Intent.createChooser(sendIntent, "Share Jarvis diagnostic").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (error: Exception) {
+            Toast.makeText(this, "Unable to open sharing options: ${error.javaClass.simpleName}", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun copyLatestDebugLog() {

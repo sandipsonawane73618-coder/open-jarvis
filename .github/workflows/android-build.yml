@@ -14,7 +14,7 @@ on:
       - "settings.gradle"
       - ".github/workflows/android-build.yml"
   pull_request:
-    branches: [feature/jarvis-m3-m5-proactive-hud, feature/jarvis-stable-1.0, feature/jarvis-stable-1.0-phase2-wakeword, feature/jarvis-stable-1.0-phase3-ollama, feature/jarvis-stable-1.0-phase4-command-execution, feature/jarvis-jandal-memory-recall, feature/jarvis-slice-c-router-llm-schema, feature/jarvis-phase1-p0-security, feature/jarvis-phase2-continuation, feature/jarvis-command-listener-no-wakeword]
+    branches: [feature/jarvis-manual-mic-hud-headroom, feature/jarvis-m3-m5-proactive-hud, feature/jarvis-stable-1.0, feature/jarvis-stable-1.0-phase2-wakeword, feature/jarvis-stable-1.0-phase3-ollama, feature/jarvis-stable-1.0-phase4-command-execution, feature/jarvis-jandal-memory-recall, feature/jarvis-slice-c-router-llm-schema, feature/jarvis-phase1-p0-security, feature/jarvis-phase2-continuation, feature/jarvis-command-listener-no-wakeword]
     paths:
       - "app/**"
       - "scripts/**"
