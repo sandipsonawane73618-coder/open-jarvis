@@ -20,6 +20,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import android.content.Intent
+import android.widget.Toast
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -36,8 +38,6 @@ import androidx.compose.ui.unit.sp
 import com.openjarvis.llm.UniversalAdapter
 import com.openjarvis.llm.providers.OllamaProvider
 import com.openjarvis.llm.providers.OllamaResponseParser
-import com.openjarvis.voice.WakeWordConfig
-import com.openjarvis.voice.WakeWordDiagnostics
 import com.openjarvis.ui.theme.VoidColor
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -94,22 +94,6 @@ fun SettingsScreen(
     var lastSaved by remember { mutableStateOf(0L) }
     var savedVisible by remember { mutableStateOf(false) }
     var voiceEnabled by remember { mutableStateOf(voicePrefs.getBoolean("voice_enabled", false)) }
-    val wakeWordSettingsPrefs = remember {
-        context.getSharedPreferences(WakeWordConfig.SENSITIVITY_PREFS, android.content.Context.MODE_PRIVATE)
-    }
-    var wakeWordSensitivity by remember {
-        mutableStateOf(WakeWordConfig.Sensitivity.fromPreference(
-            wakeWordSettingsPrefs.getString(WakeWordConfig.SENSITIVITY_KEY, WakeWordConfig.Sensitivity.HIGH.name)
-        ))
-    }
-    var wakeWordDiagnostics by remember { mutableStateOf(WakeWordDiagnostics.snapshot()) }
-
-    LaunchedEffect(voiceEnabled) {
-        while (voiceEnabled) {
-            wakeWordDiagnostics = WakeWordDiagnostics.snapshot()
-            delay(1_000)
-        }
-    }
     var speakResults by remember { mutableStateOf(voicePrefs.getBoolean("speak_results", true)) }
     var speechRate by remember { mutableStateOf(1.05f) }
     var sttMode by remember { mutableStateOf("Push to Talk") }
@@ -302,18 +286,16 @@ fun SettingsScreen(
                 }
 
                 SectionLabel("VOICE")
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                
+                Spacer(modifier = Modifier.height(10.dp))
                 SettingsToggleRow(
                     title = "Voice Assistant",
-                    subtitle = "Say Jarvis, Hey Jarvis or Hi Jarvis — Voicute offline",
+                    subtitle = "Always-on command listening • Android on-device speech",
                     enabled = voiceEnabled,
                     onToggle = {
                         voiceEnabled = !voiceEnabled
                         voicePrefs.edit().putBoolean("voice_enabled", voiceEnabled).apply()
                         // Apply the toggle immediately. Disabling voice stops the foreground
-                        // microphone service; enabling starts it and re-arms offline wake word.
+                        // microphone service; enabling starts command listening.
                         runCatching {
                             if (voiceEnabled) {
                                 com.openjarvis.ui.OverlayService.start(context)
@@ -324,69 +306,9 @@ fun SettingsScreen(
                     }
                 )
                 
+                Spacer(modifier = Modifier.height(12.dp))
+
                 if (voiceEnabled) {
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    SectionLabel("VOICUTE OFFLINE WAKE WORD")
-                    Text(
-                        "Only Voicute ONNX is enabled. Wake phrases: Jarvis, Hey Jarvis and Hi Jarvis. No cloud, API key or fallback engine.",
-                        style = TextStyle(fontSize = 11.sp, color = VoidColor.TextDisabled)
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    SectionLabel("WAKE WORD SENSITIVITY")
-                    Text(
-                        "Higher sensitivity may detect softer speech, but can increase false activations.",
-                        color = VoidColor.TextDisabled,
-                        fontSize = 10.sp
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        WakeWordConfig.Sensitivity.values().forEach { level ->
-                            FilterChip(
-                                selected = wakeWordSensitivity == level,
-                                onClick = {
-                                    wakeWordSensitivity = level
-                                    wakeWordSettingsPrefs.edit()
-                                        .putString(WakeWordConfig.SENSITIVITY_KEY, level.name)
-                                        .apply()
-                                    com.openjarvis.ui.OverlayService.restartWakeWord(context)
-                                },
-                                label = { Text(level.title) }
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    SectionLabel("LIVE WAKE WORD DIAGNOSTICS")
-                    Text(
-                        "Engine: ${wakeWordDiagnostics.engineName} • State: ${wakeWordDiagnostics.state}",
-                        color = VoidColor.TextSecondary,
-                        fontSize = 11.sp
-                    )
-                    Text(
-                        "Mic: ${if (wakeWordDiagnostics.micPermissionGranted) "GRANTED" else "NOT GRANTED"} • Source: ${wakeWordDiagnostics.audioSource} • 16 kHz",
-                        color = VoidColor.TextSecondary,
-                        fontSize = 11.sp
-                    )
-                    Text(
-                        "RMS ${"%.3f".format(wakeWordDiagnostics.rms)} • Peak ${"%.3f".format(wakeWordDiagnostics.peakLevel)} • Frames ${wakeWordDiagnostics.framesProcessed}",
-                        color = VoidColor.TextSecondary,
-                        fontSize = 11.sp
-                    )
-                    Text(
-                        "AGC ${if (wakeWordDiagnostics.agcEnabled) "ON" else "OFF"} • Noise suppression ${if (wakeWordDiagnostics.noiseSuppressorEnabled) "ON" else "OFF"}",
-                        color = VoidColor.TextSecondary,
-                        fontSize = 11.sp
-                    )
-                    Text(
-                        "Last detection: ${wakeWordDiagnostics.lastDetectionKeyword ?: "Never"} • Score: ${wakeWordDiagnostics.lastDetectionScore?.let { "%.3f".format(it) } ?: "Unavailable"}",
-                        color = VoidColor.TextSecondary,
-                        fontSize = 11.sp
-                    )
-                    wakeWordDiagnostics.lastError?.let {
-                        Text("Last error: $it", color = VoidColor.Red, fontSize = 11.sp)
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-
                     SettingsToggleRow(
                         title = "Speak Results",
                         subtitle = "Jarvis reads results aloud",
@@ -478,7 +400,7 @@ fun SettingsScreen(
                                     )
                                 )
                                 Text(
-                                    text = "Google Speech · Online",
+                                    text = "Android on-device speech recognition",
                                     style = TextStyle(
                                         fontFamily = FontFamily.Default,
                                         fontWeight = FontWeight(400),
@@ -488,7 +410,7 @@ fun SettingsScreen(
                                 )
                             }
                             Text(
-                                text = "Ready",
+                                text = "Offline service required",
                                 style = TextStyle(
                                     fontFamily = FontFamily.Default,
                                     fontWeight = FontWeight(500),

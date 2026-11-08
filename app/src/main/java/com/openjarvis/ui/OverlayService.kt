@@ -17,11 +17,6 @@ import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
-import android.os.PowerManager
-import android.os.Vibrator
-import android.os.VibrationEffect
-import android.media.AudioManager
-import android.media.ToneGenerator
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
@@ -44,18 +39,11 @@ import com.openjarvis.graphify.GraphifyRepository
 import com.openjarvis.bridge.SocketServer
 import com.openjarvis.graphify.nodes.TaskNode
 import com.openjarvis.voice.VoiceManager
-import com.openjarvis.voice.ActivationGate
-import com.openjarvis.voice.WakeWordEngine
-import com.openjarvis.voice.VoicuteOnnxWakeWordController
-import com.openjarvis.voice.VoicuteModelLoader
-import com.openjarvis.voice.WakeWordConfig
-import com.openjarvis.voice.WakeWordSessionStateMachine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
@@ -82,47 +70,22 @@ class OverlayService : Service() {
     private lateinit var voiceManager: VoiceManager
     private lateinit var graphifyRepo: GraphifyRepository
     private var socketServer: SocketServer? = null
-    private var wakeWordController: WakeWordEngine? = null
-    private var wakeWordCpuLock: PowerManager.WakeLock? = null
-    private var wakeWordRestartAttempt = 0
-    private var wakeWordRestartRunnable: Runnable? = null
-    private var wakeWordFeedbackActive = false
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val activationGate = ActivationGate(windowMs = 10_000L, duplicateCooldownMs = 2_500L)
-    private val wakeWordSession = WakeWordSessionStateMachine(WAKE_WORD_STT_WATCHDOG_MS)
-    private val wakeWordCommandPending get() = wakeWordSession.commandPending
-    private val wakeWordResponsePending get() = wakeWordSession.responsePending
-    private val wakeWordWatchdog = object : Runnable {
+    private val overlayWatchdog = object : Runnable {
         override fun run() {
-            val now = System.currentTimeMillis()
-            wakeWordSession.onWatchdog(now, wakeWordController) {
-                android.util.Log.w("OpenJarvisWakeWord", "STT watchdog expired; clearing pending wake-word state")
-                activationGate.reset()
-                voiceManager.stopListening()
-                statusText?.text = "Voice capture timed out — wake word restarted"
-                serviceScope.launch {
-                    delay(350)
-                    startWakeWordListening()
-                }
-            }
-            // Reattach the floating UI if Android detached its window while the service survived.
             if (overlayView?.isAttachedToWindow != true) attachAssistant()
-            // Recover a stopped listener without requiring the user to restart the service.
-            if (voiceManager.isVoiceEnabled() && !wakeWordCommandPending && !wakeWordResponsePending &&
-                wakeWordController?.isRunning() != true && wakeWordRestartRunnable == null
-            ) startWakeWordListening()
-            mainHandler.postDelayed(this, WAKE_WORD_WATCHDOG_TICK_MS)
+            mainHandler.postDelayed(this, OVERLAY_WATCHDOG_INTERVAL_MS)
         }
     }
     private var recentTasks = emptyList<TaskNode>()
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var isExpanded = false
     private var responseLanguage = "hi"
-    @Volatile private var mutedUntilWakeWord = false
-    @Volatile private var awaitingUnmuteCommand = false
+    @Volatile private var isMuted = false
 
     override fun onCreate() {
         super.onCreate()
+        activeInstance = this
         agentCore = AgentCore(this)
         voiceManager = VoiceManager(this)
         graphifyRepo = GraphifyRepository(this)
@@ -136,129 +99,72 @@ class OverlayService : Service() {
             startForeground(NOTIFICATION_ID, createNotification())
         }
         attachAssistant()
-        mainHandler.postDelayed(wakeWordWatchdog, WAKE_WORD_WATCHDOG_TICK_MS)
+        mainHandler.postDelayed(overlayWatchdog, OVERLAY_WATCHDOG_INTERVAL_MS)
         serviceScope.launch {
             voiceManager.state.collect { state ->
                 when (state) {
-                    is VoiceManager.VoiceState.Result -> {
-                        val hadPendingTranscript = wakeWordSession.commandPending
-                        wakeWordFeedbackActive = false
-                        wakeWordSession.onTranscriptReceived()
-                        if (awaitingUnmuteCommand) {
-                            voiceManager.stopListening()
-                            if (MuteCommandPolicy.isUnmuteCommand(state.text)) {
-                                awaitingUnmuteCommand = false
-                                mutedUntilWakeWord = false
-                                statusText?.text = "JARVIS active"
-                                voiceManager.speak("Jarvis is active. I am listening.") { resumeWakeWordAfterResponse() }
-                            } else {
-                                statusText?.text = "Still muted — say Jarvis, Hey Jarvis or Hi Jarvis, then say unmute ho ja"
-                                wakeWordSession.clearPending()
-                                startWakeWordListening()
-                            }
-                            return@collect
+                    is VoiceManager.VoiceState.Result -> when (CommandListeningPolicy.classify(state.text, isMuted)) {
+                        CommandListeningPolicy.Action.MUTE -> {
+                            isMuted = true
+                            setVisualState("IDLE", "MUTED — tap Mic, then say “Ab bolo”")
+                            voiceManager.speak("ठीक है, Jarvis mute हो गया।")
                         }
-                        if (MuteCommandPolicy.isUnmuteCommand(state.text)) {
-                            voiceManager.stopListening()
-                            mutedUntilWakeWord = false
-                            statusText?.text = "JARVIS active"
-                            voiceManager.speak("Jarvis is active. I am listening.") { resumeWakeWordAfterResponse() }
-                            return@collect
+                        CommandListeningPolicy.Action.UNMUTE -> {
+                            isMuted = false
+                            setVisualState("IDLE", "JARVIS active — tap Mic to speak")
+                            voiceManager.speak("Jarvis is active. Tap Mic when you want to speak.")
                         }
-                        if (MuteCommandPolicy.isMuteCommand(state.text)) {
-                            enterMuteMode()
-                            return@collect
+                        CommandListeningPolicy.Action.IGNORE -> {
+                            statusText?.text = if (isMuted) "Muted — tap Mic, then say “Ab bolo”" else "No command detected — tap Mic to try again"
                         }
-                        if (hadPendingTranscript) {
-                            voiceManager.stopListening()
-                        }
-                        commandInput?.setText(state.text)
-                        statusText?.text = "Voice captured — executing command…"
-                        submitCommand(state.text)
+                        CommandListeningPolicy.Action.EXECUTE_COMMAND -> submitCommand(state.text)
                     }
-                    is VoiceManager.VoiceState.Error -> {
-                        wakeWordFeedbackActive = false
-                        statusText?.text = state.message
-                        if (wakeWordCommandPending || wakeWordResponsePending) {
-                            clearWakeWordPendingState()
-                            activationGate.reset()
-                            voiceManager.stopListening()
-                            serviceScope.launch { delay(700); startWakeWordListening() }
-                        }
-                    }
-                    is VoiceManager.VoiceState.Recording -> setVisualState(
-                        "LISTENING",
-                        if (wakeWordFeedbackActive) "Jarvis ✓ — listening… speak now" else "Listening… speak now"
-                    )
+                    is VoiceManager.VoiceState.Error -> setVisualState("IDLE", state.message)
+                    is VoiceManager.VoiceState.Recording -> setVisualState("LISTENING", "Listening… speak now")
                     is VoiceManager.VoiceState.Transcribing -> setVisualState("THINKING", "Thinking…")
                     is VoiceManager.VoiceState.Speaking -> setVisualState("SPEAKING", "Speaking…")
-                    is VoiceManager.VoiceState.Idle -> {
-                        // Always clear both flags on Idle. If STT ended without a
-                        // transcript, re-arm immediately; successful transcripts resume
-                        // after the agent response/TTS callback.
-                        wakeWordSession.onIdle(wakeWordController) {
-                            activationGate.reset()
-                            serviceScope.launch { delay(350); startWakeWordListening() }
-                        }
-                        setVisualState("IDLE", "Ready — type a command or use mic")
-                    }
+                    is VoiceManager.VoiceState.Idle -> setVisualState("IDLE", if (isMuted) "MUTED — tap Mic, then say “Ab bolo”" else "Ready — type a command or use mic")
                 }
             }
         }
         serviceScope.launch {
             agentCore.state.collect { state ->
                 when (state) {
-                    is com.openjarvis.agent.AgentState.Idle -> statusText?.text = "Ready — type a command or use mic"
+                    is com.openjarvis.agent.AgentState.Idle -> statusText?.text = "Ready — tap Mic to speak or type a command"
                     is com.openjarvis.agent.AgentState.Running -> setVisualState("THINKING", state.step)
                     is com.openjarvis.agent.AgentState.Done -> {
-                        setVisualState(if (mutedUntilWakeWord) "IDLE" else "SPEAKING", if (mutedUntilWakeWord) "MUTED — say Jarvis, Hey Jarvis or Hi Jarvis to wake" else state.result)
-                        if (!mutedUntilWakeWord) voiceManager.speak(com.openjarvis.agent.AgentResultSpeech.textForDone(state.result)) { resumeWakeWordAfterResponse() }
+                        setVisualState("SPEAKING", state.result)
+                        voiceManager.speak(com.openjarvis.agent.AgentResultSpeech.textForDone(state.result))
                     }
                     is com.openjarvis.agent.AgentState.Error -> {
-                        setVisualState(if (mutedUntilWakeWord) "IDLE" else "SPEAKING", if (mutedUntilWakeWord) "MUTED — say Jarvis, Hey Jarvis or Hi Jarvis to wake" else "Jarvis error: ${state.message} • tap to copy debug log")
-                        if (!mutedUntilWakeWord) voiceManager.speak(if (responseLanguage == "mr") "कमांड पूर्ण झाली नाही. ${state.message}" else "कमांड पूरी नहीं हुई। ${state.message}") { resumeWakeWordAfterResponse() }
+                        setVisualState("SPEAKING", "Jarvis error: ${state.message} • tap to copy debug log")
+                        voiceManager.speak(if (responseLanguage == "mr") "कमांड पूर्ण झाली नाही. ${state.message}" else "कमांड पूरी नहीं हुई। ${state.message}")
                     }
                 }
             }
         }
         serviceScope.launch(Dispatchers.IO) { recentTasks = graphifyRepo.getRecentTasks(10) }
-        if (microphoneGranted) startWakeWordListening()
-        else statusText?.text = "Allow microphone permission to enable Jarvis"
+        if (!microphoneGranted) statusText?.text = "Allow microphone permission, then tap Mic to speak"
+        else statusText?.text = "Ready — tap Mic to speak or type a command"
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_SIMULATE_WAKE_WORD) {
-            val transcript = intent.getStringExtra(EXTRA_SIMULATED_TRANSCRIPT).orEmpty()
-            mainHandler.post { runSimulatedWakeWordFlow(transcript) }
-            return START_STICKY
-        }
-        if (intent?.action == ACTION_RESTART_WAKE_WORD) {
-            mainHandler.post {
-                stopWakeWordListening()
-                startWakeWordListening()
-            }
-            return START_STICKY
-        }
-        // Reattach a detached overlay and ensure the single Voicute listener is armed.
         if (::voiceManager.isInitialized) {
             if (overlayView?.isAttachedToWindow != true) attachAssistant()
-            startWakeWordListening()
         }
         return START_STICKY
     }
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        mainHandler.removeCallbacks(wakeWordWatchdog)
-        wakeWordRestartRunnable?.let { mainHandler.removeCallbacks(it) }
-        wakeWordRestartRunnable = null
-        clearWakeWordPendingState()
+        mainHandler.removeCallbacks(overlayWatchdog)
         try { overlayView?.let { windowManager?.removeView(it) } } catch (_: Exception) { }
         overlayView = null
         visualState = "IDLE"
         mainHandler.removeCallbacks(waveformRunnable)
         waveformText = null
-        stopWakeWordListening()
+        voiceManager.stopListening()
+        if (activeInstance === this) activeInstance = null
         socketServer?.stop()
         socketServer = null
         voiceManager.release()
@@ -387,11 +293,9 @@ class OverlayService : Service() {
                         status.text = "Allow microphone permission in Android app settings"
                     } else if (!voiceManager.isVoiceEnabled()) {
                         status.text = "Enable Voice Assistant in Jarvis Settings first"
+                    } else if (voiceManager.isSessionActive()) {
+                        status.text = "Already listening — wait for recognition to finish"
                     } else {
-                        if (wakeWordController?.isRunning() == true) stopWakeWordListening()
-                        // A manual mic tap is an explicit activation in both STT modes.
-                        activationGate.activate(ActivationGate.Source.PUSH_TO_TALK)
-                        markWakeWordCommandPending()
                         voiceManager.startListening()
                     }
                 }
@@ -403,7 +307,7 @@ class OverlayService : Service() {
                 setPadding(0, 0, 0, 0)
                 setOnClickListener { submitCommand() }
             }
-            val actionWidth = dp(WakeWordConfig.ACTION_BUTTON_WIDTH_DP)
+            val actionWidth = dp(48)
             actions.addView(mic, LinearLayout.LayoutParams(actionWidth, dp(48)))
             actions.addView(send, LinearLayout.LayoutParams(actionWidth, dp(48)))
             commandPanel.addView(actions, LinearLayout.LayoutParams(-1, -2))
@@ -461,48 +365,21 @@ class OverlayService : Service() {
     }
 
     private fun enterMuteMode() {
-        mutedUntilWakeWord = true
-        awaitingUnmuteCommand = false
-        clearWakeWordPendingState()
-        voiceManager.stopListening()
-        voiceManager.stopSpeaking()
-        statusText?.text = "MUTED — say Jarvis, Hey Jarvis or Hi Jarvis to wake"
-        startWakeWordListening()
+        isMuted = true
+        statusText?.text = "Muted — tap Mic, then say “Ab bolo”"
+        voiceManager.speak("ठीक है, Jarvis mute हो गया।")
     }
 
     private fun submitCommand(voiceCommand: String? = null) {
-        // A voice transcript must never fall back to stale text left in the input field.
-        // Typed commands remain explicit UI input and intentionally bypass the voice gate.
-        val command = if (voiceCommand != null) {
-            voiceCommand.trim()
-        } else {
-            commandInput?.text?.toString()?.trim().orEmpty()
-        }
-        if (voiceCommand != null) {
-            val decision = activationGate.validateTranscript(command, System.currentTimeMillis())
-            if (!decision.accepted) {
-                statusText?.text = "Voice ignored: ${decision.reason}"
-                resumeWakeWordAfterResponse()
-                return
-            }
-        }
-        if (command.isBlank()) {
-            statusText?.text = "No speech detected — say Jarvis, Hey Jarvis or Hi Jarvis to try again"
-            if (voiceCommand != null) resumeWakeWordAfterResponse()
-            return
-        }
+        val command = if (voiceCommand != null) voiceCommand.trim() else commandInput?.text?.toString()?.trim().orEmpty()
+        if (command.isBlank()) { statusText?.text = "No speech detected — try again"; return }
         if (command.any { it in '\u0900'..'\u097F' }) {
             val marathiMarkers = listOf("आहे", "आणि", "मला", "काय", "झाले", "झालं", "नाही", "दाखवा", "उघडा", "करायचे", "माझे", "तुम्ही", "सांगा", "नको")
             responseLanguage = if (marathiMarkers.any { command.contains(it) }) "mr" else "hi"
         }
         if (com.openjarvis.accessibility.JarvisAccessibilityService.instance == null) {
             statusText?.text = "Accessibility service is OFF. Enable Open Jarvis in Android Accessibility settings."
-            if (voiceCommand != null) resumeWakeWordAfterResponse()
             return
-        }
-        if (wakeWordController?.isRunning() == true) {
-            stopWakeWordListening()
-            wakeWordSession.markResponsePending()
         }
         statusText?.text = "Jarvis is working…"
         voiceManager.markThinking()
@@ -510,177 +387,8 @@ class OverlayService : Service() {
         commandInput?.text?.clear()
     }
 
-    private fun startWakeWordListening() {
-        if (!voiceManager.isVoiceEnabled()) {
-            stopWakeWordListening()
-            return
-        }
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            stopWakeWordListening()
-            statusText?.text = "Microphone permission is required for Jarvis"
-            return
-        }
-        if (Build.VERSION.SDK_INT >= 34) {
-            val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            ServiceCompat.startForeground(this, NOTIFICATION_ID, createNotification(), types)
-        }
-
-        // Voicute is the only wake-word engine. No fallback engine is allowed.
-        if (wakeWordController == null) {
-            wakeWordController = VoicuteOnnxWakeWordController(
-                this,
-                onWakeWord = { mainHandler.post { handleWakeWordDetected() } },
-                onError = { message -> mainHandler.post { scheduleWakeWordRestart(message) } }
-            )
-        }
-        // Release stale AudioRecord/ONNX handles before restarting a listener that died unexpectedly.
-        if (wakeWordController?.isRunning() != true) wakeWordController?.stop()
-        val error = wakeWordController?.start()
-        if (error == null) {
-            wakeWordRestartAttempt = 0
-            wakeWordRestartRunnable?.let { mainHandler.removeCallbacks(it) }
-            wakeWordRestartRunnable = null
-            acquireWakeWordCpuLock()
-        } else {
-            releaseWakeWordCpuLock()
-            scheduleWakeWordRestart(error)
-        }
-        val activeWakePhrases = VoicuteModelLoader.DEMO_DISPLAY_PHRASES
-        statusText?.text = error ?: if (mutedUntilWakeWord) {
-            "MUTED — say $activeWakePhrases to wake"
-        } else {
-            "Standby — say $activeWakePhrases (Voicute ONNX, offline)"
-        }
-    }
-
-    private fun provideWakeWordFeedback() {
-        runCatching {
-            val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator.vibrate(VibrationEffect.createOneShot(55L, VibrationEffect.DEFAULT_AMPLITUDE))
-            } else {
-                @Suppress("DEPRECATION")
-                vibrator.vibrate(55L)
-            }
-        }
-        runCatching {
-            val tone = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 55)
-            tone.startTone(ToneGenerator.TONE_PROP_ACK, 100)
-            mainHandler.postDelayed({ tone.release() }, 180L)
-        }
-    }
-
-    private fun runSimulatedWakeWordFlow(transcript: String) {
-        if (transcript.isBlank()) {
-            statusText?.text = "Simulation needs a recognized command"
-            return
-        }
-        if (!voiceManager.isVoiceEnabled()) {
-            statusText?.text = "Enable Voice Assistant before running the wake-word simulation"
-            return
-        }
-        activationGate.activate(ActivationGate.Source.WAKE_WORD)
-        statusText?.text = "Simulated Jarvis ✓ — injecting STT transcript"
-        submitCommand(transcript)
-    }
-
-    private fun handleWakeWordDetected() {
-        if (!voiceManager.isVoiceEnabled() || wakeWordCommandPending) return
-        val wasMuted = mutedUntilWakeWord
-        if (wasMuted) awaitingUnmuteCommand = true
-        stopWakeWordListening()
-        activationGate.activate(ActivationGate.Source.WAKE_WORD)
-        markWakeWordCommandPending()
-        wakeWordFeedbackActive = true
-        provideWakeWordFeedback()
-        statusText?.text = if (wasMuted) {
-            "Jarvis ✓ — say unmute ho ja"
-        } else {
-            "Jarvis ✓ — listening for your command…"
-        }
-        voiceManager.startListening()
-    }
-
-    private fun scheduleWakeWordRestart(message: String) {
-        if (!::voiceManager.isInitialized || !voiceManager.isVoiceEnabled() || wakeWordCommandPending) {
-            statusText?.text = "Wake-word unavailable: $message"
-            return
-        }
-        stopWakeWordListening(cancelRestart = false)
-        wakeWordRestartRunnable?.let { mainHandler.removeCallbacks(it) }
-        val delays = longArrayOf(1_000L, 2_000L, 4_000L, 8_000L, 15_000L)
-        val retryDelay = delays[wakeWordRestartAttempt.coerceIn(0, delays.lastIndex)]
-        wakeWordRestartAttempt = (wakeWordRestartAttempt + 1).coerceAtMost(delays.lastIndex)
-        statusText?.text = "Mic/wake-word error: $message — retry in ${retryDelay / 1_000}s"
-        val retry = Runnable {
-            wakeWordRestartRunnable = null
-            if (voiceManager.isVoiceEnabled() && !wakeWordCommandPending) startWakeWordListening()
-        }
-        wakeWordRestartRunnable = retry
-        mainHandler.postDelayed(retry, retryDelay)
-    }
-
-    private fun markWakeWordCommandPending() {
-        wakeWordSession.beginCommand()
-    }
-
-    private fun clearWakeWordPendingState() {
-        wakeWordSession.reset()
-    }
-
-    private fun stopWakeWordListening(cancelRestart: Boolean = true) {
-        if (cancelRestart) {
-            wakeWordRestartRunnable?.let { mainHandler.removeCallbacks(it) }
-            wakeWordRestartRunnable = null
-        }
-        wakeWordController?.stop()
-        releaseWakeWordCpuLock()
-    }
-
-    /** Keep the CPU alive while the foreground service is actively listening with screen off. */
-    private fun acquireWakeWordCpuLock() {
-        if (wakeWordCpuLock?.isHeld == true) return
-        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        val lock = wakeWordCpuLock ?: powerManager.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
-            "OpenJarvis:WakeWord"
-        ).apply { setReferenceCounted(false) }.also { wakeWordCpuLock = it }
-        if (!lock.isHeld) lock.acquire()
-    }
-
-    private fun releaseWakeWordCpuLock() {
-        val lock = wakeWordCpuLock ?: return
-        if (lock.isHeld) lock.release()
-    }
-
-    private fun resumeWakeWordAfterResponse() {
-        clearWakeWordPendingState()
-        wakeWordSession.finishResponse()
-        if (!voiceManager.isVoiceEnabled()) return
-        serviceScope.launch {
-            delay(500)
-            startWakeWordListening()
-        }
-    }
-
     private fun copyLatestDebugLog() {
-        val baseReport = com.openjarvis.agent.AgentDiagnostics.latest(this)
-        val wake = com.openjarvis.voice.WakeWordDiagnostics.snapshot()
-        val detectionAt = wake.lastDetectionAtMs?.let {
-            android.text.format.DateFormat.format("yyyy-MM-dd HH:mm:ss", java.util.Date(it)).toString()
-        } ?: "never"
-        val wakeReport = buildString {
-            appendLine("Wake-word diagnostics:")
-            appendLine("engine=${wake.engineName}, state=${wake.state}, micPermission=${wake.micPermissionGranted}")
-            appendLine("framesProcessed=${wake.framesProcessed}, liveRms=${"%.4f".format(wake.rms)}, peakLevel=${"%.4f".format(wake.peakLevel)}")
-            appendLine("silentFrames=${wake.silentFrames}, clippedSamples=${wake.clippedSamples}")
-            appendLine("audioSource=${wake.audioSource}, sampleRate=${wake.sampleRate}")
-            appendLine("AGC available=${wake.agcAvailable}, enabled=${wake.agcEnabled}; NoiseSuppressor available=${wake.noiseSuppressorAvailable}, enabled=${wake.noiseSuppressorEnabled}")
-            appendLine("lastDetectionAt=$detectionAt, keyword=${wake.lastDetectionKeyword ?: "none"}, score=${wake.lastDetectionScore?.toString() ?: "unavailable"}")
-            appendLine("keywords=${wake.keywords.joinToString()}, threshold=${wake.threshold}, keywordBoost=${wake.keywordBoost}")
-            appendLine("lastError=${wake.lastError ?: "none"}")
-        }
-        val report = "$baseReport\n\n$wakeReport"
+        val report = com.openjarvis.agent.AgentDiagnostics.latest(this)
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("JARVIS Debug Log", report))
         Toast.makeText(this, "Debug log copied. Paste it here in ChatGPT.", Toast.LENGTH_LONG).show()
@@ -717,37 +425,13 @@ class OverlayService : Service() {
     fun executeCommand(command: String) = agentCore.executeTask(command)
 
     companion object {
+        @Volatile private var activeInstance: OverlayService? = null
         private const val CHANNEL_ID = "jarvis_overlay_channel"
         private const val NOTIFICATION_ID = 1
-        private const val ACTION_SIMULATE_WAKE_WORD = "com.openjarvis.action.SIMULATE_WAKE_WORD"
-        private const val ACTION_RESTART_WAKE_WORD = "com.openjarvis.action.RESTART_WAKE_WORD"
-        private const val EXTRA_SIMULATED_TRANSCRIPT = "simulated_transcript"
-        private const val WAKE_WORD_STT_WATCHDOG_MS = 15_000L
-        private const val WAKE_WORD_WATCHDOG_TICK_MS = 1_000L
+        private const val OVERLAY_WATCHDOG_INTERVAL_MS = 1_500L
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, OverlayService::class.java))
-        }
-
-        fun restartWakeWord(context: Context) {
-            val intent = Intent(context, OverlayService::class.java).setAction(ACTION_RESTART_WAKE_WORD)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                androidx.core.content.ContextCompat.startForegroundService(context, intent)
-            } else {
-                context.startService(intent)
-            }
-        }
-
-        fun simulateWakeWordDetection(context: Context, transcript: String) {
-            val intent = Intent(context, OverlayService::class.java).apply {
-                action = ACTION_SIMULATE_WAKE_WORD
-                putExtra(EXTRA_SIMULATED_TRANSCRIPT, transcript)
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                androidx.core.content.ContextCompat.startForegroundService(context, intent)
-            } else {
-                context.startService(intent)
-            }
         }
     }
 }

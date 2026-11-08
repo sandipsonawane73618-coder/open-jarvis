@@ -2,18 +2,26 @@ name: Android Build
 
 on:
   push:
-    branches: [main, feature/euronics-webview-integration, feature/jarvis-stable-1.0, feature/jarvis-opendroid-agent-loop, feature/jarvis-slice-c-router-llm-schema, feature/jarvis-phase2-continuation]
+    branches: [main, feature/euronics-webview-integration, feature/jarvis-stable-1.0, feature/jarvis-opendroid-agent-loop, feature/jarvis-slice-c-router-llm-schema, feature/jarvis-phase2-continuation, feature/jarvis-diagnostic-export, feature/jarvis-command-listener-no-wakeword]
     paths:
       - "app/**"
       - "scripts/**"
+      - ".agents/**"
+      - ".codex/**"
+      - "AGENTS.md"
+      - "docs/development/**"
       - "*.gradle"
       - "settings.gradle"
       - ".github/workflows/android-build.yml"
   pull_request:
-    branches: [feature/jarvis-m3-m5-proactive-hud, feature/jarvis-stable-1.0, feature/jarvis-stable-1.0-phase2-wakeword, feature/jarvis-stable-1.0-phase3-ollama, feature/jarvis-stable-1.0-phase4-command-execution, feature/jarvis-jandal-memory-recall, feature/jarvis-slice-c-router-llm-schema, feature/jarvis-phase1-p0-security]
+    branches: [feature/jarvis-m3-m5-proactive-hud, feature/jarvis-stable-1.0, feature/jarvis-stable-1.0-phase2-wakeword, feature/jarvis-stable-1.0-phase3-ollama, feature/jarvis-stable-1.0-phase4-command-execution, feature/jarvis-jandal-memory-recall, feature/jarvis-slice-c-router-llm-schema, feature/jarvis-phase1-p0-security, feature/jarvis-phase2-continuation, feature/jarvis-command-listener-no-wakeword]
     paths:
       - "app/**"
       - "scripts/**"
+      - ".agents/**"
+      - ".codex/**"
+      - "AGENTS.md"
+      - "docs/development/**"
       - "*.gradle"
       - "settings.gradle"
       - ".github/workflows/android-build.yml"
@@ -34,9 +42,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare Voicute offline multi-keyword ONNX model
-        run: bash scripts/prepare-voicute.sh
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -56,8 +61,36 @@ jobs:
         with:
           gradle-version: "8.2"
 
+      - name: ECC project guardrails
+        run: bash scripts/ecc-guardrails.sh
+
       - name: Run unit tests
         run: gradle --no-daemon :app:testDebugUnitTest
+
+  agent-security-scan:
+    name: ecc-agentshield-security-scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Scan agent instructions, skills, and project configuration
+        run: |
+          mkdir -p artifacts
+          npx --yes ecc-agentshield@1.6.0 scan --path . --format json --output artifacts/agentshield-report.json
+
+      - name: Upload AgentShield report for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecc-agentshield-report
+          path: artifacts/agentshield-report.json
+          if-no-files-found: warn
 
   apk-build:
     name: apk-build
@@ -66,9 +99,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Prepare Voicute offline multi-keyword ONNX model
-        run: bash scripts/prepare-voicute.sh
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4

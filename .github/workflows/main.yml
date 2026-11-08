@@ -17,10 +17,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Prepare sherpa-onnx runtime and required offline JARVIS KWS model
-        run: |
-          bash scripts/prepare-sherpa.sh all
-          test -s app/src/main/assets/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01/encoder-epoch-12-avg-2-chunk-16-left-64.onnx
 
       - uses: actions/setup-java@v4
         with:

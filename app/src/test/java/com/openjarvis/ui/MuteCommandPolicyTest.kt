@@ -5,37 +5,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MuteCommandPolicyTest {
-    @Test fun recognizesRequestedRomanizedCommands() {
-        listOf(
-            "Jarvis chup ho jao",
-            "MUTE HO JAO",
-            "Shant bas Jarvis",
-            "gap bas bhai",
-            "Jarvis silent mode",
-            "chup ho ja",
-            "mute ho ja",
-            "shant bas bhai",
-            "bas bhai"
-        ).forEach { assertTrue("$it should mute", MuteCommandPolicy.isMuteCommand(it)) }
+    @Test fun recognizesOnlyRequestedMuteCommands() {
+        listOf("Chup ho jao", "JARVIS CHUP HO JAO", "चुप हो जाओ", "जार्विस चुप हो जाओ")
+            .forEach { assertTrue("$it should mute", MuteCommandPolicy.isMuteCommand(it)) }
+        listOf("mute ho jao", "shant bas", "bas kar", "Jarvis chup", "chup ho ja")
+            .forEach { assertFalse("$it must not trigger mute", MuteCommandPolicy.isMuteCommand(it)) }
     }
 
-    @Test fun recognizesHindiPhrases() {
-        assertTrue(MuteCommandPolicy.isMuteCommand("जार्विस चुप हो जाओ"))
-        assertTrue(MuteCommandPolicy.isMuteCommand("शांत बैठो"))
+    @Test fun recognizesOnlyRequestedUnmuteCommands() {
+        listOf("Ab bolo", "AB BOLO", "अब बोलो")
+            .forEach { assertTrue("$it should unmute", MuteCommandPolicy.isUnmuteCommand(it)) }
+        listOf("unmute", "unmute ho ja", "awaaz chalu karo", "Jarvis")
+            .forEach { assertFalse("$it must not trigger unmute", MuteCommandPolicy.isUnmuteCommand(it)) }
     }
 
-    @Test fun recognizesUnmuteCommands() {
-        listOf(
-            "unmute",
-            "unmute ho ja",
-            "Jarvis unmute ho jao",
-            "awaaz chalu karo",
-            "आवाज़ चालू करो"
-        ).forEach { assertTrue("$it should unmute", MuteCommandPolicy.isUnmuteCommand(it)) }
-    }
-
-    @Test fun doesNotMuteOnOrdinaryConversation() {
-        listOf("Jarvis YouTube kholo", "mute ka matlab kya hai", "thoda shant music chalao", "unmute ka matlab kya hai")
-            .forEach { assertFalse("$it should not mute", MuteCommandPolicy.isMuteCommand(it)) }
+    @Test fun ordinaryConversationDoesNotTriggerVoiceControls() {
+        listOf("mute ka matlab kya hai", "thoda shant music chalao", "ab bolo kya hua", "YouTube kholo")
+            .forEach {
+                assertFalse("$it should not mute", MuteCommandPolicy.isMuteCommand(it))
+                assertFalse("$it should not unmute", MuteCommandPolicy.isUnmuteCommand(it))
+            }
     }
 }

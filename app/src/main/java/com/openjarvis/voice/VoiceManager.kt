@@ -4,17 +4,14 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+/**
+ * Owns one user-started speech-recognition session at a time.
+ * Recognition never starts on service creation and never rearms after a result or TTS.
+ */
 class VoiceManager(private val context: Context) {
     companion object {
         private const val PREFS_NAME = "voice_prefs"
@@ -32,10 +29,8 @@ class VoiceManager(private val context: Context) {
     )
     private val sttEngine = AndroidSTTEngine(context)
     private val ttsEngine = AndroidTTSEngine(context)
-    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val stateMachine = VoiceSessionStateMachine()
-    private var continuousSession = false
-    private var resumeListeningJob: Job? = null
+    @Volatile private var listening = false
 
     private val _state = MutableStateFlow<VoiceState>(VoiceState.Idle)
     val state: StateFlow<VoiceState> = _state.asStateFlow()
@@ -52,6 +47,7 @@ class VoiceManager(private val context: Context) {
     init { ttsEngine.setSpeechRate(getSpeechRate()) }
 
     fun isVoiceEnabled(): Boolean = prefs.getBoolean(KEY_VOICE_ENABLED, false)
+    fun isSessionActive(): Boolean = listening
     fun setVoiceEnabled(enabled: Boolean) { prefs.edit().putBoolean(KEY_VOICE_ENABLED, enabled).apply() }
     fun getSTTMode(): STTMode {
         val mode = prefs.getString(KEY_STT_MODE, STTMode.PUSH_TO_TALK.name)
@@ -67,103 +63,76 @@ class VoiceManager(private val context: Context) {
         ttsEngine.setSpeechRate(rate)
     }
 
+    /** Starts exactly one recognition attempt, only when called by the visible mic control. */
+    @Synchronized
     fun startListening() {
-        resumeListeningJob?.cancel()
-        resumeListeningJob = null
+        if (listening) return
         if (!isVoiceEnabled()) {
             _state.value = VoiceState.Error("Voice disabled in settings")
             return
         }
-        continuousSession = true
-        beginRecognition()
-    }
-
-    private fun beginRecognition() {
-        if (!continuousSession) return
+        listening = true
         stateMachine.beginListening()
         _state.value = VoiceState.Recording
         sttEngine.startListening(
             onResult = { text ->
-                if (!text.isNullOrBlank()) {
-                    stateMachine.onTranscriptReceived(true)
-                    _state.value = VoiceState.Result(text)
-                } else {
-                    stateMachine.onRecoverableError()
-                    _state.value = VoiceState.Recording
-                }
+                listening = false
+                stateMachine.onTranscriptReceived(!text.isNullOrBlank())
+                if (!text.isNullOrBlank()) _state.value = VoiceState.Result(text)
+                else _state.value = VoiceState.Error("No speech detected — tap Mic to try again")
             },
             onError = { error ->
-                if (error.startsWith("RETRYING:")) {
-                    stateMachine.onRecoverableError()
-                    _state.value = VoiceState.Recording
-                } else {
-                    _state.value = VoiceState.Error(error)
-                }
+                listening = false
+                stateMachine.stop()
+                _state.value = VoiceState.Error(error.removePrefix("RETRYING: "))
             }
         )
     }
 
     fun markThinking() {
-        if (continuousSession) {
-            stateMachine.onCommandStarted()
-            _state.value = VoiceState.Transcribing
-        }
+        listening = false
+        stateMachine.onCommandStarted()
+        _state.value = VoiceState.Transcribing
     }
 
     fun stopListening(): String? {
-        continuousSession = false
+        listening = false
         stateMachine.stop()
         val text = sttEngine.stop()
         _state.value = if (!text.isNullOrBlank()) VoiceState.Result(text) else VoiceState.Idle
         return text
     }
 
+    /** Compatibility alias; it is intentionally one-shot and does not enable VAD/background listening. */
     fun startListeningWithVAD() = startListening()
 
     fun speak(text: String, onComplete: (() -> Unit)? = null) {
         if (!isSpeakResultsEnabled()) {
-            resumeAfterResponse()
+            stateMachine.onSpeakingFinished()
+            _state.value = VoiceState.Idle
             onComplete?.invoke()
             return
         }
-        if (continuousSession) {
-            stateMachine.onSpeakingStarted()
-            _state.value = VoiceState.Speaking
+        _state.value = VoiceState.Speaking
+        ttsEngine.speak(text) {
+            stateMachine.onSpeakingFinished()
+            _state.value = VoiceState.Idle
+            onComplete?.invoke()
         }
-        ttsEngine.speak(text) { resumeAfterResponse(); onComplete?.invoke() }
     }
 
-    private fun resumeAfterResponse() {
-        if (continuousSession) {
-            stateMachine.onSpeakingFinished(true)
-            // Some Android speech services keep the recognizer busy briefly after TTS.
-            // Restart on the main scope after a short hand-off instead of racing onDone.
-            resumeListeningJob?.cancel()
-            resumeListeningJob = scope.launch {
-                delay(450)
-                if (continuousSession) beginRecognition()
-            }
-        } else {
-            stateMachine.onSpeakingFinished(false)
+    fun stopSpeaking() { ttsEngine.stop(); _state.value = VoiceState.Idle }
+
+    fun resetState() {
+        if (_state.value is VoiceState.Result || _state.value is VoiceState.Error) {
             _state.value = VoiceState.Idle
         }
     }
 
-    fun stopSpeaking() { ttsEngine.stop() }
-
-    fun resetState() {
-        if (_state.value is VoiceState.Result || _state.value is VoiceState.Error) {
-            _state.value = if (continuousSession) VoiceState.Recording else VoiceState.Idle
-        }
-    }
-
     fun release() {
-        continuousSession = false
-        resumeListeningJob?.cancel()
-        resumeListeningJob = null
+        listening = false
         stateMachine.stop()
         sttEngine.release()
         ttsEngine.release()
-        scope.cancel()
     }
 }
