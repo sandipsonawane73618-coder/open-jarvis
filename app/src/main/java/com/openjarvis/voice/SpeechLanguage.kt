@@ -10,6 +10,10 @@ internal object SpeechLanguage {
         else -> "hi-IN"
     }
 
+    /** Try the preferred locale first, then the other configured Indian locales. */
+    fun recognitionFallbacks(preferredLocale: String): List<String> =
+        listOf(preferredLocale).plus(recognitionLocales.filterNot { it == preferredLocale })
+
     fun languageForText(text: String): String {
         val hasDevanagari = text.any { it in '\u0900'..'\u097F' }
         if (!hasDevanagari) return "en"
