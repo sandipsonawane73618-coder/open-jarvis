@@ -82,6 +82,12 @@
             android:theme="@style/Theme.OpenJarvis" />
 
         <activity
+            android:name=".ui.settings.WakeLabActivity"
+            android:exported="false"
+            android:parentActivityName=".ui.SettingsActivity"
+            android:theme="@style/Theme.OpenJarvis" />
+
+        <activity
             android:name=".ui.SettingsActivity"
             android:exported="false"
             android:parentActivityName=".MainActivity"

@@ -60,6 +60,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 class OverlayService : Service() {
+    @Volatile private var wakeLabPauseActive = false
     private var windowManager: WindowManager? = null
     private var overlayView: LinearLayout? = null
     private var windowParams: WindowManager.LayoutParams? = null
@@ -97,6 +98,7 @@ class OverlayService : Service() {
             val now = System.currentTimeMillis()
             wakeWordSession.onWatchdog(now, wakeWordController) {
                 android.util.Log.w("OpenJarvisWakeWord", "STT watchdog expired; clearing pending wake-word state")
+                com.openjarvis.voice.WakeWordDiagnostics.record("WARN", "STT watchdog expired; pending wake-word state cleared")
                 activationGate.reset()
                 voiceManager.stopListening()
                 statusText?.text = "Voice capture timed out — wake word restarted"
@@ -108,7 +110,7 @@ class OverlayService : Service() {
             // Reattach the floating UI if Android detached its window while the service survived.
             if (overlayView?.isAttachedToWindow != true) attachAssistant()
             // Recover a stopped listener without requiring the user to restart the service.
-            if (voiceManager.isVoiceEnabled() && !wakeWordCommandPending && !wakeWordResponsePending &&
+            if (!wakeLabPauseActive && voiceManager.isVoiceEnabled() && !wakeWordCommandPending && !wakeWordResponsePending &&
                 wakeWordController?.isRunning() != true && wakeWordRestartRunnable == null
             ) startWakeWordListening()
             mainHandler.postDelayed(this, WAKE_WORD_WATCHDOG_TICK_MS)
@@ -123,6 +125,7 @@ class OverlayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        activeInstance = this
         agentCore = AgentCore(this)
         voiceManager = VoiceManager(this)
         graphifyRepo = GraphifyRepository(this)
@@ -259,6 +262,7 @@ class OverlayService : Service() {
         mainHandler.removeCallbacks(waveformRunnable)
         waveformText = null
         stopWakeWordListening()
+        if (activeInstance === this) activeInstance = null
         socketServer?.stop()
         socketServer = null
         voiceManager.release()
@@ -430,6 +434,7 @@ class OverlayService : Service() {
             overlayView = root
         } catch (e: Exception) {
             android.util.Log.e("OpenJarvis", "Unable to attach assistant overlay", e)
+            com.openjarvis.voice.WakeWordDiagnostics.record("ERROR", "Unable to attach assistant overlay: " + e.stackTraceToString().take(4000))
         }
     }
 
@@ -511,6 +516,7 @@ class OverlayService : Service() {
     }
 
     private fun startWakeWordListening() {
+        if (wakeLabPauseActive) return
         if (!voiceManager.isVoiceEnabled()) {
             stopWakeWordListening()
             return
@@ -628,6 +634,16 @@ class OverlayService : Service() {
         wakeWordSession.reset()
     }
 
+    private fun pauseWakeWordForWakeLabInternal() {
+        wakeLabPauseActive = true
+        stopWakeWordListening()
+        statusText?.text = "Wake Lab recording — live listener paused"
+    }
+    private fun resumeWakeWordAfterWakeLabInternal() {
+        if (!wakeLabPauseActive) return
+        wakeLabPauseActive = false
+        if (::voiceManager.isInitialized && voiceManager.isVoiceEnabled()) startWakeWordListening()
+    }
     private fun stopWakeWordListening(cancelRestart: Boolean = true) {
         if (cancelRestart) {
             wakeWordRestartRunnable?.let { mainHandler.removeCallbacks(it) }
@@ -717,6 +733,20 @@ class OverlayService : Service() {
     fun executeCommand(command: String) = agentCore.executeTask(command)
 
     companion object {
+        @Volatile private var activeInstance: OverlayService? = null
+
+        /** True only when the active Voicute listener was running and was stopped. */
+        fun pauseWakeWordForWakeLab(): Boolean {
+            val service = activeInstance ?: return false
+            val wasRunning = service.wakeWordController?.isRunning() == true
+            service.pauseWakeWordForWakeLabInternal()
+            return wasRunning
+        }
+
+        fun resumeWakeWordAfterWakeLab() {
+            activeInstance?.resumeWakeWordAfterWakeLabInternal()
+        }
+
         private const val CHANNEL_ID = "jarvis_overlay_channel"
         private const val NOTIFICATION_ID = 1
         private const val ACTION_SIMULATE_WAKE_WORD = "com.openjarvis.action.SIMULATE_WAKE_WORD"

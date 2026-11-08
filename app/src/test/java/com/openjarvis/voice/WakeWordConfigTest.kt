@@ -6,8 +6,19 @@ import org.junit.Test
 
 class WakeWordConfigTest {
     @Test fun configuredPhrasesMatchVoicuteDemoModel() {
-        assertEquals("Jarvis / Hey Jarvis / Hi Jarvis", WakeWordConfig.DISPLAY_PHRASE)
+        assertEquals("Hey Jarvis / Hi Jarvis", WakeWordConfig.DISPLAY_PHRASE)
         VoicuteModelLoader.validateDemoKeywords(listOf("Jarvis", "Hey Jarvis", "Hi Jarvis"))
+    }
+
+
+    @Test fun bareJarvisIsRejectedByDefaultAndOnlyEnabledExplicitly() {
+        val scores = mapOf("Jarvis" to 0.99f, "Hey Jarvis" to 0.40f, "Hi Jarvis" to 0.35f)
+        assertEquals("Hey Jarvis" to 0.40f, WakeWordConfig.selectCandidate(scores, false))
+        assertEquals("Jarvis" to 0.99f, WakeWordConfig.selectCandidate(scores, true))
+    }
+
+    @Test fun bareJarvisAloneCannotBeSelectedWhenExperimentalSettingIsOff() {
+        assertEquals(null, WakeWordConfig.selectCandidate(mapOf("Jarvis" to 0.99f), false))
     }
 
     @Test fun sensitivityThresholdsBecomeMoreSensitive() {

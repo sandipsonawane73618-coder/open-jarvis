@@ -36,6 +36,7 @@ class VoicuteOnnxWakeWordController(
     @Synchronized
     override fun start(): String? {
         if (running) return null
+        WakeWordDiagnostics.initialize(appContext)
         return try {
             val permission = ContextCompat.checkSelfPermission(
                 appContext, android.Manifest.permission.RECORD_AUDIO
@@ -187,18 +188,48 @@ class VoicuteOnnxWakeWordController(
                     samplesSinceInference = 0
 
                     val result = model.process(window)
-                    val probability = result?.probability ?: 0f
-                    val keyword = result?.wakeWord
+                    // Keep the complete raw per-keyword scores for diagnostics, but only
+                    // allow the configured wake phrases into the live detection pipeline.
+                    val allowBareJarvis = appContext.getSharedPreferences(
+                        WakeWordConfig.SENSITIVITY_PREFS, Context.MODE_PRIVATE
+                    ).getBoolean(WakeWordConfig.ALLOW_BARE_JARVIS_KEY, false)
+                    val selected = WakeWordConfig.selectCandidate(
+                        parseKeywordScores(result?.scoreSummary), allowBareJarvis
+                    )
+                    val probability = selected?.second ?: 0f
+                    val keyword = selected?.first
                     val now = System.currentTimeMillis()
                     detector.record(probability, keyword, rawRms, now)
+                    val threshold = sensitivityThreshold()
                     val accepted = detector.evaluate(
                         keyword,
                         probability,
                         rawRms,
-                        sensitivityThreshold(),
+                        threshold,
                         result?.recommendedConsFrames ?: 2,
                         EXTRA_CONSECUTIVE_FRAMES,
                         now
+                    )
+                    var inferenceEnergy = 0.0
+                    var inferencePeak = 0f
+                    for (sample in window) {
+                        val normalized = sample / 32768f
+                        inferenceEnergy += normalized * normalized
+                        inferencePeak = maxOf(inferencePeak, kotlin.math.abs(normalized))
+                    }
+                    val inferenceRms = sqrt(inferenceEnergy / window.size).toFloat()
+                    WakeWordDiagnostics.inferenceRecord(
+                        result?.scoreSummary,
+                        threshold,
+                        inferenceRms,
+                        inferencePeak,
+                        accepted
+                    )
+                    WakeWordDiagnostics.candidate(
+                        result?.scoreSummary ?: ((keyword ?: "unknown") + "=" + String.format(java.util.Locale.US, "%.4f", probability)),
+                        threshold,
+                        rawRms,
+                        !accepted.isNullOrBlank()
                     )
                     if (!accepted.isNullOrBlank() &&
                         WakeWordDetectionPolicy.shouldAccept(now, lastAcceptedAtMs)
@@ -244,6 +275,15 @@ class VoicuteOnnxWakeWordController(
     }
 
     override fun isRunning(): Boolean = running
+
+    private fun parseKeywordScores(summary: String?): Map<String, Float> {
+        if (summary.isNullOrBlank()) return emptyMap()
+        return summary.split(",").mapNotNull { item ->
+            val pair = item.trim().split("=", limit = 2)
+            if (pair.size != 2) null
+            else pair[1].trim().toFloatOrNull()?.let { pair[0].trim() to it }
+        }.toMap()
+    }
 
     private fun sensitivityThreshold(): Float {
         val preference = appContext.getSharedPreferences(

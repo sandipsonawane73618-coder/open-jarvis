@@ -51,13 +51,19 @@ public class WakeWordEngine {
         public final float backgroundMean;
         /** Per-model recommended consecutive frames (from model_info.json). */
         public final int recommendedConsFrames;
+        public final String scoreSummary;
+        public final String rawOutputSummary;
+        public final float rawBestScore;
 
         public DetectionResult(String wakeWord, float probability, float backgroundMean,
-                               int recommendedConsFrames) {
+                               int recommendedConsFrames, String scoreSummary) {
             this.wakeWord = wakeWord;
             this.probability = probability;
             this.backgroundMean = backgroundMean;
             this.recommendedConsFrames = recommendedConsFrames;
+            this.scoreSummary = scoreSummary;
+            this.rawOutputSummary = scoreSummary;
+            this.rawBestScore = probability;
         }
     }
 
@@ -258,13 +264,22 @@ public class WakeWordEngine {
      * @return best matching DetectionResult or null on error
      */
     public DetectionResult process(short[] audio) {
+        return processInternal(audio, false, true);
+    }
+
+    /** Wake Lab only. Mode A mirrors the live int16-scale path; Mode B is experimental normalized input. */
+    public DetectionResult processForWakeLab(short[] audio, boolean normalizedMode) {
+        return processInternal(audio, normalizedMode, false);
+    }
+
+    private DetectionResult processInternal(short[] audio, boolean normalizedMode, boolean applyStartupSkip) {
         if (!loaded) return null;
 
         try {
             // 1. Convert to float
             float[] floatAudio = new float[audio.length];
             for (int i = 0; i < audio.length; i++) {
-                floatAudio[i] = (float) audio[i];
+                floatAudio[i] = normalizedMode ? ((float) audio[i] / 32768.0f) : (float) audio[i];
             }
 
             // 2. Mel spectrogram
@@ -289,7 +304,7 @@ public class WakeWordEngine {
 
             // 4. Prepare classifier input with hidden zero-channel padding
             // Skip first 3s to avoid cold-start false triggers
-            if (System.currentTimeMillis() - engineStartTime < STARTUP_SKIP_MS) return null;
+            if (applyStartupSkip && System.currentTimeMillis() - engineStartTime < STARTUP_SKIP_MS) return null;
 
             int melStart = Math.max(0, frames - dscnnMelTime);
             float[][][] dscnnInput = new float[1][dscnnMelTime][inputMels];
@@ -311,6 +326,7 @@ public class WakeWordEngine {
             float bestSigmoid = 0;
             String bestWord = null;
             int bestConsFrames = 2;
+            StringBuilder scoreSummary = new StringBuilder();
 
             if (isMultiKeyword) {
                 // ── New: single multi-keyword model → [1, N] output ──
@@ -324,6 +340,9 @@ public class WakeWordEngine {
                 kwOut.close();
 
                 for (int i = 0; i < keywords.length; i++) {
+                    if (scoreSummary.length() > 0) scoreSummary.append(", ");
+                    scoreSummary.append(keywords[i]).append("=")
+                            .append(Float.toString(scored[0][i]));
                     if (scored[0][i] > bestSigmoid) {
                         bestSigmoid = scored[0][i];
                         bestWord = keywords[i];
@@ -379,6 +398,9 @@ public class WakeWordEngine {
                         Log.e(TAG, "DS-CNN unexpected output type: " + rawOut.getClass().getName());
                         sigmoid = 0f;
                     }
+                    if (scoreSummary.length() > 0) scoreSummary.append(", ");
+                    scoreSummary.append(model.wakeWord).append("=")
+                            .append(Float.toString(sigmoid));
                     if (sigmoid > bestSigmoid) {
                         bestSigmoid = sigmoid;
                         bestWord = model.wakeWord;
@@ -415,7 +437,7 @@ public class WakeWordEngine {
             // MEDIUM=0.35 ineffective, so ordinary-volume speech was discarded
             // before the configurable detector ever saw its score.
             String detected = bestWord;
-            return new DetectionResult(detected, bestSigmoid, bgProb, bestConsFrames);
+            return new DetectionResult(detected, bestSigmoid, bgProb, bestConsFrames, scoreSummary.toString());
 
         } catch (OrtException e) {
             Log.e(TAG, "Inference error", e);

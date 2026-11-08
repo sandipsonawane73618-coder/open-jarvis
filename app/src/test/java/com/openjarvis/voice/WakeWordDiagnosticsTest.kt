@@ -54,4 +54,19 @@ class WakeWordDiagnosticsTest {
         assertEquals("MIC", snapshot.audioSource)
         assertEquals(16_000, snapshot.sampleRate)
     }
+
+    @Test fun recordsRejectedCandidateScoresForAllWakePhrases() {
+        WakeWordDiagnostics.started(true, listOf("Jarvis", "Hey Jarvis", "Hi Jarvis"), 0.25f, 1f)
+        WakeWordDiagnostics.candidate(
+            "Jarvis=0.1200, Hey Jarvis=0.0800, Hi Jarvis=0.0400",
+            threshold = 0.25f,
+            rms = 0.04f,
+            accepted = false
+        )
+
+        val snapshot = WakeWordDiagnostics.snapshot()
+        assertEquals(1L, snapshot.candidateFrames)
+        assertTrue(snapshot.lastCandidateScores!!.contains("Hey Jarvis=0.0800"))
+        assertTrue(WakeWordDiagnostics.recentEvents().last().message.contains("accepted=false"))
+    }
 }
