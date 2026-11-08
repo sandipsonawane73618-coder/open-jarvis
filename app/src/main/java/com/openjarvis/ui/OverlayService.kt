@@ -123,7 +123,17 @@ class OverlayService : Service() {
                     is VoiceManager.VoiceState.Recording -> setVisualState("LISTENING", "Listening… speak now")
                     is VoiceManager.VoiceState.Transcribing -> setVisualState("THINKING", "Thinking…")
                     is VoiceManager.VoiceState.Speaking -> setVisualState("SPEAKING", "Speaking…")
-                    is VoiceManager.VoiceState.Idle -> setVisualState("IDLE", if (isMuted) "MUTED — tap Mic, then say “Ab bolo”" else "Ready — type a command or use mic")
+                    is VoiceManager.VoiceState.Idle -> {
+                        // Do not let the voice session's Idle event hide the HUD while
+                        // AgentCore is still executing a command.
+                        if (agentCore.state.value is com.openjarvis.agent.AgentState.Running) {
+                            setVisualState("THINKING", "Jarvis is working…")
+                        } else if (isMuted) {
+                            setVisualState("IDLE", "MUTED — tap Mic, then say “Ab bolo”")
+                        } else {
+                            setVisualState("IDLE", "Ready — type a command or use mic")
+                        }
+                    }
                 }
             }
         }
