@@ -53,6 +53,10 @@ internal object AgentPlanPolicy {
     fun needsCompactReplan(actions: List<Action>, command: String): Boolean =
         needsCompactReplan(actions) || isLikelyUnderPlanned(command, actions)
 
+    /** A task is complete only when at least one planned action ran and every action verified. */
+    fun isFullyCompleted(plannedCount: Int, verifiedCount: Int): Boolean =
+        plannedCount > 0 && verifiedCount == plannedCount
+
     fun isExecutablePlan(actions: List<Action>): Boolean =
         actions.isNotEmpty() &&
             actions.size <= MAX_ACTIONS &&

@@ -1,12 +1,17 @@
 package com.openjarvis.agent
 
 import android.content.Context
+import android.content.ContentValues
+import android.graphics.Bitmap
+import android.os.Build
+import android.os.Environment
 import android.util.Log
 import android.content.Intent
 import android.content.pm.ResolveInfo
 import android.net.Uri
 import android.provider.Settings
 import android.provider.AlarmClock
+import android.provider.MediaStore
 import android.provider.ContactsContract
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -1089,6 +1094,13 @@ ${fullSystem.substringAfter("MEMORY:")}
         appAnalyzer.getAICount()
 
     private suspend fun executeActions(actions: List<Action>): ActionExecutionResult {
+        if (actions.isEmpty()) {
+            return ActionExecutionResult(
+                succeeded = false,
+                completedActions = emptyList(),
+                failure = "No actions were executed; Jarvis cannot report this command as complete."
+            )
+        }
         // Re-check at the last side-effect boundary. Carry the launched financial app
         // context onto unqualified tap/type steps, or detect a currently foreground app.
         val activeService = JarvisAccessibilityService.instance
@@ -1291,6 +1303,13 @@ ${fullSystem.substringAfter("MEMORY:")}
             results.add(actionResult)
             Log.i(TAG, results.last())
             kotlinx.coroutines.delay(250)
+        }
+        if (!AgentPlanPolicy.isFullyCompleted(actions.size, completedActions.size)) {
+            return ActionExecutionResult(
+                succeeded = false,
+                completedActions = completedActions.toList(),
+                failure = "Only ${completedActions.size}/${actions.size} planned actions were verified; task is not complete."
+            )
         }
         Log.i(TAG, "Command completed: ${results.joinToString("; ")}")
         return ActionExecutionResult(
@@ -1874,6 +1893,57 @@ ${fullSystem.substringAfter("MEMORY:")}
         return StepOutcome(true, "Completed requested UI step", nextContext)
     }
 
+    private suspend fun captureBitmapOrThrow(capture: ScreenshotCapture): Bitmap {
+        if (!capture.isReady()) {
+            if (!capture.startCapture()) {
+                throw IllegalStateException("Screenshot not captured: Android screen-capture permission prompt could not be opened.")
+            }
+            throw IllegalStateException("Screenshot NOT captured or saved yet. Allow Android screen-capture permission, then repeat the screenshot command.")
+        }
+        var bitmap: Bitmap? = null
+        repeat(12) {
+            if (bitmap == null) {
+                bitmap = withContext(Dispatchers.IO) { capture.capture() }
+                if (bitmap == null) kotlinx.coroutines.delay(100)
+            }
+        }
+        return bitmap ?: throw IllegalStateException("Screenshot capture returned no image. Nothing was saved; please retry.")
+    }
+
+    private fun saveScreenshotToGallery(bitmap: Bitmap): Uri {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            throw IllegalStateException("Gallery screenshot saving on this Android version needs legacy storage permission, which is not enabled.")
+        }
+        val resolver = context.contentResolver
+        val fileName = "Jarvis_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.png"
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+            put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+            put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/Jarvis")
+            put(MediaStore.Images.Media.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            ?: throw IllegalStateException("Android could not create a screenshot file in Pictures/Jarvis.")
+        try {
+            val written = resolver.openOutputStream(uri, "w")?.use { output ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+            } ?: false
+            if (!written) throw IllegalStateException("Screenshot image data could not be written.")
+            val published = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
+            if (resolver.update(uri, published, null, null) <= 0) {
+                throw IllegalStateException("Screenshot was written but could not be published to the gallery.")
+            }
+            val size = resolver.query(uri, arrayOf(MediaStore.Images.Media.SIZE), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getLong(0) else 0L
+            } ?: 0L
+            if (size <= 0L) throw IllegalStateException("Screenshot file verification failed; the saved file is empty.")
+            return uri
+        } catch (error: Exception) {
+            resolver.delete(uri, null, null)
+            throw IllegalStateException("Screenshot was not saved to the gallery: ${error.message ?: error.javaClass.simpleName}", error)
+        }
+    }
+
     private suspend fun executeStepIntent(intent: StepIntent): String {
         val executor = AndroidSkillExecutor(context)
         suspend fun run(kind: SkillRegistry.Kind, args: Map<String, String>) {
@@ -1906,24 +1976,26 @@ ${fullSystem.substringAfter("MEMORY:")}
             }
             is StepIntent.ScreenRead -> {
                 val capture = ScreenshotCapture.getInstance(context)
-                if (!capture.isReady()) {
-                    if (!capture.startCapture()) {
-                        throw IllegalStateException("Could not open Android screen-capture permission prompt")
-                    }
-                    "Screen capture permission requested. Allow it, then ask me to read the screen again."
-                } else {
-                    val bitmap = capture.capture()
-                        ?: throw IllegalStateException("Screen capture returned no image; retry after a moment")
-                    try {
-                        val text = visionModule.extractText(bitmap)
-                        if (text.isBlank()) "I captured the screen, but could not read any text."
-                        else if (intent.remember) {
-                            if (screenshotMemoryStore.remember(text)) "Screen text saved in private local memory.\n$text"
-                            else "Screen text was too long or empty to save.\n$text"
-                        } else text
-                    } finally {
-                        if (!bitmap.isRecycled) bitmap.recycle()
-                    }
+                val bitmap = captureBitmapOrThrow(capture)
+                try {
+                    val text = visionModule.extractText(bitmap)
+                    if (text.isBlank()) "I captured the screen, but could not read any text."
+                    else if (intent.remember) {
+                        if (screenshotMemoryStore.remember(text)) "Screen text saved in private local memory.\n$text"
+                        else "Screen text was too long or empty to save.\n$text"
+                    } else text
+                } finally {
+                    if (!bitmap.isRecycled) bitmap.recycle()
+                }
+            }
+            is StepIntent.Screenshot -> {
+                val capture = ScreenshotCapture.getInstance(context)
+                val bitmap = captureBitmapOrThrow(capture)
+                try {
+                    saveScreenshotToGallery(bitmap)
+                    "Screenshot captured and saved to Pictures/Jarvis. File save verified."
+                } finally {
+                    if (!bitmap.isRecycled) bitmap.recycle()
                 }
             }
             is StepIntent.Message -> {

@@ -12,6 +12,7 @@ sealed class StepIntent {
     data class Message(val app: String?, val contact: String?, val text: String?) : StepIntent()
     data class AppLaunch(val label: String) : StepIntent()
     data class ScreenRead(val remember: Boolean = false) : StepIntent()
+    data class Screenshot(val saveToGallery: Boolean = true) : StepIntent()
 }
 
 /**
@@ -103,9 +104,11 @@ object StepIntentParser {
         "kam", "kamm", "decrease", "down", "ghatao", "dheema", "कम", "घटाओ", "धीमा"
     )
 
-    private val SCREEN_WORDS = words("screen", "screenshot", "display", "स्क्रीन", "स्क्रीनशॉट", "पडदा")
+    private val SCREEN_WORDS = words("screen", "screencha", "screenchi", "screenshot", "display", "स्क्रीन", "स्क्रीनचा", "स्क्रीनची", "स्क्रीनशॉट", "पडदा", "पडद्याचा", "पडद्याची")
+    private val SCREENSHOT_WORDS = words("screenshot", "स्क्रीनशॉट")
+    private val SCREEN_PHOTO_WORDS = words("photo", "picture", "pic", "image", "foto", "फोटो", "तस्वीर", "तसवीर", "चित्र", "छवि", "छायाचित्र", "shot", "kadh", "kheecho", "kheench", "काढ", "काढा", "खींचो")
     private val SCREEN_ACTION_WORDS = words(
-        "read", "scan", "analyze", "analyse", "capture", "take", "check", "see",
+        "read", "scan", "analyze", "analyse", "check", "see",
         "what", "whats", "kya", "dikhta", "dikhao", "padho", "padh",
         "पढ़ो", "पढो", "दिखाओ", "बताओ", "क्या", "काय", "वाचा", "वाच", "दिसतं", "दिसते",
         "remember", "save", "याद", "सहेज", "लक्षात", "ठेव"
@@ -131,7 +134,8 @@ object StepIntentParser {
     fun parse(step: String): StepIntent? {
         val tokens = tokenize(step)
         if (tokens.isEmpty()) return null
-        return parseScreenRead(tokens)
+        return parseScreenshot(tokens)
+            ?: parseScreenRead(tokens)
             ?: parseMessage(step)
             ?: parseAlarm(tokens)
             ?: parseTimer(tokens)
@@ -158,10 +162,20 @@ object StepIntentParser {
         return list
     }
 
+    private fun parseScreenshot(tokens: List<String>): StepIntent.Screenshot? {
+        val explicitScreenshot = tokens.any { it in SCREENSHOT_WORDS } ||
+            tokens.windowed(2).any { it[0] in words("screen", "स्क्रीन") && it[1] == "shot" }
+        val hasScreenTarget = tokens.any { it in SCREEN_WORDS }
+        val hasPhotoAction = tokens.any { it in SCREEN_PHOTO_WORDS } ||
+            tokens.any { it in words("capture", "take") }
+        if (!explicitScreenshot && !(hasScreenTarget && hasPhotoAction)) return null
+        return StepIntent.Screenshot()
+    }
+
     private fun parseScreenRead(tokens: List<String>): StepIntent.ScreenRead? {
         if (tokens.none { it in SCREEN_WORDS }) return null
-        val explicitScreenshot = tokens.any { it in words("screenshot", "स्क्रीनशॉट") }
-        if (!explicitScreenshot && tokens.none { it in SCREEN_ACTION_WORDS }) return null
+        if (tokens.any { it in SCREENSHOT_WORDS || it in SCREEN_PHOTO_WORDS }) return null
+        if (tokens.none { it in SCREEN_ACTION_WORDS }) return null
         return StepIntent.ScreenRead(tokens.any { it in words("remember", "save", "याद", "सहेज", "लक्षात", "ठेव") })
     }
 
