@@ -34,12 +34,16 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openjarvis.llm.UniversalAdapter
+import com.openjarvis.diagnostics.JarvisDiagnosticLog
 import com.openjarvis.llm.providers.OllamaProvider
 import com.openjarvis.llm.providers.OllamaResponseParser
 import com.openjarvis.voice.WakeWordConfig
+import com.openjarvis.voice.WakeWordDiagnostics
 import com.openjarvis.ui.theme.VoidColor
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     onNavigateBack: () -> Unit,
@@ -91,8 +95,25 @@ fun SettingsScreen(
     var lastSaved by remember { mutableStateOf(0L) }
     var savedVisible by remember { mutableStateOf(false) }
     var voiceEnabled by remember { mutableStateOf(voicePrefs.getBoolean("voice_enabled", false)) }
-    var wakeWordAccessKey by remember { mutableStateOf(voicePrefs.getString(WakeWordConfig.PREFERENCE_KEY, "") ?: "") }
-    var showWakeWordKey by remember { mutableStateOf(false) }
+    val wakeWordSettingsPrefs = remember {
+        context.getSharedPreferences(WakeWordConfig.SENSITIVITY_PREFS, android.content.Context.MODE_PRIVATE)
+    }
+    var wakeWordSensitivity by remember {
+        mutableStateOf(WakeWordConfig.Sensitivity.fromPreference(
+            wakeWordSettingsPrefs.getString(WakeWordConfig.SENSITIVITY_KEY, WakeWordConfig.Sensitivity.HIGH.name)
+        ))
+    }
+    var wakeWordDiagnostics by remember { mutableStateOf(WakeWordDiagnostics.snapshot()) }
+    var diagnosticEventCount by remember { mutableStateOf(JarvisDiagnosticLog.eventCount(context)) }
+    var showClearDiagnosticDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            wakeWordDiagnostics = WakeWordDiagnostics.snapshot()
+            diagnosticEventCount = JarvisDiagnosticLog.eventCount(context)
+            delay(1_000)
+        }
+    }
     var speakResults by remember { mutableStateOf(voicePrefs.getBoolean("speak_results", true)) }
     var speechRate by remember { mutableStateOf(1.05f) }
     var sttMode by remember { mutableStateOf("Push to Talk") }
@@ -290,7 +311,7 @@ fun SettingsScreen(
                 
                 SettingsToggleRow(
                     title = "Voice Assistant",
-                    subtitle = "Say “Jarvis” to activate — offline wake word",
+                    subtitle = "Say Jarvis, Hey Jarvis or Hi Jarvis — Voicute offline",
                     enabled = voiceEnabled,
                     onToggle = {
                         voiceEnabled = !voiceEnabled
@@ -310,30 +331,70 @@ fun SettingsScreen(
                 if (voiceEnabled) {
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    SectionLabel("KEY-FREE OFFLINE WAKE WORD")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    FloatingLabelTextField(
-                        value = wakeWordAccessKey,
-                        onValueChange = {
-                            wakeWordAccessKey = it
-                            voicePrefs.edit().putString(
-                                WakeWordConfig.PREFERENCE_KEY,
-                                WakeWordConfig.normalizeAccessKey(it)
-                            ).apply()
-                        },
-                        label = "Optional Picovoice fallback AccessKey",
-                        isFocused = false,
-                        isPassword = true,
-                        showPassword = showWakeWordKey,
-                        onTogglePassword = { showWakeWordKey = !showWakeWordKey }
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    SectionLabel("VOICUTE OFFLINE WAKE WORD")
                     Text(
-                        text = "Primary engine: sherpa-onnx — no key needed. Add a Picovoice key only for optional fallback.",
+                        "Only Voicute ONNX is enabled. Wake phrases: Jarvis, Hey Jarvis and Hi Jarvis. No cloud, API key or fallback engine.",
                         style = TextStyle(fontSize = 11.sp, color = VoidColor.TextDisabled)
                     )
                     Spacer(modifier = Modifier.height(12.dp))
 
+                    SectionLabel("WAKE WORD SENSITIVITY")
+                    Text(
+                        "Higher sensitivity may detect softer speech, but can increase false activations.",
+                        color = VoidColor.TextDisabled,
+                        fontSize = 10.sp
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        WakeWordConfig.Sensitivity.values().forEach { level ->
+                            FilterChip(
+                                selected = wakeWordSensitivity == level,
+                                onClick = {
+                                    wakeWordSensitivity = level
+                                    wakeWordSettingsPrefs.edit()
+                                        .putString(WakeWordConfig.SENSITIVITY_KEY, level.name)
+                                        .apply()
+                                    com.openjarvis.ui.OverlayService.restartWakeWord(context)
+                                },
+                                label = { Text(level.title) }
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    SectionLabel("LIVE WAKE WORD DIAGNOSTICS")
+                    Text(
+                        "Engine: ${wakeWordDiagnostics.engineName} • State: ${wakeWordDiagnostics.state}",
+                        color = VoidColor.TextSecondary,
+                        fontSize = 11.sp
+                    )
+                    Text(
+                        "Mic: ${if (wakeWordDiagnostics.micPermissionGranted) "GRANTED" else "NOT GRANTED"} • Source: ${wakeWordDiagnostics.audioSource} • 16 kHz",
+                        color = VoidColor.TextSecondary,
+                        fontSize = 11.sp
+                    )
+                    Text(
+                        "RMS ${"%.3f".format(wakeWordDiagnostics.rms)} • Peak ${"%.3f".format(wakeWordDiagnostics.peakLevel)} • Frames ${wakeWordDiagnostics.framesProcessed}",
+                        color = VoidColor.TextSecondary,
+                        fontSize = 11.sp
+                    )
+                    Text(
+                        "AGC ${if (wakeWordDiagnostics.agcEnabled) "ON" else "OFF"} • Noise suppression ${if (wakeWordDiagnostics.noiseSuppressorEnabled) "ON" else "OFF"}",
+                        color = VoidColor.TextSecondary,
+                        fontSize = 11.sp
+                    )
+                    Text(
+                        "Last detection: ${wakeWordDiagnostics.lastDetectionKeyword ?: "Never"} • Score: ${wakeWordDiagnostics.lastDetectionScore?.let { "%.3f".format(it) } ?: "Unavailable"}",
+                        color = VoidColor.TextSecondary,
+                        fontSize = 11.sp
+                    )
+                    Text(
+                        "Last candidate: ${wakeWordDiagnostics.lastCandidateKeyword ?: "None"} • Score: ${wakeWordDiagnostics.lastCandidateScore?.let { "%.3f".format(it) } ?: "Unavailable"} • ${if (wakeWordDiagnostics.lastCandidateAccepted) "accepted" else wakeWordDiagnostics.lastCandidateRejectionReason ?: "not accepted"}",
+                        color = VoidColor.TextSecondary,
+                        fontSize = 11.sp
+                    )
+                    wakeWordDiagnostics.lastError?.let {
+                        Text("Last error: $it", color = VoidColor.Red, fontSize = 11.sp)
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
                     SettingsToggleRow(
                         title = "Speak Results",
                         subtitle = "Jarvis reads results aloud",
@@ -446,9 +507,68 @@ fun SettingsScreen(
                         }
                     }
                 }
-                
+
+                    SectionLabel("LOCAL DIAGNOSTIC EXPORT")
+                    Text(
+                        "$diagnosticEventCount local events saved on this device. Nothing is uploaded automatically.",
+                        color = VoidColor.TextSecondary,
+                        fontSize = 11.sp
+                    )
+                    Text(
+                        "Export contains app/build version, mic configuration, rejected wake-word scores, service/watchdog state and redacted errors. No audio or transcript content.",
+                        color = VoidColor.TextDisabled,
+                        fontSize = 10.sp
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedButton(
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                val report = JarvisDiagnosticLog.buildReport(context)
+                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("JARVIS Diagnostic Export", report))
+                                android.widget.Toast.makeText(context, "Diagnostic log copied", android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        ) { Text("Copy") }
+                        Button(
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                val report = JarvisDiagnosticLog.buildReport(context)
+                                val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(android.content.Intent.EXTRA_SUBJECT, "Open Jarvis diagnostic report")
+                                    putExtra(android.content.Intent.EXTRA_TEXT, report)
+                                }
+                                context.startActivity(android.content.Intent.createChooser(sendIntent, "Share Jarvis diagnostics"))
+                            }
+                        ) { Text("Share") }
+                        TextButton(
+                            modifier = Modifier.weight(1f),
+                            onClick = { showClearDiagnosticDialog = true }
+                        ) { Text("Clear") }
+                    }
+                    if (showClearDiagnosticDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showClearDiagnosticDialog = false },
+                            title = { Text("Clear local diagnostics?") },
+                            text = { Text("This removes saved diagnostic events, wake candidate history, and saved Agent/Ollama debug entries from this device. It does not change Jarvis settings or wake-word behavior.") },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    JarvisDiagnosticLog.clear(context)
+                                    WakeWordDiagnostics.clearCandidateHistory()
+                                    diagnosticEventCount = 0
+                                    wakeWordDiagnostics = WakeWordDiagnostics.snapshot()
+                                    showClearDiagnosticDialog = false
+                                }) { Text("Clear logs") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showClearDiagnosticDialog = false }) { Text("Cancel") }
+                            }
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+
                 Spacer(modifier = Modifier.height(32.dp))
-                
+
                 SectionLabel("PERMISSIONS")
                 
                 Spacer(modifier = Modifier.height(12.dp))

@@ -62,9 +62,11 @@ object ProactiveAssistant {
     }
 
     internal fun post(context: Context, title: String, message: String, id: Int) {
-        if (Build.VERSION.SDK_INT >= 33 &&
-            context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
-            android.content.pm.PackageManager.PERMISSION_GRANTED) return
+        val notificationPermissionGranted =
+            !ProactiveNotificationPolicy.requiresRuntimePermission(Build.VERSION.SDK_INT) ||
+                context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!ProactiveNotificationPolicy.mayPost(Build.VERSION.SDK_INT, notificationPermissionGranted)) return
 
         val manager = context.getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

@@ -2,6 +2,7 @@ package com.openjarvis.agent
 
 import android.content.Context
 import android.util.Log
+import com.openjarvis.diagnostics.JarvisDiagnosticLog
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -22,6 +23,8 @@ object AgentDiagnostics {
         provider: String = "Not identified",
         model: String = "Not applicable"
     ) {
+        // Export only the failure stage and stack frames; never pass commands, prompts or model bodies.
+        JarvisDiagnosticLog.record(context, "AGENT_ERROR", "Agent execution reported a failure", error)
         val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
         val safeReason = redactDiagnosticReason(reason, command)
         val report = buildString {
@@ -54,6 +57,14 @@ object AgentDiagnostics {
         traces: List<StepTrace>,
         skipped: List<String>
     ) {
+        val failedSteps = traces.count { !it.ok }
+        if (failedSteps > 0 || skipped.isNotEmpty()) {
+            JarvisDiagnosticLog.record(
+                context,
+                "AGENT_PIPELINE",
+                "Pipeline had ${failedSteps} failed and ${skipped.size} skipped steps; command and step text omitted"
+            )
+        }
         val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
         val report = buildString {
             appendLine("OPEN JARVIS DEBUG REPORT")

@@ -1,5 +1,12 @@
 package com.openjarvis.ui.dashboard
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
@@ -45,6 +52,7 @@ import com.openjarvis.graphify.nodes.TaskNode
 import com.openjarvis.ui.theme.VoidColor
 import kotlinx.coroutines.delay
 import com.openjarvis.proactive.ProactiveAssistant
+import com.openjarvis.proactive.ProactiveNotificationPolicy
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -807,6 +815,60 @@ private fun ProactiveAssistantCard(taskCount: Int) {
     var reminderMessage by remember { mutableStateOf("") }
     var reminderMinutes by remember { mutableStateOf("30") }
     var notice by remember { mutableStateOf("Local reminders • battery alerts • daily briefing") }
+    var notificationPermissionGranted by remember {
+        mutableStateOf(
+            !ProactiveNotificationPolicy.requiresRuntimePermission(Build.VERSION.SDK_INT) ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var pendingNotificationAction by remember { mutableStateOf<String?>(null) }
+
+    fun scheduleCurrentReminder() {
+        val minutes = reminderMinutes.toLongOrNull()
+        if (reminderTitle.isNotBlank() && reminderMessage.isNotBlank() && minutes != null && minutes in 1..10080) {
+            ProactiveAssistant.scheduleReminder(context, reminderTitle, reminderMessage, minutes)
+            notice = "Reminder scheduled in $minutes minute(s)"
+            showReminder = false
+            reminderTitle = ""
+            reminderMessage = ""
+        } else {
+            notice = "Enter title, details and a delay from 1 to 10080 minutes"
+        }
+    }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        notificationPermissionGranted = granted
+        when (pendingNotificationAction) {
+            "briefing" -> {
+                if (granted) {
+                    briefingEnabled = true
+                    ProactiveAssistant.enableDailyBriefing(context, true)
+                    notice = "Daily briefing scheduled"
+                } else {
+                    briefingEnabled = false
+                    notice = "Notifications permission denied — daily briefing not enabled"
+                }
+            }
+            "reminder" -> {
+                if (granted) scheduleCurrentReminder()
+                else notice = "Notifications permission denied — reminder not scheduled"
+            }
+            "permission" -> {
+                notice = if (granted) "Notifications enabled" else "Notifications permission denied"
+            }
+        }
+        pendingNotificationAction = null
+    }
+
+    fun requestNotificationPermission(action: String) {
+        if (notificationPermissionGranted) return
+        pendingNotificationAction = action
+        if (ProactiveNotificationPolicy.requiresRuntimePermission(Build.VERSION.SDK_INT)) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
     val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
     val suggestion = when {
         taskCount == 0 -> "Try a voice command to start your first task, then save a reminder for its follow-up."
@@ -842,12 +904,26 @@ private fun ProactiveAssistantCard(taskCount: Int) {
                 }
                 Switch(
                     checked = briefingEnabled,
-                    onCheckedChange = {
-                        briefingEnabled = it
-                        ProactiveAssistant.enableDailyBriefing(context, it)
-                        notice = if (it) "Daily briefing scheduled" else "Daily briefing disabled"
+                    onCheckedChange = { enabled ->
+                        if (!enabled) {
+                            briefingEnabled = false
+                            ProactiveAssistant.enableDailyBriefing(context, false)
+                            notice = "Daily briefing disabled"
+                        } else if (notificationPermissionGranted) {
+                            briefingEnabled = true
+                            ProactiveAssistant.enableDailyBriefing(context, true)
+                            notice = "Daily briefing scheduled"
+                        } else {
+                            requestNotificationPermission("briefing")
+                        }
                     }
                 )
+            }
+            if (!notificationPermissionGranted) {
+                OutlinedButton(
+                    onClick = { requestNotificationPermission("permission") },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Enable notifications") }
             }
             Button(
                 onClick = { showReminder = true },
@@ -892,14 +968,12 @@ private fun ProactiveAssistantCard(taskCount: Int) {
             confirmButton = {
                 TextButton(onClick = {
                     val minutes = reminderMinutes.toLongOrNull()
-                    if (reminderTitle.isNotBlank() && reminderMessage.isNotBlank() && minutes != null && minutes in 1..10080) {
-                        ProactiveAssistant.scheduleReminder(context, reminderTitle, reminderMessage, minutes)
-                        notice = "Reminder scheduled in $minutes minute(s)"
-                        showReminder = false
-                        reminderTitle = ""
-                        reminderMessage = ""
-                    } else {
+                    if (reminderTitle.isBlank() || reminderMessage.isBlank() || minutes == null || minutes !in 1..10080) {
                         notice = "Enter title, details and a delay from 1 to 10080 minutes"
+                    } else if (notificationPermissionGranted) {
+                        scheduleCurrentReminder()
+                    } else {
+                        requestNotificationPermission("reminder")
                     }
                 }) { Text("Schedule") }
             },

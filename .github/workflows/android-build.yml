@@ -2,7 +2,7 @@ name: Android Build
 
 on:
   push:
-    branches: [main, feature/euronics-webview-integration, feature/jarvis-stable-1.0, feature/jarvis-opendroid-agent-loop, feature/jarvis-slice-c-router-llm-schema]
+    branches: [main, feature/euronics-webview-integration, feature/jarvis-stable-1.0, feature/jarvis-opendroid-agent-loop, feature/jarvis-slice-c-router-llm-schema, feature/jarvis-phase2-continuation]
     paths:
       - "app/**"
       - "scripts/**"
@@ -10,7 +10,7 @@ on:
       - "settings.gradle"
       - ".github/workflows/android-build.yml"
   pull_request:
-    branches: [feature/jarvis-m3-m5-proactive-hud, feature/jarvis-stable-1.0, feature/jarvis-stable-1.0-phase2-wakeword, feature/jarvis-stable-1.0-phase3-ollama, feature/jarvis-stable-1.0-phase4-command-execution, feature/jarvis-jandal-memory-recall, feature/jarvis-slice-c-router-llm-schema]
+    branches: [feature/jarvis-m3-m5-proactive-hud, feature/jarvis-stable-1.0, feature/jarvis-stable-1.0-phase2-wakeword, feature/jarvis-stable-1.0-phase3-ollama, feature/jarvis-stable-1.0-phase4-command-execution, feature/jarvis-jandal-memory-recall, feature/jarvis-slice-c-router-llm-schema, feature/jarvis-phase1-p0-security]
     paths:
       - "app/**"
       - "scripts/**"
@@ -34,10 +34,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare sherpa-onnx runtime and required offline JARVIS KWS model
-        run: |
-          bash scripts/prepare-sherpa.sh all
-          test -s app/src/main/assets/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01/encoder-epoch-12-avg-2-chunk-16-left-64.onnx
+      - name: Prepare Voicute offline multi-keyword ONNX model
+        run: bash scripts/prepare-voicute.sh
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -69,10 +67,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare sherpa-onnx runtime and required offline JARVIS KWS model
-        run: |
-          bash scripts/prepare-sherpa.sh all
-          test -s app/src/main/assets/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01/encoder-epoch-12-avg-2-chunk-16-left-64.onnx
+      - name: Prepare Voicute offline multi-keyword ONNX model
+        run: bash scripts/prepare-voicute.sh
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -167,6 +163,7 @@ jobs:
   euronics-ui-optional:
     name: euronics-ui-optional (non-blocking)
     needs: apk-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feature/euronics-webview-integration'
     continue-on-error: true
     runs-on: ubuntu-latest
     steps:

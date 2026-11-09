@@ -52,10 +52,6 @@ class VoiceManager(private val context: Context) {
     init { ttsEngine.setSpeechRate(getSpeechRate()) }
 
     fun isVoiceEnabled(): Boolean = prefs.getBoolean(KEY_VOICE_ENABLED, false)
-    fun getPicovoiceAccessKey(): String = prefs.getString(WakeWordConfig.PREFERENCE_KEY, "").orEmpty()
-    fun setPicovoiceAccessKey(key: String) {
-        prefs.edit().putString(WakeWordConfig.PREFERENCE_KEY, WakeWordConfig.normalizeAccessKey(key)).apply()
-    }
     fun setVoiceEnabled(enabled: Boolean) { prefs.edit().putBoolean(KEY_VOICE_ENABLED, enabled).apply() }
     fun getSTTMode(): STTMode {
         val mode = prefs.getString(KEY_STT_MODE, STTMode.PUSH_TO_TALK.name)
