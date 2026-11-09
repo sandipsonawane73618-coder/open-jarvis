@@ -14,10 +14,12 @@ internal object SelfHealingSafetyPolicy {
         else -> 1
     }
 
-    /** Retry a read-only observation only when the classifier explicitly permits refresh. */
+    /**
+     * Retry only when the failure classifier identifies a safe, refreshable observation.
+     * WAIT/WAIT_FOR are not exempt: permission, recognizer, and unknown failures must fail closed.
+     */
     fun shouldRetry(action: Action, failureReason: String): Boolean = when (action.action) {
-        Action.WAIT, Action.WAIT_FOR -> true
-        Action.READ_SCREEN, Action.EXTRACT_TEXT ->
+        Action.WAIT, Action.WAIT_FOR, Action.READ_SCREEN, Action.EXTRACT_TEXT ->
             SelfHealingRecoveryPolicy.classify(action, failureReason).mayRetryAutomatically
         else -> false
     }

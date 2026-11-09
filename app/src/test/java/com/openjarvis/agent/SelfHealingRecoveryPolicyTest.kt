@@ -31,6 +31,14 @@ class SelfHealingRecoveryPolicyTest {
         assertEquals(SelfHealingRecoveryPolicy.FailureArea.APP_LAUNCH, launch.area)
         assertFalse(launch.mayRetryAutomatically)
         assertTrue(launch.requiresUserConfirmation)
+
+        listOf(Action.TAP_COORDS, Action.CLEAR_TYPE, Action.LONG_PRESS, Action.SWIPE, Action.SCROLL,
+            Action.PRESS_RECENTS).forEach { kind ->
+            val decision = SelfHealingRecoveryPolicy.classify(Action(kind), "action failed")
+            assertEquals("action=$kind", SelfHealingRecoveryPolicy.FailureArea.ACTION, decision.area)
+            assertFalse("action=$kind", decision.mayRetryAutomatically)
+            assertTrue("action=$kind", decision.requiresUserConfirmation)
+        }
     }
 
     @Test fun appLaunchFailureTextIsClassifiedEvenWithoutOpenAppAction() {
@@ -224,4 +232,19 @@ class SelfHealingRecoveryPolicyTest {
         }
     }
 
+
+    @Test fun androidPermissionDenialForReadOnlyObservationRequiresUserAction() {
+        listOf(
+            "Permission Denial: reading current window requires android.permission.BIND_ACCESSIBILITY_SERVICE",
+            "SecurityException: permission denied while reading screen",
+            "Accessibility permission is not granted"
+        ).forEach { reason ->
+            val decision = SelfHealingRecoveryPolicy.classify(Action(Action.READ_SCREEN), reason)
+            assertEquals(SelfHealingRecoveryPolicy.FailureArea.ACCESSIBILITY, decision.area)
+            assertEquals(SelfHealingRecoveryPolicy.RecoveryKind.USER_ACTION_REQUIRED, decision.recovery)
+            assertFalse(decision.mayRetryAutomatically)
+            assertTrue(decision.requiresUserConfirmation)
+            assertFalse(SelfHealingSafetyPolicy.shouldRetry(Action(Action.READ_SCREEN), reason))
+        }
+    }
 }

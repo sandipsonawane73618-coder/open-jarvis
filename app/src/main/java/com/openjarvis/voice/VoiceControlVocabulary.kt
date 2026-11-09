@@ -10,7 +10,7 @@ import java.text.Normalizer
  */
 object VoiceControlVocabulary {
     private val muteCommands = setOf(
-        "mute", "jarvis mute", "mute jarvis",
+        "mute", "mute now", "mute please", "jarvis mute", "mute jarvis", "turn voice off", "voice assistant off", "jarvis off",
         "stop listening", "jarvis stop listening", "stop hearing",
         "mic off", "microphone off", "turn off mic", "turn off the microphone",
         "chup ho jao", "jarvis chup ho jao", "chup raho",
@@ -24,7 +24,7 @@ object VoiceControlVocabulary {
     )
 
     private val unmuteCommands = setOf(
-        "unmute", "jarvis unmute",
+        "unmute", "unmute now", "unmute please", "jarvis unmute", "turn voice on", "voice assistant on", "jarvis on",
         "resume listening", "start listening", "listen again",
         "mic on", "microphone on", "turn on mic", "turn on the microphone",
         "ab bolo", "jarvis ab bolo", "अब बोलो", "जार्विस अब बोलो",
@@ -43,9 +43,19 @@ object VoiceControlVocabulary {
     val recognitionPhrases: List<String> =
         (muteCommands + unmuteCommands).sorted()
 
-    fun isMuteCommand(command: String): Boolean = normalize(command) in muteCommands
+    fun isMuteCommand(command: String): Boolean = stripWakePrefix(normalize(command)) in muteCommands
 
-    fun isUnmuteCommand(command: String): Boolean = normalize(command) in unmuteCommands
+    fun isUnmuteCommand(command: String): Boolean = stripWakePrefix(normalize(command)) in unmuteCommands
+
+    private fun stripWakePrefix(value: String): String {
+        var result = value
+        val prefixes = listOf("hey jarvis", "hi jarvis", "jarvis", "हे जार्विस", "जार्विस")
+        while (true) {
+            val prefix = prefixes.firstOrNull { result == it || result.startsWith("$it ") } ?: break
+            result = result.removePrefix(prefix).trim()
+        }
+        return result
+    }
 
     private fun normalize(command: String): String =
         Normalizer.normalize(command, Normalizer.Form.NFC)

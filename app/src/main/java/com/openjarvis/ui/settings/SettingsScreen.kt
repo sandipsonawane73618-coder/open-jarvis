@@ -289,20 +289,14 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(10.dp))
                 SettingsToggleRow(
                     title = "Voice Assistant",
-                    subtitle = "Always-on command listening • Android on-device speech",
+                    subtitle = "On-device voice controls • tap Mic to start; no background listening",
                     enabled = voiceEnabled,
                     onToggle = {
                         voiceEnabled = !voiceEnabled
                         voicePrefs.edit().putBoolean("voice_enabled", voiceEnabled).apply()
-                        // Apply the toggle immediately. Disabling voice stops the foreground
-                        // microphone service; enabling starts command listening.
-                        runCatching {
-                            if (voiceEnabled) {
-                                com.openjarvis.ui.OverlayService.start(context)
-                            } else {
-                                context.stopService(android.content.Intent(context, com.openjarvis.ui.OverlayService::class.java))
-                            }
-                        }
+                        // Voice capability is independent from the floating overlay lifecycle.
+                        // Never destroy/recreate the overlay when this preference changes.
+                        com.openjarvis.ui.OverlayService.onVoiceAssistantToggled(voiceEnabled)
                     }
                 )
                 

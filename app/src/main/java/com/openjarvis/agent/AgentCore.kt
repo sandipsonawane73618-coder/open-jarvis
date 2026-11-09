@@ -22,6 +22,7 @@ import com.openjarvis.intelligence.AIApps
 import com.openjarvis.intelligence.AppAnalyzer
 import com.openjarvis.intelligence.TaskRouter
 import com.openjarvis.intelligence.FastCommandParser
+import com.openjarvis.intelligence.FastCommandRetryPolicy
 import com.openjarvis.intelligence.TaskWorkingMemory
 import com.openjarvis.llm.UniversalAdapter
 import com.openjarvis.vision.VisionModule
@@ -1236,8 +1237,10 @@ ${fullSystem.substringAfter("MEMORY:")}
             var failure: String? = null
             var firstFailure: String? = null
             var completed = false
+            var attemptsMade = 0
             val maxAttempts = SelfHealingSafetyPolicy.maxAttempts(action)
             for (attempt in 1..maxAttempts) {
+                attemptsMade = attempt
                 _state.value = AgentState.Running(
                     "Action ${index + 1}/${actions.size}: ${action.action} (attempt $attempt/$maxAttempts)"
                 )
@@ -1266,7 +1269,7 @@ ${fullSystem.substringAfter("MEMORY:")}
             if (!completed) {
                 val failureReason = failure ?: "verification failed"
                 val recovery = selfHealingExecutor.failureDisposition(action, failureReason)
-                val retryNote = if (maxAttempts > 1) "after bounded wait retry" else "without replay"
+                val retryNote = if (attemptsMade > 1) "after bounded wait retry" else "without retry/replay"
                 val message = "Action ${index + 1}/${actions.size} (${action.action}) failed $retryNote: $failureReason. $recovery"
                 results.add(message)
                 // The user-facing result retains details; Logcat must not duplicate raw failure text.
@@ -1297,25 +1300,25 @@ ${fullSystem.substringAfter("MEMORY:")}
     }
 
     private suspend fun executeFastCommand(command: FastCommandParser.Command): String {
-        // An app launch is not safe to retry after startActivity succeeds: a failed
-        // foreground observation must never launch the same app a second time.
-        if (command is FastCommandParser.Command.OpenApp ||
-            command is FastCommandParser.Command.DialContact ||
-            command is FastCommandParser.Command.YoutubeSearch ||
-            command is FastCommandParser.Command.SetTimer) {
-            return executeFastCommandOnce(command)
-        }
+        // Fast commands can mutate memory, change navigation state, launch apps,
+        // or open system UI. An exception may occur after the side effect succeeded,
+        // so never replay a fast command without an explicit user request.
         var lastFailure = "Command could not be verified"
-        for (attempt in 1..2) {
+        val maxAttempts = FastCommandRetryPolicy.maxAttempts(command)
+        for (attempt in 1..maxAttempts) {
             try {
                 return executeFastCommandOnce(command)
             } catch (error: Exception) {
                 lastFailure = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
-                Log.w(TAG, "Fast command attempt $attempt failed: $lastFailure")
-                if (attempt == 1) kotlinx.coroutines.delay(400)
+                Log.w(TAG, "Fast command attempt $attempt/$maxAttempts failed")
+                if (FastCommandRetryPolicy.shouldRetry(command, attempt)) {
+                    kotlinx.coroutines.delay(400)
+                } else {
+                    break
+                }
             }
         }
-        throw IllegalStateException("Command failed after one retry: $lastFailure")
+        throw IllegalStateException("Fast command failed without automatic replay: $lastFailure")
     }
 
     private suspend fun executeFastCommandOnce(command: FastCommandParser.Command): String {

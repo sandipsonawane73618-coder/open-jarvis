@@ -23,12 +23,18 @@ class SelfHealingSafetyPolicyTest {
         }
     }
 
-    @Test fun retryRequiresSafeFailureClassificationForReadOnlyObservations() {
+    @Test fun retryRequiresSafeFailureClassificationForAllReadOnlyObservations() {
         assertTrue(SelfHealingSafetyPolicy.shouldRetry(
             Action(Action.READ_SCREEN), "Could not read current screen (no accessible text)"
         ))
         assertTrue(SelfHealingSafetyPolicy.shouldRetry(
             Action(Action.EXTRACT_TEXT), "Could not extract text from current screen"
+        ))
+        assertTrue(SelfHealingSafetyPolicy.shouldRetry(
+            Action(Action.WAIT), "Timed out waiting for visible text"
+        ))
+        assertTrue(SelfHealingSafetyPolicy.shouldRetry(
+            Action(Action.WAIT_FOR, text = "Ready"), "Timed out waiting for visible text"
         ))
         assertFalse(SelfHealingSafetyPolicy.shouldRetry(
             Action(Action.READ_SCREEN), "Android accessibility service is disabled"
@@ -36,9 +42,22 @@ class SelfHealingSafetyPolicyTest {
         assertFalse(SelfHealingSafetyPolicy.shouldRetry(
             Action(Action.EXTRACT_TEXT), "Unexpected internal failure"
         ))
-        assertTrue(SelfHealingSafetyPolicy.shouldRetry(Action(Action.WAIT), "Timed out waiting for visible text"))
     }
 
+    @Test fun waitActionsDoNotRetryPermissionOrUnknownFailures() {
+        listOf(Action.WAIT, Action.WAIT_FOR).forEach { kind ->
+            val action = Action(kind, text = "Ready")
+            assertFalse("$kind permission failure", SelfHealingSafetyPolicy.shouldRetry(
+                action, "Android accessibility permission is disabled"
+            ))
+            assertFalse("$kind unknown failure", SelfHealingSafetyPolicy.shouldRetry(
+                action, "Unexpected internal failure"
+            ))
+            assertFalse("$kind learned permission failure", SelfHealingSafetyPolicy.shouldRetryAfterLearning(
+                action, "Android accessibility permission is disabled", 0
+            ))
+        }
+    }
 
     @Test fun recurringUnresolvedObservationPausesAutomaticRetry() {
         val action = Action(Action.READ_SCREEN)

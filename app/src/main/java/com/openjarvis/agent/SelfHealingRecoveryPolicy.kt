@@ -26,9 +26,10 @@ internal object SelfHealingRecoveryPolicy {
         val isAppLaunch = action.action == Action.OPEN_APP ||
             contains(value, "app not installed", "package not found", "launch activity", "could not launch")
         val isSideEffect = action.action in setOf(
-            Action.TAP, Action.CLICK, Action.TYPE, Action.TYPE_TEXT, Action.OPEN_APP,
+            Action.TAP, Action.TAP_COORDS, Action.CLICK, Action.TYPE, Action.TYPE_TEXT,
+            Action.CLEAR_TYPE, Action.LONG_PRESS, Action.SWIPE, Action.SCROLL, Action.OPEN_APP,
             Action.BACK, Action.PRESS_BACK, Action.HOME, Action.PRESS_HOME,
-            Action.PRESS_RECENTS, Action.SCROLL, Action.AI_PROMPT
+            Action.PRESS_RECENTS, Action.AI_PROMPT
         )
         val area = when {
             // Explicit model-missing signals take precedence even when the diagnostic
@@ -42,7 +43,9 @@ internal object SelfHealingRecoveryPolicy {
             (isObservation && action.action in setOf(Action.WAIT, Action.WAIT_FOR) &&
                 contains(value, "timed out", "timeout", "timed-out")) -> FailureArea.ACCESSIBILITY
             contains(value, "accessibility", "visible text", "node not found", "no accessible text",
-                "could not read current screen", "could not extract text from current screen") -> FailureArea.ACCESSIBILITY
+                "could not read current screen", "could not extract text from current screen") ||
+                (isObservation && contains(value, "permission denied", "permission denial", "securityexception",
+                    "requires permission", "accessibility permission")) -> FailureArea.ACCESSIBILITY
             isAppLaunch -> FailureArea.APP_LAUNCH
             contains(value, "speech", "stt", "microphone", "no match") -> FailureArea.SPEECH
             contains(value, "overlay", "floating window") -> FailureArea.OVERLAY

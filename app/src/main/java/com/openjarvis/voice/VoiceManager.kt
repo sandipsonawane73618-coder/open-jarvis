@@ -65,7 +65,11 @@ class VoiceManager(private val context: Context) {
 
     fun isContinuousSessionActive(): Boolean = continuousSession
 
-    fun setVoiceEnabled(enabled: Boolean) { prefs.edit().putBoolean(KEY_VOICE_ENABLED, enabled).apply() }
+    @Synchronized
+    fun setVoiceEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_VOICE_ENABLED, enabled).apply()
+        if (!enabled) stopContinuousSession()
+    }
 
     fun getSTTMode(): STTMode {
         val mode = prefs.getString(KEY_STT_MODE, STTMode.PUSH_TO_TALK.name)

@@ -25,6 +25,13 @@ class MuteCommandPolicyTest {
         ).forEach { assertTrue("$it should unmute", MuteCommandPolicy.isUnmuteCommand(it)) }
     }
 
+    @Test fun acceptsWakeWordPrefixedVoiceControlsAndExplicitOnOffAliases() {
+        listOf("Hey Jarvis, mute", "Jarvis mute now", "Voice assistant off", "Mute please")
+            .forEach { assertTrue("$it should mute", MuteCommandPolicy.isMuteCommand(it)) }
+        listOf("Hey Jarvis, unmute", "Jarvis unmute now", "Voice assistant on", "Unmute please")
+            .forEach { assertTrue("$it should unmute", MuteCommandPolicy.isUnmuteCommand(it)) }
+    }
+
     @Test fun ordinaryConversationDoesNotTriggerVoiceControls() {
         listOf(
             "mute ka matlab kya hai",
