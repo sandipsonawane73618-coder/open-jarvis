@@ -4,12 +4,33 @@ set -euo pipefail
 APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
 ARTIFACT_DIR="artifacts"
 LOGCAT_PATH="$ARTIFACT_DIR/minimal-smoke-logcat.txt"
-APP_ID="com.openjarvis.preview"
-MAIN_ACTIVITY="$APP_ID/com.openjarvis.ui.MainActivity"
+APP_ID=""
+MAIN_ACTIVITY=""
 
 mkdir -p "$ARTIFACT_DIR"
 : > "$LOGCAT_PATH"
 [[ -f "$APK_PATH" ]] || { echo "Debug APK not found: $APK_PATH" >&2; exit 10; }
+
+# Read the package and launcher component from the exact APK under test. This
+# prevents a stale hard-coded applicationId/activity from hiding a valid build.
+SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+[[ -n "$SDK_ROOT" ]] || { echo "Android SDK path is unavailable." >&2; exit 17; }
+AAPT_PATH="$(find "$SDK_ROOT/build-tools" -maxdepth 2 -type f -name aapt | sort -V | tail -n 1)"
+[[ -x "$AAPT_PATH" ]] || { echo "Android aapt tool was not found under $SDK_ROOT/build-tools." >&2; exit 17; }
+APK_BADGING="$("$AAPT_PATH" dump badging "$APK_PATH")"
+APP_ID="$(printf '%s\n' "$APK_BADGING" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -n 1)"
+LAUNCHER_ACTIVITY="$(printf '%s\n' "$APK_BADGING" | sed -n "s/^launchable-activity: name='\\([^']*\\)'.*/\\1/p" | head -n 1)"
+[[ -n "$APP_ID" && -n "$LAUNCHER_ACTIVITY" ]] || {
+  echo "APK metadata is missing its application ID or launcher activity." >&2
+  exit 17
+}
+case "$LAUNCHER_ACTIVITY" in
+  .*) LAUNCHER_ACTIVITY="${APP_ID}${LAUNCHER_ACTIVITY}" ;;
+  *.*) ;;
+  *) LAUNCHER_ACTIVITY="${APP_ID}.${LAUNCHER_ACTIVITY}" ;;
+esac
+MAIN_ACTIVITY="$APP_ID/$LAUNCHER_ACTIVITY"
+echo "APK identity: $APP_ID; launcher: $MAIN_ACTIVITY"
 
 echo "Waiting for Android boot and stable system-provider readiness."
 adb wait-for-device
@@ -57,11 +78,16 @@ for ((attempt=1; attempt<=3; attempt++)); do
   # --no-streaming avoids PackageInstaller's streamed-session storage allocation
   # path, which can fail while Android's Settings provider is still initializing.
   if adb install --no-streaming -r "$APK_PATH"; then
-    INSTALL_OK=1
-    echo "APK install succeeded on attempt $attempt."
-    break
+    # adb can report a completed install while Package Manager is restarting;
+    # require the package path to be visible before accepting the attempt.
+    if adb shell pm path "$APP_ID" 2>/dev/null | tr -d '\r' | grep -q '^package:'; then
+      INSTALL_OK=1
+      echo "APK install and Package Manager visibility succeeded on attempt $attempt."
+      break
+    fi
+    echo "Install command returned success, but Package Manager cannot see $APP_ID yet." >&2
   fi
-  echo "APK install attempt $attempt failed; reconnecting emulator ADB and rechecking system providers." >&2
+  echo "APK install attempt $attempt failed verification; reconnecting emulator ADB and rechecking system providers." >&2
   if ! adb reconnect device; then echo "ADB reconnect command failed; retrying device wait anyway." >&2; fi
   adb wait-for-device
   # system_server may restart under emulator memory pressure. Give Package
@@ -108,10 +134,22 @@ if [[ "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" -ge 33 ]]; then
   adb shell pm grant "$APP_ID" android.permission.POST_NOTIFICATIONS
 fi
 
+echo "Verifying installed package and resolving the APK-declared launcher."
+INSTALLED_PATHS="$(adb shell pm path "$APP_ID" | tr -d '\r')"
+[[ "$INSTALLED_PATHS" == *"package:"* ]] || {
+  echo "Installed package $APP_ID is not visible to Package Manager: $INSTALLED_PATHS" >&2
+  exit 17
+}
+RESOLVED_ACTIVITY="$(adb shell cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p "$APP_ID" | tr -d '\r' | tail -n 1)"
+[[ "$RESOLVED_ACTIVITY" == "$MAIN_ACTIVITY" ]] || {
+  echo "APK launcher mismatch. Expected $MAIN_ACTIVITY; Package Manager resolved: $RESOLVED_ACTIVITY" >&2
+  exit 17
+}
+
 echo "Clearing logcat before app launch."
 adb logcat -c
 
-echo "Launching MainActivity."
+echo "Launching APK-declared MainActivity: $MAIN_ACTIVITY"
 adb shell am start -W -n "$MAIN_ACTIVITY"
 
 echo "Waiting up to 60 seconds for MainActivity to be resumed."

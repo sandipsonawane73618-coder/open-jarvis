@@ -14,7 +14,7 @@ on:
       - "settings.gradle"
       - ".github/workflows/android-build.yml"
   pull_request:
-    branches: [feature/jarvis-m3-m5-proactive-hud, feature/jarvis-stable-1.0, feature/jarvis-stable-1.0-phase2-wakeword, feature/jarvis-stable-1.0-phase3-ollama, feature/jarvis-stable-1.0-phase4-command-execution, feature/jarvis-jandal-memory-recall, feature/jarvis-slice-c-router-llm-schema, feature/jarvis-phase1-p0-security, feature/jarvis-phase2-continuation, feature/jarvis-command-listener-no-wakeword]
+    branches: [feature/jarvis-full-potential-foundation, feature/jarvis-manual-mic-hud-headroom, feature/jarvis-m3-m5-proactive-hud, feature/jarvis-stable-1.0, feature/jarvis-stable-1.0-phase2-wakeword, feature/jarvis-stable-1.0-phase3-ollama, feature/jarvis-stable-1.0-phase4-command-execution, feature/jarvis-jandal-memory-recall, feature/jarvis-slice-c-router-llm-schema, feature/jarvis-phase1-p0-security, feature/jarvis-phase2-continuation, feature/jarvis-command-listener-no-wakeword, feature/jarvis-foreground-banking-guard]
     paths:
       - "app/**"
       - "scripts/**"
@@ -152,10 +152,10 @@ jobs:
       - name: Install, resume MainActivity, and check for crashes
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
+          api-level: 35
           arch: x86_64
           profile: pixel_2
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -memory 2048 -cores 2 -no-metrics
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -memory 3072 -cores 2 -no-metrics
           disable-animations: true
           emulator-boot-timeout: 900
           script: bash scripts/smoke-minimal.sh

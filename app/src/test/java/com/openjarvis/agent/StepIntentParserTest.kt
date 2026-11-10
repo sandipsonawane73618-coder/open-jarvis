@@ -85,11 +85,14 @@ class StepIntentParserTest {
 
     @Test
     fun screenReadCommandsAreRecognizedExplicitly() {
-        assertEquals(StepIntent.ScreenRead, p("read screen"))
-        assertEquals(StepIntent.ScreenRead, p("take screenshot"))
-        assertEquals(StepIntent.ScreenRead, p("screen par kya hai"))
-        assertEquals(StepIntent.ScreenRead, p("स्क्रीन पर क्या है बताओ"))
-        assertEquals(StepIntent.ScreenRead, p("स्क्रीनशॉट लो"))
+        assertEquals(StepIntent.ScreenRead(), p("read screen"))
+        assertEquals(StepIntent.ScreenRead(), p("take screenshot"))
+        assertEquals(StepIntent.ScreenRead(), p("screen par kya hai"))
+        assertEquals(StepIntent.ScreenRead(), p("स्क्रीन पर क्या है बताओ"))
+        assertEquals(StepIntent.ScreenRead(), p("स्क्रीनशॉट लो"))
+        assertEquals(StepIntent.ScreenRead(true), p("remember this screen"))
+        assertEquals(StepIntent.ScreenRead(true), p("save screenshot"))
+        assertEquals(StepIntent.ScreenRead(true), p("इस स्क्रीन को याद रखो"))
         assertNull(p("read a book"))
         assertNull(p("screen brightness"))
     }

@@ -4,15 +4,28 @@ enum class VoiceSessionState {
     Idle, Listening, Thinking, Speaking
 }
 
-/** Deterministic one-shot voice state model; only an explicit mic tap begins Listening. */
+/**
+ * Deterministic voice-session state model.
+ * Continuous mode is enabled only by an explicit user mic action and ends only
+ * when the user stops the session or the service is released.
+ */
 class VoiceSessionStateMachine {
     var state: VoiceSessionState = VoiceSessionState.Idle
         private set
+
+    private var continuousSessionActive = false
 
     fun beginListening(): VoiceSessionState {
         state = VoiceSessionState.Listening
         return state
     }
+
+    fun beginContinuousSession(): VoiceSessionState {
+        continuousSessionActive = true
+        return beginListening()
+    }
+
+    fun isContinuousSessionActive(): Boolean = continuousSessionActive
 
     fun onTranscriptReceived(hasText: Boolean): VoiceSessionState {
         state = if (hasText) VoiceSessionState.Thinking else VoiceSessionState.Idle
@@ -30,11 +43,12 @@ class VoiceSessionStateMachine {
     }
 
     fun onSpeakingFinished(): VoiceSessionState {
-        state = VoiceSessionState.Idle
+        state = if (continuousSessionActive) VoiceSessionState.Listening else VoiceSessionState.Idle
         return state
     }
 
     fun stop(): VoiceSessionState {
+        continuousSessionActive = false
         state = VoiceSessionState.Idle
         return state
     }

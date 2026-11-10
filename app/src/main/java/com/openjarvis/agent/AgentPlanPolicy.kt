@@ -58,6 +58,7 @@ internal object AgentPlanPolicy {
             actions.size <= MAX_ACTIONS &&
             !hasUnresolvedAppLaunch(actions) &&
             !hasMessageSendTap(actions) &&
+            !BankingSafetyPolicy.blocksFinancialActions(actions) &&
             actions.none {
                 it.action == Action.ERROR ||
                     it.action == Action.READ_SCREEN ||
@@ -65,7 +66,9 @@ internal object AgentPlanPolicy {
             }
 
     fun isExecutablePlan(actions: List<Action>, command: String): Boolean =
-        isExecutablePlan(actions) && !isLikelyUnderPlanned(command, actions)
+        isExecutablePlan(actions) &&
+            !isLikelyUnderPlanned(command, actions) &&
+            BankingSafetyPolicy.failureRule(command, actions) == null
 
     /** A single resolved launch is safe even when the current Accessibility tree is blank. */
     fun canLaunchResolvedAppWithoutScreen(actions: List<Action>): Boolean =
@@ -74,7 +77,9 @@ internal object AgentPlanPolicy {
             !AppTargetResolver.isPlaceholder(actions.single().label) &&
             !actions.single().packageName.isNullOrBlank() &&
             isExecutablePlan(actions)
-    fun failureRule(actions: List<Action>, command: String): String? = when {
+    fun failureRule(actions: List<Action>, command: String): String? {
+        BankingSafetyPolicy.failureRule(command, actions)?.let { return it }
+        return when {
         actions.size > MAX_ACTIONS -> "RULE_MAX_ACTIONS"
         actions.any { it.action == Action.ERROR } && actions.any { it.action != Action.ERROR } -> "RULE_MIXED_ERROR"
         hasUnresolvedAppLaunch(actions) -> "RULE_UNRESOLVED_APP"
@@ -83,6 +88,7 @@ internal object AgentPlanPolicy {
         actions.isEmpty() -> "RULE_EMPTY_PLAN"
         actions.any { it.action == Action.READ_SCREEN || it.action == Action.EXTRACT_TEXT } -> "RULE_SCREEN_OBSERVATION"
         else -> null
+        }
     }
 
     fun userGuidance(rule: String): String = when (rule) {
@@ -90,6 +96,8 @@ internal object AgentPlanPolicy {
         "RULE_MIXED_ERROR" -> "Plan mein action aur error mix hain; ek clear command do."
         "RULE_UNRESOLVED_APP" -> "App ka installed naam nahi mila; app ka exact naam bolo."
         "RULE_MESSAGE_SEND_CONFIRMATION" -> "Jarvis message khud send nahi karega. Message review karke Send manually dabao."
+        BankingSafetyPolicy.BLOCKED_TRANSACTION, BankingSafetyPolicy.BLOCKED_CREDENTIAL ->
+            BankingSafetyPolicy.userGuidance(rule)
         "RULE_UNDER_PLANNED" -> "Command ke kuch steps plan nahi hue; ek baar mein ek chhota task bolo."
         "RULE_SCREEN_OBSERVATION" -> "Accessibility screen read nahi kar pa rahi; Jarvis Accessibility enable karke target app kholo."
         "RULE_EMPTY_PLAN" -> "Koi action plan nahi bana; command ko specific tarike se bolo."

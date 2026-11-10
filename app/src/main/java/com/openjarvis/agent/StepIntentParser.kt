@@ -11,7 +11,7 @@ sealed class StepIntent {
     data class Navigate(val place: String) : StepIntent()
     data class Message(val app: String?, val contact: String?, val text: String?) : StepIntent()
     data class AppLaunch(val label: String) : StepIntent()
-    object ScreenRead : StepIntent()
+    data class ScreenRead(val remember: Boolean = false) : StepIntent()
 }
 
 /**
@@ -107,7 +107,8 @@ object StepIntentParser {
     private val SCREEN_ACTION_WORDS = words(
         "read", "scan", "analyze", "analyse", "capture", "take", "check", "see",
         "what", "whats", "kya", "dikhta", "dikhao", "padho", "padh",
-        "पढ़ो", "पढो", "दिखाओ", "बताओ", "क्या", "काय", "वाचा", "वाच", "दिसतं", "दिसते"
+        "पढ़ो", "पढो", "दिखाओ", "बताओ", "क्या", "काय", "वाचा", "वाच", "दिसतं", "दिसते",
+        "remember", "save", "याद", "सहेज", "लक्षात", "ठेव"
     )
 
     private val NAV_WORDS = words(
@@ -161,7 +162,7 @@ object StepIntentParser {
         if (tokens.none { it in SCREEN_WORDS }) return null
         val explicitScreenshot = tokens.any { it in words("screenshot", "स्क्रीनशॉट") }
         if (!explicitScreenshot && tokens.none { it in SCREEN_ACTION_WORDS }) return null
-        return StepIntent.ScreenRead
+        return StepIntent.ScreenRead(tokens.any { it in words("remember", "save", "याद", "सहेज", "लक्षात", "ठेव") })
     }
 
     private fun parseMessage(step: String): StepIntent.Message? {

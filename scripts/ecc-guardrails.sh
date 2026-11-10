@@ -22,14 +22,20 @@ require_text "app/src/main/java/com/openjarvis/llm/providers/Providers.kt" 'cons
 require_text "app/src/main/java/com/openjarvis/llm/UniversalAdapter.kt" 'return OllamaProvider(baseUrl, model, context.applicationContext)'
 require_text "app/src/main/java/com/openjarvis/voice/AndroidSTTEngine.kt" 'SpeechRecognizer.createOnDeviceSpeechRecognizer(context)'
 
-# Manual-mic-only invariant: one explicit overlay button call; no startup/rearm loop.
+# Continuous voice is allowed only after one explicit user mic action.
+# The VoiceManager owns bounded retries/rearm; the STT engine remains one-attempt-per-call.
 OVERLAY_FILE="app/src/main/java/com/openjarvis/ui/OverlayService.kt"
 STT_FILE="app/src/main/java/com/openjarvis/voice/AndroidSTTEngine.kt"
-VOICE_START_COUNT="$(grep -Fc 'voiceManager.startListening()' "$OVERLAY_FILE")"
-[[ "$VOICE_START_COUNT" -eq 1 ]] || fail "expected exactly one manual mic-button startListening call in $OVERLAY_FILE; found $VOICE_START_COUNT"
+VOICE_MANAGER_FILE="app/src/main/java/com/openjarvis/voice/VoiceManager.kt"
+VOICE_START_COUNT="$(grep -Fc 'voiceManager.startContinuousSession()' "$OVERLAY_FILE")"
+[[ "$VOICE_START_COUNT" -eq 1 ]] || fail "expected exactly one explicit mic-button startContinuousSession call in $OVERLAY_FILE; found $VOICE_START_COUNT"
+require_text "$VOICE_MANAGER_FILE" 'fun startContinuousSession()'
+require_text "$VOICE_MANAGER_FILE" 'fun stopContinuousSession()'
+require_text "$VOICE_MANAGER_FILE" 'MAX_RETRY_DELAY_MS = 8_000L'
+require_text "$VOICE_MANAGER_FILE" 'mainHandler.postDelayed(rearmRunnable, delay)'
 
 if grep -nE 'scheduleRetry|retryRunnable|retryAttempt|RETRYING:' "$STT_FILE"; then
-  fail "automatic STT retry/rearm logic found in $STT_FILE"
+  fail "STT engine must not own its own retry/rearm loop: $STT_FILE"
 fi
 
 if grep -R -nE 'VoiceCute|Voicute|WakeWord|Porcupine|Sherpa|sherpa-onnx|prepare-voicute|prepare-sherpa' app/src/main .github/workflows; then
@@ -52,4 +58,4 @@ if grep -R -nF '|| true' scripts --exclude='ecc-guardrails.sh'; then
   fail "scripts must not hide failures with || true"
 fi
 
-printf 'ECC guardrails PASS: local Ollama/Qwen default, on-device STT, manual-mic-only lifecycle, no wake-word runtime, and test/shell bypass checks verified.\n'
+printf 'ECC guardrails PASS: local Ollama/Qwen default, on-device STT, explicit-start continuous voice lifecycle, no wake-word runtime, and test/shell bypass checks verified.\n'

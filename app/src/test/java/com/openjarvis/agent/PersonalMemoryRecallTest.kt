@@ -46,4 +46,27 @@ class PersonalMemoryRecallTest {
         assertTrue(result.lines().size <= 3)
         assertTrue(result.length <= 360)
     }
+    @Test fun rareSpecificTermsOutrankGenericSharedTerms() {
+        val notes = listOf(
+            "I prefer Marathi responses",
+            "I prefer English responses",
+            "My default model is qwen3:1.7b"
+        )
+        assertEquals(
+            listOf("My default model is qwen3:1.7b"),
+            PersonalMemoryCodec.retrieve(notes, "default model")
+        )
+    }
+
+    @Test fun limitsResultsAndDoesNotReturnNotesWithoutTokenMatches() {
+        val notes = listOf(
+            "Use Marathi for replies",
+            "Use English for replies",
+            "Use Hindi for replies",
+            "Keep battery usage low"
+        )
+        assertEquals(2, PersonalMemoryCodec.retrieve(notes, "replies", limit = 2).size)
+        assertTrue(PersonalMemoryCodec.retrieve(notes, "unrelated astronomy", limit = 3).isEmpty())
+    }
+
 }

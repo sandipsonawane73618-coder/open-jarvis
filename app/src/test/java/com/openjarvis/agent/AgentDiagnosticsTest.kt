@@ -13,6 +13,16 @@ class AgentDiagnosticsTest {
         assertFalse(summary.contains("WhatsApp"))
     }
 
+    @Test fun pipelineTraceSummaryOmitsStepReplyAndSkippedContent() {
+        val step = "send private message to Rahul"
+        val reply = "Message body contains a private address"
+        val skipped = "delete account confirmation"
+        assertTrue(summarizePipelineTraceText(step).contains("${step.length} chars"))
+        assertFalse(summarizePipelineTraceText(step).contains("Rahul"))
+        assertFalse(summarizePipelineTraceText(reply).contains("private address"))
+        assertFalse(summarizePipelineTraceText(skipped).contains("delete account"))
+    }
+
     @Test fun reasonRedactsCommandAndTypedOrClickedText() {
         val command = "send secret text to Rahul"
         val reason = "Action failed for $command: Could not type: secret text"

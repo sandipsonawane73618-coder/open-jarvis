@@ -48,17 +48,34 @@ internal object PersonalMemoryCodec {
             .filterNot { it in stopWords }
             .toSet()
 
-    /** Lightweight on-device semantic-style recall: bounded token overlap, no model or network. */
+    /**
+     * Bounded local retrieval using inverse-document-frequency weighting.
+     * Rare query terms contribute more than generic terms shared by many notes.
+     * This is lexical retrieval only: no embeddings, network, model, or raw-query persistence.
+     */
     fun retrieve(items: List<String>, query: String, limit: Int = 3): List<String> {
         val queryTokens = tokens(query)
         if (queryTokens.isEmpty() || items.isEmpty() || limit <= 0) return emptyList()
 
+        val documents = items.map(::tokens)
+        val documentCount = documents.size.toFloat()
+        val weights = queryTokens.associateWith { token ->
+            val frequency = documents.count { token in it }.toFloat()
+            kotlin.math.ln((documentCount + 1f) / (frequency + 1f)) + 1f
+        }
+        val totalWeight = weights.values.sum().coerceAtLeast(1f)
+
         return items.withIndex()
             .mapNotNull { (index, item) ->
-                val itemTokens = tokens(item)
-                val overlap = queryTokens.intersect(itemTokens).size
-                if (overlap == 0) null
-                else Triple(item, overlap.toFloat() / queryTokens.size + if (item.contains(query, true)) 0.5f else 0f, index)
+                val itemTokens = documents[index]
+                val matchedWeight = weights.filterKeys { it in itemTokens }.values.sum()
+                if (matchedWeight <= 0f) null
+                else {
+                    val coverage = matchedWeight / totalWeight
+                    val phraseBonus = if (query.trim().length >= 4 &&
+                        item.contains(query.trim(), ignoreCase = true)) 0.2f else 0f
+                    Triple(item, coverage + phraseBonus, index)
+                }
             }
             .sortedWith(compareByDescending<Triple<String, Float, Int>> { it.second }.thenBy { it.third })
             .take(limit)

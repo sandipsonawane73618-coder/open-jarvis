@@ -43,12 +43,63 @@ class SocketServerTest {
         assertNull(SocketServer.parseRequest("""{"cmd":"status","requestId":"${"x".repeat(SocketServer.MAX_REQUEST_ID_LENGTH + 1)}","token":"secret"}"""))
     }
 
+
+    @Test
+    fun `parseRequest enforces 2000 character limit with Unicode commands`() {
+        val command = "न".repeat(SocketServer.MAX_COMMAND_LENGTH)
+        val accepted = SocketServer.parseRequest(
+            """{"cmd":"$command","requestId":"unicode-limit","token":"secret"}"""
+        )
+        assertNotNull(accepted)
+        assertEquals(command, accepted?.second)
+
+        val tooLong = command + "न"
+        assertNull(
+            SocketServer.parseRequest(
+                """{"cmd":"$tooLong","requestId":"unicode-over-limit","token":"secret"}"""
+            )
+        )
+    }
+
+    @Test
+    fun `bounded line reader enforces 8 KiB using UTF8 bytes not character count`() {
+        val exactlyLimit = "न".repeat(2_730) + "ab"
+        assertEquals(SocketServer.MAX_REQUEST_BYTES, exactlyLimit.toByteArray(Charsets.UTF_8).size)
+        assertEquals(
+            exactlyLimit,
+            SocketServer.readBoundedLine(
+                ByteArrayInputStream((exactlyLimit + "\n").toByteArray(Charsets.UTF_8)),
+                SocketServer.MAX_REQUEST_BYTES
+            )
+        )
+
+        val overLimit = exactlyLimit + "x"
+        assertTrue(overLimit.length < SocketServer.MAX_REQUEST_BYTES)
+        try {
+            SocketServer.readBoundedLine(
+                ByteArrayInputStream((overLimit + "\n").toByteArray(Charsets.UTF_8)),
+                SocketServer.MAX_REQUEST_BYTES
+            )
+            fail("Expected RequestTooLargeException for UTF-8 byte overflow")
+        } catch (_: RequestTooLargeException) {
+            // expected: raw UTF-8 bytes, not Kotlin character count, define the limit.
+        }
+    }
+
     @Test
     fun `token comparison accepts exact token and rejects mismatch`() {
         assertTrue(SocketServer.isValidToken("secret-token", "secret-token"))
         assertFalse(SocketServer.isValidToken("secret-token", "different-token"))
         assertFalse(SocketServer.isValidToken("", "secret-token"))
         assertFalse(SocketServer.isValidToken("secret-token", ""))
+    }
+
+    @Test
+    fun `token comparison is exact and does not normalize whitespace case or unicode`() {
+        assertTrue(SocketServer.isValidToken("jarvis-नमस्ते", "jarvis-नमस्ते"))
+        assertFalse(SocketServer.isValidToken("Secret-Token", "secret-token"))
+        assertFalse(SocketServer.isValidToken("secret-token ", "secret-token"))
+        assertFalse(SocketServer.isValidToken(" secret-token", "secret-token"))
     }
 
     @Test
@@ -80,6 +131,27 @@ class SocketServerTest {
     }
 
     @Test
+    fun `token provider rejects URI authority and path confusion attempts`() {
+        val authority = "com.openjarvis.bridgeconfig"
+        val invalidUris = listOf(
+            "content://com.openjarvis.bridgeconfig.evil/config",
+            "content://user@com.openjarvis.bridgeconfig/config",
+            "content://com.openjarvis.bridgeconfig:80/config",
+            "content://com.openjarvis.bridgeconfig/config?token=leak",
+            "content://com.openjarvis.bridgeconfig/config#fragment",
+            "content://com.openjarvis.bridgeconfig/config/",
+            "content://com.openjarvis.bridgeconfig//config",
+            "content://com.openjarvis.bridgeconfig/%63onfig",
+            "content://com.openjarvis.bridgeconfig/config/../config",
+            "CONTENT://com.openjarvis.bridgeconfig/config",
+            "not a uri"
+        )
+        invalidUris.forEach { uri ->
+            assertFalse("URI must be rejected: $uri", BridgeTokenProvider.isConfigUri(uri, authority))
+        }
+    }
+
+    @Test
     fun `token provider allows only app Termux and ADB shell UIDs`() {
         assertTrue(BridgeTokenProvider.isTrustedUid(10123, appUid = 10123, termuxUid = 10234))
         assertTrue(BridgeTokenProvider.isTrustedUid(10234, appUid = 10123, termuxUid = 10234))
@@ -87,6 +159,13 @@ class SocketServerTest {
         assertFalse(BridgeTokenProvider.isTrustedUid(10345, appUid = 10123, termuxUid = 10234))
         assertFalse(BridgeTokenProvider.isTrustedUid(10345, appUid = 10123, termuxUid = null))
         assertFalse(BridgeTokenProvider.isTrustedUid(10234, appUid = 10123, termuxUid = null))
+    }
+
+    @Test
+    fun `token provider accepts only configured shell UID`() {
+        assertTrue(BridgeTokenProvider.isTrustedUid(2100, appUid = 10123, termuxUid = null, shellUid = 2100))
+        assertFalse(BridgeTokenProvider.isTrustedUid(2100, appUid = 10123, termuxUid = null))
+        assertFalse(BridgeTokenProvider.isTrustedUid(-1, appUid = 10123, termuxUid = null))
     }
 
     @Test

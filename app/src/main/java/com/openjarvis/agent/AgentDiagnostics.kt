@@ -24,8 +24,14 @@ object AgentDiagnostics {
     ) {
         val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
         val safeReason = redactDiagnosticReason(reason, command)
+        val doctor = com.openjarvis.diagnostics.ReportDoctor.diagnose(stage, safeReason)
         val report = buildString {
             appendLine("OPEN JARVIS DEBUG REPORT")
+            appendLine("--- REPORT DOCTOR ---")
+            appendLine("Area: ${doctor.area} | Severity: ${doctor.severity}")
+            appendLine("Diagnosis: ${doctor.summary}")
+            appendLine("Likely cause: ${doctor.likelyCause}")
+            appendLine("Safe next step: ${doctor.safeNextStep}")
             appendLine("Time: $timestamp")
             appendLine("Stage: $stage")
             appendLine("Provider: $provider")
@@ -64,13 +70,13 @@ object AgentDiagnostics {
             appendLine("Command: [redacted; ${command.length} chars]")
             appendLine("--- STEP ROUTE TRACE ---")
             traces.forEach { trace ->
-                appendLine("Step ${trace.index + 1}: ${trace.step.take(180)}")
+                appendLine("Step ${trace.index + 1}: ${summarizePipelineTraceText(trace.step)}")
                 appendLine("Route: ${trace.route} | ok=${trace.ok}")
-                appendLine("Reply: ${trace.reply.take(500)}")
+                appendLine("Reply: ${summarizePipelineTraceText(trace.reply)}")
             }
             if (skipped.isNotEmpty()) {
                 appendLine("--- SKIPPED STEPS ---")
-                skipped.forEachIndexed { index, step -> appendLine("${traces.size + index + 1}: ${step.take(180)}") }
+                skipped.forEachIndexed { index, step -> appendLine("${traces.size + index + 1}: ${summarizePipelineTraceText(step)}") }
             }
         }.trim()
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -106,3 +112,8 @@ internal fun redactDiagnosticReason(reason: String, command: String): String {
     )
     return safe
 }
+
+
+/** Preserve diagnostic size metadata without persisting commands, replies, or UI text. */
+internal fun summarizePipelineTraceText(value: String): String =
+    "[redacted; ${value.length} chars]"

@@ -308,7 +308,7 @@ class JarvisAccessibilityService : AccessibilityService() {
             }
             if (lines.size >= maxItems) break
         }
-        return lines.joinToString("\\n")
+        return lines.joinToString("\n")
     }
 
     /** Android-use-style indexed lookup over the same visible control order shown to the planner. */
@@ -401,6 +401,42 @@ class JarvisAccessibilityService : AccessibilityService() {
             root.recycle()
             while (queue.isNotEmpty()) queue.removeFirst().recycle()
         }
+    }
+
+    /** Returns package names currently represented by visible accessibility windows. */
+    fun activePackageNames(): Set<String> {
+        val packages = linkedSetOf<String>()
+
+        runCatching {
+            rootInActiveWindow?.let { root ->
+                try {
+                    root.packageName?.toString()?.takeIf { it.isNotBlank() }?.let(packages::add)
+                } finally {
+                    root.recycle()
+                }
+            }
+        }
+
+        runCatching {
+            windows.forEach { window ->
+                val windowRoot = window.root
+                try {
+                    windowRoot?.packageName?.toString()
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let(packages::add)
+                } finally {
+                    windowRoot?.recycle()
+                }
+            }
+        }
+
+        // Include only a fresh window-state event; stale foreground history must
+        // never scope a new action to an app that is no longer visible.
+        val eventAgeMs = System.currentTimeMillis() - lastWindowStateAtMs
+        if (eventAgeMs in 0..5000) {
+            lastWindowStatePackage?.takeIf { it.isNotBlank() }?.let(packages::add)
+        }
+        return packages
     }
 
     fun isPackageActive(packageName: String): Boolean {
