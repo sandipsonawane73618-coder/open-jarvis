@@ -1,0 +1,65 @@
+name: Autonomous Repair Workflow Validation
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/jarvis-repair-branch.yml"
+      - ".github/workflows/repair-workflow-validation.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repair-workflow-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Validate workflow syntax with actionlint
+        run: |
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 .github/workflows/jarvis-repair-branch.yml .github/workflows/repair-workflow-validation.yml
+
+      - name: Verify repair workflow credential boundary
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path(".github/workflows/jarvis-repair-branch.yml").read_text()
+          token_setting = "GH_TOKEN: " + "$" + "{{ secrets.GITHUB_TOKEN }}"
+          required = (
+              "persist-credentials: false",
+              "run: gradle --no-daemon :app:testDebugUnitTest",
+              "run: gradle --no-daemon :app:assembleDebug",
+              token_setting,
+              'git -c core.hooksPath=/dev/null commit',
+              'git -c core.hooksPath=/dev/null',
+              'push "https://github.com/sandipsonawane73618-coder/open-jarvis.git"',
+          )
+          missing = [item for item in required if item not in workflow]
+          if missing:
+              raise SystemExit("Missing security invariant(s): " + ", ".join(missing))
+
+          token_at = workflow.index(token_setting)
+          tests_at = workflow.index("run: gradle --no-daemon :app:testDebugUnitTest")
+          build_at = workflow.index("run: gradle --no-daemon :app:assembleDebug")
+          commit_at = workflow.index('git -c core.hooksPath=/dev/null commit')
+          push_at = workflow.index('push "https://github.com/sandipsonawane73618-coder/open-jarvis.git"')
+          if not tests_at < build_at < commit_at < token_at < push_at:
+              raise SystemExit("Credential boundary/order is unsafe")
+
+          if "persist-credentials: true" in workflow or "git push origin" in workflow:
+              raise SystemExit("Persisted checkout credentials or implicit remote push found")
+
+          print("Repair workflow credential boundary: PASS")
+          PY
