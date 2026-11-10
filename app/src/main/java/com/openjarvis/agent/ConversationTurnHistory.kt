@@ -2,8 +2,8 @@ package com.openjarvis.agent
 
 /**
  * Short-lived, in-memory conversational context for follow-up questions.
- * It stores only successful general-chat exchanges, never action commands,
- * screenshots, OCR, contacts, or task execution results.
+ * It stores bounded successful user/assistant turns, including verified action
+ * summaries, but never screenshots, OCR, or raw device/contact records.
  */
 internal class ConversationTurnHistory {
     private data class Exchange(val user: String, val assistant: String)

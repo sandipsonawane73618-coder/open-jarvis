@@ -33,6 +33,17 @@ internal object CommandRouter {
         return Route.NONE
     }
 
+    fun isContinueCommand(step: String): Boolean {
+        val normalized = step.trim().lowercase()
+            .replace(Regex("[\\p{Punct}।॥]+$"), "")
+            .replace(Regex("\\s+"), " ")
+        return normalized in setOf(
+            "continue", "continue karo", "aage karo", "aage badho", "next",
+            "retry", "phir se karo", "dobara karo", "fir se karo",
+            "आगे करो", "जारी रखो", "फिर से करो", "पुढे चला", "पुढे करा", "पुन्हा करा"
+        )
+    }
+
     fun messageContinuationContact(step: String): String? {
         val cleaned = step.trim().replace(Regex("[\\p{Punct}।॥]+$"), "").trim()
         val match = Regex(

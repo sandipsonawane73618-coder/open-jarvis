@@ -33,6 +33,58 @@ class StepPipelineTest {
     }
 
     @Test
+    fun resumesFromPriorTurnContextAndRecordsLastSuccessfulStep() = runBlocking {
+        var observed: StepContext? = null
+        val handler = object : StepHandler {
+            override val name = "ui"
+            override suspend fun handle(step: String, ctx: StepContext): StepOutcome? {
+                observed = ctx
+                return StepOutcome(
+                    true,
+                    "group opened",
+                    ctx.copy(groupName = "Pune Service")
+                )
+            }
+        }
+
+        val prior = StepContext(
+            app = "whatsapp",
+            lastCommand = "WhatsApp kholo",
+            lastResult = "WhatsApp opened"
+        )
+        val result = StepPipeline(listOf(handler)).run(
+            listOf("Pune Service group kholo"),
+            prior
+        )
+
+        assertTrue(result.allOk)
+        assertEquals("whatsapp", observed?.app)
+        assertEquals("WhatsApp kholo", observed?.lastCommand)
+        assertEquals("Pune Service", result.finalContext.groupName)
+        assertEquals("Pune Service group kholo", result.finalContext.lastCommand)
+        assertEquals("group opened", result.finalContext.lastResult)
+        assertTrue(result.finalContext.pendingSteps.isEmpty())
+    }
+
+    @Test
+    fun failedStepPreservesContextAndRemainingWorkForResume() = runBlocking {
+        val handler = object : StepHandler {
+            override val name = "ui"
+            override suspend fun handle(step: String, ctx: StepContext): StepOutcome =
+                StepOutcome(false, "search control not found", ctx.copy(app = "whatsapp"))
+        }
+        val result = StepPipeline(listOf(handler)).run(
+            listOf("open group search", "type Pune Service", "open result"),
+            StepContext(app = "whatsapp")
+        )
+
+        assertFalse(result.allOk)
+        assertEquals(listOf("open group search", "type Pune Service", "open result"), result.finalContext.pendingSteps)
+        assertEquals("whatsapp", result.finalContext.app)
+        assertEquals("search control not found", result.finalContext.lastResult)
+    }
+
+    @Test
     fun failureStopsPipelineAndMarksRemainingStepsSkipped() = runBlocking {
         val handler = object : StepHandler {
             override val name = "fake"
@@ -46,6 +98,7 @@ class StepPipelineTest {
         assertFalse(result.allOk)
         assertEquals(listOf("first", "fail"), result.traces.map { it.step })
         assertEquals(listOf("third"), result.skipped)
+        assertEquals(listOf("fail", "third"), result.finalContext.pendingSteps)
         assertFalse(result.traces.last().ok)
     }
 
@@ -98,6 +151,15 @@ class StepPipelineTest {
             "Step 2/3 failed: torch unavailable. Skipped steps: 3. third",
             result.failureMessage(3)
         )
+    }
+
+    @Test
+    fun recognizesContinuationCommandsInEnglishHindiAndMarathi() {
+        listOf("continue", "Continue karo", "aage badho", "next", "retry", "phir se karo",
+            "आगे करो", "जारी रखो", "पुढे चला", "पुन्हा करा")
+            .forEach { assertTrue("$it should resume pending work", CommandRouter.isContinueCommand(it)) }
+        listOf("WhatsApp kholo", "Pune Service group kholo", "Hi type karo", "time kya hua")
+            .forEach { assertFalse("$it is not a continuation command", CommandRouter.isContinueCommand(it)) }
     }
 
     @Test
