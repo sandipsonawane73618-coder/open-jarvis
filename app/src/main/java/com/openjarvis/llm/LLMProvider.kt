@@ -11,6 +11,13 @@ interface LLMProvider {
     
     suspend fun completeConversation(systemPrompt: String, userMessage: String): Result<String> = complete(systemPrompt, userMessage)
 
+    /** Emits decoded text deltas as they arrive; implementations may fall back to one final chunk. */
+    suspend fun completeConversationStreaming(
+        systemPrompt: String,
+        userMessage: String,
+        onChunk: (String) -> Unit
+    ): Result<String> = completeConversation(systemPrompt, userMessage).onSuccess(onChunk)
+
     suspend fun completeWithDeadline(
         systemPrompt: String,
         userMessage: String,

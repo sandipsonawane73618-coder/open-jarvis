@@ -42,6 +42,12 @@ class UniversalAdapter(private val context: Context) {
     suspend fun completeConversation(systemPrompt: String, userMessage: String): Result<String> =
         getActiveProvider().completeConversation(systemPrompt, userMessage)
 
+    suspend fun completeConversationStreaming(
+        systemPrompt: String,
+        userMessage: String,
+        onChunk: (String) -> Unit
+    ): Result<String> = getActiveProvider().completeConversationStreaming(systemPrompt, userMessage, onChunk)
+
     suspend fun completeWithDeadline(
         systemPrompt: String,
         userMessage: String,

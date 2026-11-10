@@ -261,6 +261,14 @@ class OllamaProvider(
     override suspend fun completeConversation(systemPrompt: String, userMessage: String): Result<String> =
         completeInternal(systemPrompt, userMessage, actionPlan = false, timeoutMs = 120_000L)
 
+    override suspend fun completeConversationStreaming(
+        systemPrompt: String,
+        userMessage: String,
+        onChunk: (String) -> Unit
+    ): Result<String> = completeInternal(
+        systemPrompt, userMessage, actionPlan = false, timeoutMs = 120_000L, onChunk = onChunk
+    )
+
     override suspend fun completeWithDeadline(
         systemPrompt: String,
         userMessage: String,
@@ -291,7 +299,8 @@ class OllamaProvider(
         actionPlan: Boolean,
         timeoutMs: Long,
         skillPlan: Boolean = false,
-        nativeIntentPlan: Boolean = false
+        nativeIntentPlan: Boolean = false,
+        onChunk: ((String) -> Unit)? = null
     ): Result<String> =
         withContext(Dispatchers.IO) {
             runCatching {
@@ -303,21 +312,22 @@ class OllamaProvider(
                         executeChat(
                             systemPrompt, userMessage, useSchema = actionPlan,
                             numPredict = predictionLimit, timeoutMs = remainingMs(deadlineNanos),
-                            useSkillSchema = skillPlan, useNativeIntentSchema = nativeIntentPlan
+                            useSkillSchema = skillPlan, useNativeIntentSchema = nativeIntentPlan,
+                            onChunk = onChunk
                         )
                     }.getOrElse { schemaError ->
                         android.util.Log.w("OllamaFormat", "Structured schema request failed; retrying with strict prompt: ${schemaError.message}")
                         executeChat(
                             systemPrompt, userMessage, useSchema = false, numPredict = predictionLimit,
                             timeoutMs = remainingMs(deadlineNanos), useSkillSchema = false,
-                            useNativeIntentSchema = false
+                            useNativeIntentSchema = false, onChunk = onChunk
                         )
                     }
                 } else {
                     executeChat(
                         systemPrompt, userMessage, useSchema = false, numPredict = predictionLimit,
                         timeoutMs = remainingMs(deadlineNanos), useSkillSchema = false,
-                        useNativeIntentSchema = false
+                        useNativeIntentSchema = false, onChunk = onChunk
                     )
                 }
             }
@@ -361,7 +371,8 @@ class OllamaProvider(
         numPredict: Int,
         timeoutMs: Long,
         useSkillSchema: Boolean = false,
-        useNativeIntentSchema: Boolean = false
+        useNativeIntentSchema: Boolean = false,
+        onChunk: ((String) -> Unit)? = null
     ): String {
         val request = Request.Builder()
             .url(OllamaResponseParser.buildUrl(baseUrl, "/api/chat"))
@@ -396,6 +407,7 @@ class OllamaProvider(
                     if (piece.isNotEmpty()) {
                         if (firstTokenMs < 0) firstTokenMs = (System.nanoTime() - started) / 1_000_000
                         answer.append(piece)
+                        onChunk?.invoke(piece)
                     }
                     if (chunk.optBoolean("done", false)) {
                         promptTokens = chunk.optInt("prompt_eval_count", -1)
