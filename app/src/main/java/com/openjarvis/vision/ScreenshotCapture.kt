@@ -23,6 +23,7 @@ class ScreenshotCapture(private val context: Context) {
     private var handlerThread: HandlerThread? = null
     private var handler: Handler? = null
     @Volatile private var isCapturing = false
+    @Volatile private var permissionDenied = false
     private var captureWidth = 0
     private var captureHeight = 0
     private var captureDensityDpi = 0
@@ -30,6 +31,7 @@ class ScreenshotCapture(private val context: Context) {
     @Synchronized
     fun startCapture(): Boolean {
         if (isReady()) return true
+        permissionDenied = false
         return runCatching {
             context.startActivity(
                 Intent(context, ScreenCapturePermissionActivity::class.java)
@@ -41,6 +43,7 @@ class ScreenshotCapture(private val context: Context) {
 
     @Synchronized
     fun initialize(projection: MediaProjection): Boolean {
+        permissionDenied = false
         releaseResources(stopProjection = true)
         mediaProjection = projection
         return try {
@@ -134,6 +137,10 @@ class ScreenshotCapture(private val context: Context) {
             image.close()
         }
     }
+
+    fun markPermissionDenied() { permissionDenied = true }
+
+    fun wasPermissionDenied(): Boolean = permissionDenied
 
     @Synchronized
     fun isReady(): Boolean = isCapturing && virtualDisplay != null && imageReader != null

@@ -8,6 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import com.openjarvis.vision.ScreenCaptureService
+import com.openjarvis.vision.ScreenshotCapture
 
 class ScreenCapturePermissionActivity : ComponentActivity() {
 
@@ -21,6 +22,8 @@ class ScreenCapturePermissionActivity : ComponentActivity() {
                 putExtra(ScreenCaptureService.EXTRA_RESULT_DATA, permissionData)
             }
             ContextCompat.startForegroundService(this, serviceIntent)
+        } else {
+            ScreenshotCapture.getInstance(this).markPermissionDenied()
         }
         finish()
     }
