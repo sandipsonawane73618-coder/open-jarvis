@@ -31,9 +31,9 @@ object SkillRegistry {
         if (Regex("^(?:torch|flashlight|टॉर्च)\\s+(?:off|बंद|बुझा दो|बंद करो)$").matches(s) ||
             Regex("^(?:turn off|switch off) (?:the )?(?:torch|flashlight)$").matches(s))
             return Request(Kind.TORCH, mapOf("enabled" to "false"))
-        if (Regex("^(?:volume|आवाज़|आवाज)\\s*(?:up|बढ़ाओ|बढ़ाओ)$|^(?:increase|raise) volume$").matches(s))
+        if (Regex("^(?:(?:volume|आवाज़|आवाज|aawaz|awaaz|aawaj|awaz)(?:\\s+(?:thoda|thodi))?\\s*(?:up|बढ़ाओ|बढ़ाओ|बढ़ा दो|बढ़ा दो|badha do|bada do|badhao|vadhav|vadhva|वाढवा|वाढव)|(?:increase|raise) volume)$").matches(s))
             return Request(Kind.VOLUME, mapOf("direction" to "up"))
-        if (Regex("^(?:volume|आवाज़|आवाज)\\s*(?:down|कम करो)$|^(?:decrease|lower) volume$").matches(s))
+        if (Regex("^(?:(?:volume|आवाज़|आवाज|aawaz|awaaz|aawaj|awaz)(?:\\s+(?:thoda|thodi))?\\s*(?:down|कम करो|कम कर दो|kam karo|kam kar do|kami karo|kami kara|kami kar|कमी करा|कमी कर)|(?:decrease|lower) volume)$").matches(s))
             return Request(Kind.VOLUME, mapOf("direction" to "down"))
 
         val setting = mapOf(
@@ -74,7 +74,7 @@ object SkillRegistry {
         val text = norm(s).replace(Regex("[?!.,]"), "").trim()
         val patterns = listOf(
             Regex("^(?:what time is it|what is the time|current time|tell me the time)$"),
-            Regex("^(?:time|samay) (?:kya hua hai|kya hai|batao|kitna hua hai)$"),
+            Regex("^(?:time|samay) (?:kya hua(?: hai)?|kya hai|batao|kitna hua hai)$"),
             Regex("^(?:abhi )?(?:kitne baje hain|kitna time hua hai)$"),
             Regex("^(?:aaj ka )?(?:samay|time) (?:kya hai|kaha hai|kitna hua hai)$"),
             Regex("^(?:अभी )?(?:कितने बजे हैं|समय क्या हुआ है|समय क्या है|आज का समय क्या है)$"),

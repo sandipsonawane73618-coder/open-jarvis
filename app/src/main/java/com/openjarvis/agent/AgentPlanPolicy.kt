@@ -53,9 +53,22 @@ internal object AgentPlanPolicy {
     fun needsCompactReplan(actions: List<Action>, command: String): Boolean =
         needsCompactReplan(actions) || isLikelyUnderPlanned(command, actions)
 
+    fun hasRequiredPayloads(actions: List<Action>): Boolean = actions.all { action ->
+        when (action.action) {
+            Action.OPEN_APP -> !action.label.isNullOrBlank() || !action.packageName.isNullOrBlank()
+            Action.CLICK, Action.TAP -> !action.text.isNullOrBlank()
+            Action.TYPE_TEXT, Action.TYPE -> !action.value.isNullOrBlank()
+            Action.SCROLL -> !action.direction.isNullOrBlank()
+            Action.WAIT, Action.WAIT_FOR -> !action.text.isNullOrBlank()
+            Action.AI_PROMPT -> !action.packageName.isNullOrBlank() && !action.prompt.isNullOrBlank()
+            else -> true
+        }
+    }
+
     fun isExecutablePlan(actions: List<Action>): Boolean =
         actions.isNotEmpty() &&
             actions.size <= MAX_ACTIONS &&
+            hasRequiredPayloads(actions) &&
             !hasUnresolvedAppLaunch(actions) &&
             !hasMessageSendTap(actions) &&
             !BankingSafetyPolicy.blocksFinancialActions(actions) &&

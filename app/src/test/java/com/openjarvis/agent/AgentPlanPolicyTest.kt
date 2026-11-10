@@ -67,6 +67,13 @@ class AgentPlanPolicyTest {
         assertFalse(AgentPlanPolicy.canLaunchResolvedAppWithoutScreen(openInstagram + Action(action = Action.CLICK, text = "Search")))
     }
 
+    @Test fun rejectsIncompleteActionsAtTheFinalExecutionGate() {
+        assertFalse(AgentPlanPolicy.hasRequiredPayloads(listOf(Action(action = Action.TYPE_TEXT))))
+        assertFalse(AgentPlanPolicy.isExecutablePlan(listOf(Action(action = Action.TYPE_TEXT))))
+        assertFalse(AgentPlanPolicy.hasRequiredPayloads(listOf(Action(action = Action.CLICK))))
+        assertTrue(AgentPlanPolicy.hasRequiredPayloads(listOf(Action(action = Action.TYPE_TEXT, value = "hello"))))
+    }
+
     @Test fun classifiesEachGuardFailureWithNamedRule() {
         assertEquals("RULE_MAX_ACTIONS", AgentPlanPolicy.failureRule(List(11) { Action(action = Action.BACK) }, "do it"))
         assertEquals(

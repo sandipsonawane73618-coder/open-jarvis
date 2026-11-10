@@ -52,7 +52,20 @@ object LLMResponseValidator {
             if (rawType.isBlank()) return invalid("Item $index missing 'action' field")
             val type = normalizeAction(rawType)
             if (type !in knownActions) return invalid("Unsupported action type: $rawType")
-            actions.add(parseAction(item, type))
+            val action = parseAction(item, type)
+            val missingField = when (action.action) {
+                Action.OPEN_APP -> if (action.label.isNullOrBlank() && action.packageName.isNullOrBlank()) "label or package" else null
+                Action.CLICK, Action.TAP -> if (action.text.isNullOrBlank()) "target" else null
+                Action.TYPE_TEXT, Action.TYPE -> if (action.value.isNullOrBlank()) "value" else null
+                Action.SCROLL -> if (action.direction.isNullOrBlank()) "direction" else null
+                Action.WAIT, Action.WAIT_FOR -> if (action.text.isNullOrBlank()) "visible text" else null
+                Action.AI_PROMPT -> if (action.packageName.isNullOrBlank()) "package" else if (action.prompt.isNullOrBlank()) "prompt" else null
+                else -> null
+            }
+            if (missingField != null) {
+                return invalid("Action $index ${action.action} requires non-empty $missingField")
+            }
+            actions.add(action)
         }
         return ValidationResult(true, actions, emptyList(), wasRepaired)
     }

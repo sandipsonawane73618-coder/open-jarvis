@@ -28,7 +28,12 @@ class SkillRegistryTest {
         assertNull(SkillRegistry.parse("timer for many minutes"))
     }
     @Test fun volumePositiveNegative() {
-        assertEquals("up", SkillRegistry.parse("volume up")?.args?.get("direction"))
+        listOf("volume up", "Aawaz vadhav", "Aawaz thodi badha do", "आवाज बढ़ाओ", "आवाज वाढवा").forEach {
+            assertEquals("up for $it", "up", SkillRegistry.parse(it)?.args?.get("direction"))
+        }
+        listOf("volume down", "Aawaz kami kara", "Aawaz thoda kam karo", "आवाज कम करो").forEach {
+            assertEquals("down for $it", "down", SkillRegistry.parse(it)?.args?.get("direction"))
+        }
         assertNull(SkillRegistry.parse("volume maybe"))
     }
     @Test fun messagingPositiveNegative() {
@@ -42,6 +47,7 @@ class SkillRegistryTest {
     @Test fun currentTimeQuestionsAreNativeAndUnrelatedQuestionsAreNot() {
         listOf(
             "Time kya hua hai",
+            "Time kya hua",
             "Abhi kitne baje hain",
             "Aaj ka samay kya hai",
             "Aaj ka samay kaha hai",

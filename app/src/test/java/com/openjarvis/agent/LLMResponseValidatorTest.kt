@@ -84,6 +84,18 @@ class LLMResponseValidatorTest {
         assertEquals("Response is not JSON: no action array/object found", result.errors.first())
     }
 
+    @Test fun rejectsActionsWithMissingRequiredPayloadsBeforeExecution() {
+        val missingText = LLMResponseValidator.validate("""[{"action":"type_text"}]""")
+        assertFalse(missingText.isValid)
+        assertEquals("Action 0 type_text requires non-empty value", missingText.errors.single())
+        val missingTarget = LLMResponseValidator.validate("""[{"action":"click"}]""")
+        assertFalse(missingTarget.isValid)
+        assertEquals("Action 0 click requires non-empty target", missingTarget.errors.single())
+        val missingApp = LLMResponseValidator.validate("""[{"action":"open_app"}]""")
+        assertFalse(missingApp.isValid)
+        assertEquals("Action 0 open_app requires non-empty label or package", missingApp.errors.single())
+    }
+
     @Test fun reportsNonObjectItemsWithoutCrashing() {
         val result = LLMResponseValidator.validate("""["click"]""")
         assertFalse(result.isValid)
