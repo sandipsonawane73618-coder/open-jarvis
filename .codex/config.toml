@@ -1,0 +1,22 @@
+#:schema https://developers.openai.com/codex/config-schema.json
+# Project-local ECC-inspired roles. No model/provider is pinned; Codex inherits the user's own configuration.
+# Read-only specialist roles are evidence gatherers, not autonomous committers.
+
+[features]
+multi_agent = true
+
+[agents]
+max_threads = 3
+max_depth = 1
+
+[agents.explorer]
+description = "Read-only Jarvis codebase explorer; trace real call paths and report evidence before changes."
+config_file = "agents/explorer.toml"
+
+[agents.reviewer]
+description = "Read-only Android/Kotlin, prompt-safety, and regression reviewer."
+config_file = "agents/reviewer.toml"
+
+[agents.docs_researcher]
+description = "Read-only researcher who verifies Android, Ollama, Headroom, and ECC behavior against primary sources."
+config_file = "agents/docs-researcher.toml"

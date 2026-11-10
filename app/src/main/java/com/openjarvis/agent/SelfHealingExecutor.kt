@@ -1,196 +1,145 @@
 package com.openjarvis.agent
 
 import android.content.Context
-import com.openjarvis.accessibility.ScreenReader
-import com.openjarvis.graphify.GraphifyRepository
-import com.openjarvis.llm.UniversalAdapter
-import kotlinx.coroutines.delay
+import android.provider.Settings
+import android.util.Log
+import android.Manifest
+import android.content.pm.PackageManager
+import com.openjarvis.accessibility.JarvisAccessibilityService
 
-class SelfHealingExecutor(private val context: Context) {
+/**
+ * Deterministic recovery planner. It classifies failures, verifies local dependencies
+ * with bounded read-only probes, records privacy-safe recurrence counters, and never
+ * replays UI actions or silently changes the configured model/provider.
+ */
+class SelfHealingExecutor(context: Context) {
+    private val appContext = context.applicationContext
+    private val patternStore = SelfHealingPatternStore(appContext)
+    private val ollamaHealthCheck = LocalOllamaHealthCheck()
 
-    private val screenReader = ScreenReader(context)
-    private val graphifyRepo = GraphifyRepository(context)
-    private val llm = UniversalAdapter(context)
-
-    private val maxAttempts = 3
-    private val baseDelayMs = 1000L
-
-    suspend fun executeWithHealing(
-        action: Action,
-        context: ExecutionContext,
-        attempt: Int = 1
-    ): ActionResult {
-
-        val result = tryExecuteAction(action, context)
-
-        if (result is ActionResult.Success) return result
-
-        if (attempt >= maxAttempts) {
-            return ActionResult.Failed(
-                "Could not complete after $maxAttempts attempts"
-            )
+    /** Consult privacy-safe local history before permitting another read-only retry. */
+    fun shouldRetry(action: Action, reason: String): Boolean {
+        val decision = SelfHealingRecoveryPolicy.classify(action, reason)
+        val pattern = patternStore.patterns().firstOrNull { it.area == decision.area.name }
+        val consecutive = pattern?.consecutiveFailures ?: 0
+        val learnedDecision = SelfHealingRecoveryPolicy.applyLearning(decision, consecutive)
+        val allowed = SelfHealingSafetyPolicy.shouldRetry(action, reason) &&
+            SelfHealingSafetyPolicy.shouldRetryAfterLearning(action, reason, consecutive) &&
+            learnedDecision.mayRetryAutomatically
+        if (!allowed && SelfHealingSafetyPolicy.shouldRetry(action, reason)) {
+            Log.w("JarvisSelfHealing", "retry_paused area=${decision.area} recovery=${learnedDecision.recovery} consecutiveUnresolved=$consecutive")
         }
+        return allowed
+    }
 
-        val currentScreen = screenReader.extractAllText()
+    suspend fun recordVerifiedReadOnlyRecovery(action: Action, originalFailure: String) {
+        val decision = SelfHealingRecoveryPolicy.classify(action, originalFailure)
+        if (!decision.mayRetryAutomatically) return
 
-        val healingPrompt = buildHealingPrompt(
-            action,
-            context,
-            currentScreen,
-            attempt
+        // A successful UI observation does not prove that Ollama recovered. Verify each
+        // failure area with evidence from that same subsystem before updating learned state.
+        val verified = when (decision.area) {
+            SelfHealingRecoveryPolicy.FailureArea.OLLAMA_CONNECTIVITY -> {
+                val result = ollamaHealthCheck.verify()
+                Log.i("JarvisSelfHealing", "post_retry_ollama_probe state=${result.state}")
+                result.state == LocalOllamaHealthPolicy.State.READY
+            }
+            else -> SelfHealingVerificationPolicy.confirmsReadOnlyRecovery(action, decision.area)
+        }
+        val outcome = patternStore.recordOutcome(decision.area.name, verified)
+        Log.i("JarvisSelfHealing", "recovery_outcome area=${decision.area} verified=$verified unresolved=${outcome?.unresolvedFailures ?: -1}")
+    }
+
+    suspend fun failureDisposition(action: Action, reason: String): String {
+        val decision = SelfHealingRecoveryPolicy.classify(action, reason)
+        var pattern = patternStore.record(decision.area.name)
+        val verification = when (decision.area) {
+            SelfHealingRecoveryPolicy.FailureArea.OLLAMA_CONNECTIVITY,
+            SelfHealingRecoveryPolicy.FailureArea.MODEL_UNAVAILABLE -> {
+                val result = ollamaHealthCheck.verify()
+                Log.i("JarvisSelfHealing", "local_ollama_probe state=${result.state}")
+                if (decision.area == SelfHealingRecoveryPolicy.FailureArea.OLLAMA_CONNECTIVITY) {
+                    // A ready endpoint plus the configured model verifies connectivity recovery.
+                    val dependencyVerified = result.state == LocalOllamaHealthPolicy.State.READY
+                    val outcome = patternStore.recordOutcome(decision.area.name, dependencyVerified)
+                    Log.i("JarvisSelfHealing", "recovery_outcome area=${decision.area} verified=$dependencyVerified unresolved=${outcome?.unresolvedFailures ?: -1}")
+                } else {
+                    // Listing the model is diagnostic evidence, not proof that the failed
+                    // model request recovered. Keep MODEL_UNAVAILABLE unresolved.
+                    Log.i("JarvisSelfHealing", "model_availability_observed state=${result.state}; failure remains unresolved")
+                }
+                " Local dependency check: ${result.detail} The failed task was not replayed; retry it only after reviewing this result."
+            }
+            SelfHealingRecoveryPolicy.FailureArea.ACCESSIBILITY,
+            SelfHealingRecoveryPolicy.FailureArea.OVERLAY,
+            SelfHealingRecoveryPolicy.FailureArea.SPEECH,
+            SelfHealingRecoveryPolicy.FailureArea.APP_LAUNCH -> {
+                val result = verifyAndroidConfiguration(action, decision.area)
+                Log.i("JarvisSelfHealing", "local_android_probe area=${decision.area} result=$result")
+                " Local read-only check: $result"
+            }
+            else -> " Verification required: ${SelfHealingVerificationPolicy.instruction(decision.area)}"
+        }
+        // Re-read after the probe: a verified dependency recovery must clear the
+        // consecutive-unresolved streak before recurrence guidance is generated.
+        pattern = patternStore.patterns().firstOrNull { it.area == decision.area.name } ?: pattern
+        val learnedDecision = SelfHealingRecoveryPolicy.applyLearning(
+            decision,
+            pattern.consecutiveFailures
         )
+        val recurrence = if (learnedDecision.recovery == SelfHealingRecoveryPolicy.RecoveryKind.ESCALATE) {
+            " This failure category has ${pattern.consecutiveFailures} consecutive unresolved occurrences; automatic retry is paused until user review."
+        } else ""
+        Log.w("JarvisSelfHealing", "area=${decision.area} recovery=${learnedDecision.recovery} autoRetry=${learnedDecision.mayRetryAutomatically} consecutiveUnresolved=${pattern.consecutiveFailures} unresolved=${pattern.unresolvedFailures}")
+        return "${learnedDecision.explanation}${verification}${recurrence}"
+    }
 
-        val alternativeResponse: String? = try {
-            llm.complete(
-                healingPrompt.first,
-                healingPrompt.second
-            ).getOrNull()
-        } catch (e: Exception) {
-            null
-        }
-
-        delay(baseDelayMs * attempt)
-
-        if (!alternativeResponse.isNullOrBlank()) {
-            val alternativeAction =
-                parseActionFromLLM(alternativeResponse)
-
-            if (alternativeAction != null) {
-                return executeWithHealing(
-                    alternativeAction,
-                    context,
-                    attempt + 1
-                )
+    /**
+     * Read-only Android checks only. A granted permission is not treated as proof
+     * that the corresponding runtime engine or overlay is currently functioning.
+     */
+    private fun verifyAndroidConfiguration(
+        action: Action,
+        area: SelfHealingRecoveryPolicy.FailureArea
+    ): String = when (area) {
+        SelfHealingRecoveryPolicy.FailureArea.ACCESSIBILITY -> {
+            if (JarvisAccessibilityService.instance != null) {
+                "Jarvis Accessibility service is connected now; the earlier screen observation still failed. Request a fresh read-only observation."
+            } else {
+                "Jarvis Accessibility service is not connected. Enable it in Android Accessibility settings; Jarvis did not change the setting."
             }
         }
-
-        return executeWithHealing(
-            action,
-            context,
-            attempt + 1
-        )
-    }
-
-    private fun tryExecuteAction(
-        action: Action,
-        context: ExecutionContext
-    ): ActionResult {
-
-        return try {
-            val service =
-                com.openjarvis.accessibility.JarvisAccessibilityService.instance
-
-            when (action.action) {
-
-                Action.TAP -> {
-                    val tapped =
-                        service?.tapByText(action.text ?: "") == true
-
-                    if (tapped) {
-                        ActionResult.Success("tapped ${action.text}")
-                    } else {
-                        ActionResult.Failed("tap failed")
-                    }
-                }
-
-                Action.TYPE -> {
-                    val typed =
-                        service?.typeText(action.value ?: "") == true
-
-                    if (typed) {
-                        ActionResult.Success("typed ${action.value}")
-                    } else {
-                        ActionResult.Failed("type failed")
-                    }
-                }
-
-                Action.OPEN_APP -> {
-                    val opened =
-                        service?.openAppByPackage(
-                            action.packageName ?: ""
-                        )
-
-                    if (opened == true) {
-                        ActionResult.Success("opened ${action.packageName}")
-                    } else {
-                        ActionResult.Failed("app open failed")
-                    }
-                }
-
-                Action.PRESS_BACK -> {
-                    if (service != null) {
-                        service.pressBack()
-                        ActionResult.Success("pressed back")
-                    } else {
-                        ActionResult.Failed("accessibility service unavailable")
-                    }
-                }
-
-                else -> {
-                    ActionResult.Success(
-                        "action ${action.action} executed"
-                    )
+        SelfHealingRecoveryPolicy.FailureArea.OVERLAY -> {
+            val granted = runCatching { Settings.canDrawOverlays(appContext) }.getOrDefault(false)
+            if (granted) {
+                "Display-over-other-apps permission is granted. This does not prove the floating overlay process is running; check/restart it manually."
+            } else {
+                "Display-over-other-apps permission is not granted. Enable it manually in Android app settings; Jarvis did not change the setting."
+            }
+        }
+        SelfHealingRecoveryPolicy.FailureArea.SPEECH -> {
+            val granted = appContext.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+            if (granted) {
+                "Microphone permission is granted. This does not prove speech activation; a live listening test is still required."
+            } else {
+                "Microphone permission is not granted. Enable it manually in Android app permissions; Jarvis did not request or change it."
+            }
+        }
+        SelfHealingRecoveryPolicy.FailureArea.APP_LAUNCH -> {
+            val packageName = action.packageName?.takeIf { it.isNotBlank() }
+            if (packageName == null) {
+                "The failed app target has no resolved package name, so installation/launcher availability could not be verified."
+            } else {
+                val launchable = runCatching {
+                    appContext.packageManager.getLaunchIntentForPackage(packageName) != null
+                }.getOrDefault(false)
+                if (launchable) {
+                    "The target app is installed and has a launcher activity. Jarvis did not launch it again."
+                } else {
+                    "The target app has no available launcher activity. Check whether it is installed or disabled."
                 }
             }
-
-        } catch (e: Exception) {
-            ActionResult.Failed(
-                e.message ?: "Unknown error"
-            )
         }
-    }
-
-    private fun buildHealingPrompt(
-        action: Action,
-        context: ExecutionContext,
-        currentScreen: String,
-        attempt: Int
-    ): Pair<String, String> {
-
-        val system = """
-Action failed: ${action.action}
-Expected to see: ${context.expectedState ?: "task completion"}
-Current screen shows: ${currentScreen.take(500)}
-Attempt: $attempt/$maxAttempts
-
-What went wrong and what alternative action should I try?
-Respond with a single alternative Action JSON.
-        """.trimIndent()
-
-        return system to """
-The action failed. Current screen: "$currentScreen"
-Give me one alternative action that might work.
-        """.trimIndent()
-    }
-
-    private fun parseActionFromLLM(
-        llmResponse: String
-    ): Action? {
-
-        return try {
-            val json = org.json.JSONObject(llmResponse.trim())
-
-            Action(
-                action = json.getString("action"),
-                text = json.optString("text", null),
-                value = json.optString("value", null),
-                packageName = json.optString("package", null)
-            )
-
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    data class ExecutionContext(
-        val expectedState: String?,
-        val phaseId: String,
-        val previousPhaseOutcome: String?,
-        val screenBefore: String
-    )
-
-    sealed class ActionResult {
-        data class Success(val message: String) : ActionResult()
-        data class Failed(val reason: String) : ActionResult()
+        else -> SelfHealingVerificationPolicy.instruction(area)
     }
 }

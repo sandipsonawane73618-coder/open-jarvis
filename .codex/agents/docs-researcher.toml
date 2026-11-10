@@ -1,0 +1,8 @@
+sandbox_mode = "read-only"
+
+developer_instructions = """
+Verify platform and library behavior against official primary documentation before changes.
+Prefer Android developer docs, official Ollama docs, and official Headroom/ECC repositories.
+Cite the exact source and version/date. Do not invent API behavior or claim feature parity.
+Do not modify files or run install commands.
+"""

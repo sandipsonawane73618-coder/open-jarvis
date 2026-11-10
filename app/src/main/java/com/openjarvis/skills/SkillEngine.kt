@@ -78,7 +78,16 @@ class SkillEngine(private val context: Context) {
                     packageName = obj.optString("package", null),
                     label = obj.optString("label", null),
                     text = obj.optString("text", null),
-                    value = obj.optString("value", null)
+                    value = obj.optString("value", null),
+                    hint = obj.optString("hint", null).takeIf { it.isNotBlank() },
+                    direction = obj.optString("direction", null).takeIf { it.isNotBlank() },
+                    timeoutMs = obj.optLong("timeoutMs", 3000L),
+                    message = obj.optString("message", null).takeIf { it.isNotBlank() },
+                    prompt = obj.optString("prompt", null).takeIf { it.isNotBlank() },
+                    outputKey = obj.optString("outputKey", null).takeIf { it.isNotBlank() },
+                    x = if (obj.has("x")) obj.optInt("x") else null,
+                    y = if (obj.has("y")) obj.optInt("y") else null,
+                    distance = obj.optString("distance", null).takeIf { it.isNotBlank() }
                 )
             }
         }
@@ -103,22 +112,39 @@ class SkillEngine(private val context: Context) {
         )
     }
     
-    fun findMatch(command: String): Skill? {
-        val lower = command.lowercase()
-        
-        for (skill in skillsCache) {
-            for (phrase in skill.triggerPhrases) {
-                val pattern = phrase.replace("*", "(.+)")
-                val regex = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE)
-                val matcher = regex.matcher(lower)
-                
-                if (matcher.find()) {
-                    return skill
-                }
-            }
+    private fun triggerPattern(phrase: String): Pattern {
+        // Trigger text is user data, not a regular expression. Quote literal characters
+        // and retain only the documented '*' capture wildcard.
+        val pattern = phrase.split("*").joinToString("(.+?)") { Pattern.quote(it) }
+        return Pattern.compile(pattern, Pattern.CASE_INSENSITIVE)
+    }
+
+    private fun matchesTrigger(command: String, phrase: String): Boolean =
+        triggerPattern(phrase).matcher(command).find()
+
+    private fun matchesExactTrigger(command: String, phrase: String): Boolean =
+        triggerPattern(phrase).matcher(command.trim()).matches()
+
+    fun findMatch(command: String): Skill? =
+        skillsCache.firstOrNull { skill ->
+            skill.triggerPhrases.any { phrase -> matchesTrigger(command, phrase) }
         }
-        
-        return null
+
+    /** Only auto-generated, previously successful skills participate in learned routing. */
+    fun findLearnedMatch(command: String): Skill? =
+        skillsCache.firstOrNull { skill ->
+            skill.author == "generated" &&
+                skill.triggerPhrases.any { phrase -> matchesExactTrigger(command, phrase) }
+        }
+
+    /** Persist a verified generated skill and make it available to this engine immediately. */
+    suspend fun saveGeneratedSkill(skill: Skill) = withContext(Dispatchers.IO) {
+        require(skill.author == "generated") { "Only generated skills can be saved as learned skills" }
+        require(skill.actionTemplate.size >= 2) { "A learned skill needs at least two verified actions" }
+        saveSkill(skill)
+        val existing = skillsCache.indexOfFirst { it.id == skill.id }
+        if (existing >= 0) skillsCache[existing] = skill else skillsCache.add(skill)
+        skillsLoaded = true
     }
     
     fun extractVariables(command: String, skill: Skill): Map<String, String> {
@@ -127,15 +153,14 @@ class SkillEngine(private val context: Context) {
         
         for (skillVar in skill.variables) {
             for (phrase in skill.triggerPhrases) {
-                val pattern = phrase.replace("*", "(.+)")
-                val regex = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE)
+                val regex = triggerPattern(phrase)
                 val matcher = regex.matcher(lower)
                 
                 if (matcher.find()) {
                     val group = matcher.group(1)?.trim() ?: continue
                     
                     when (skillVar.key) {
-                        "contact", "message", "query", "time" -> {
+                        "contact", "message", "query", "time", "input" -> {
                             result[skillVar.key] = group
                         }
                     }
@@ -197,7 +222,22 @@ Actions: [$actionsJson]
             }))
             put("llmHint", skill.llmHint)
             put("actionTemplate", JSONArray(skill.actionTemplate.map {
-                JSONObject().put("action", it.action).put("package", it.packageName).put("value", it.value)
+                JSONObject().apply {
+                    put("action", it.action)
+                    put("package", it.packageName)
+                    put("label", it.label)
+                    put("text", it.text)
+                    put("value", it.value)
+                    put("hint", it.hint)
+                    put("direction", it.direction)
+                    put("timeoutMs", it.timeoutMs)
+                    put("message", it.message)
+                    put("prompt", it.prompt)
+                    put("outputKey", it.outputKey)
+                    put("x", it.x)
+                    put("y", it.y)
+                    put("distance", it.distance)
+                }
             }))
             put("successVerification", skill.successVerification)
             put("tags", JSONArray(skill.tags))
@@ -209,7 +249,7 @@ Actions: [$actionsJson]
     }
     
     fun generateSkill(command: String, actions: List<Action>, usedPackage: String?): Skill? {
-        if (actions.size < 4) return null
+        if (actions.size < 2) return null
         if (usedPackage == null) return null
         
         return Skill(
