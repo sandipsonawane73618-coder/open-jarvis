@@ -125,6 +125,15 @@ fun DashboardScreen(
                 Text("EURONICS SERVICE REPORT", color = Color.White, fontWeight = FontWeight.Bold)
             }
 
+            Spacer(modifier = Modifier.height(10.dp))
+
+            OutlinedButton(
+                onClick = onStartOverlay,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("OPEN JARVIS FLOATING ASSISTANT")
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
 
             ProactiveAssistantCard(taskCount = recentTasks.size)
@@ -154,16 +163,6 @@ fun DashboardScreen(
             modifier = Modifier.align(Alignment.BottomCenter)
         )
 
-        FloatingActionButton(
-            onClick = onStartOverlay,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 24.dp, bottom = 88.dp),
-            containerColor = VoidColor.Violet,
-            contentColor = Color.White
-        ) {
-            Text("J", fontWeight = FontWeight.Bold)
-        }
     }
 }
 

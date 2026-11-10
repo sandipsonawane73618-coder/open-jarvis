@@ -71,6 +71,7 @@ class OverlayService : Service() {
     private lateinit var graphifyRepo: GraphifyRepository
     private var socketServer: SocketServer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val overlayAttachmentGate = OverlayAttachmentGate()
     private val overlayWatchdog = object : Runnable {
         override fun run() {
             if (overlayView?.isAttachedToWindow != true) attachAssistant()
@@ -203,11 +204,17 @@ class OverlayService : Service() {
     }
 
     private fun attachAssistant() {
+        // WindowManager and Android Views must only be touched on the main thread.
+        // Multiple start/watchdog callbacks are serialized before they can create a window.
+        if (Looper.myLooper() !== Looper.getMainLooper()) {
+            mainHandler.post { attachAssistant() }
+            return
+        }
         if (!Settings.canDrawOverlays(this)) return
-        if (overlayView?.isAttachedToWindow == true) return
-        // A stale detached View must not block recreation of the floating overlay.
-        overlayView = null
+        if (!overlayAttachmentGate.begin(overlayView?.isAttachedToWindow == true)) return
         try {
+            // A stale detached View must not block recreation of the floating overlay.
+            overlayView = null
             windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
             val root = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -376,6 +383,8 @@ class OverlayService : Service() {
             overlayView = root
         } catch (e: Exception) {
             android.util.Log.e("OpenJarvis", "Unable to attach assistant overlay", e)
+        } finally {
+            overlayAttachmentGate.finish()
         }
     }
 
@@ -554,7 +563,11 @@ class OverlayService : Service() {
         fun start(context: Context) {
             val current = activeInstance
             if (current != null) {
-                if (current.overlayView?.isAttachedToWindow != true) current.attachAssistant()
+                current.mainHandler.post {
+                    if (activeInstance === current && current.overlayView?.isAttachedToWindow != true) {
+                        current.attachAssistant()
+                    }
+                }
                 return
             }
             context.startForegroundService(Intent(context, OverlayService::class.java))

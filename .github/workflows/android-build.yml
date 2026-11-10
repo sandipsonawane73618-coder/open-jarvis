@@ -2,7 +2,7 @@ name: Android Build
 
 on:
   push:
-    branches: [main, feature/euronics-webview-integration, feature/jarvis-stable-1.0, feature/jarvis-opendroid-agent-loop, feature/jarvis-slice-c-router-llm-schema, feature/jarvis-phase2-continuation, feature/jarvis-diagnostic-export, feature/jarvis-command-listener-no-wakeword, feature/jarvis-fast-response-streaming, feature/jarvis-streaming-response, feature/jarvis-contact-app-intent-priority]
+    branches: [main, feature/euronics-webview-integration, feature/jarvis-stable-1.0, feature/jarvis-opendroid-agent-loop, feature/jarvis-slice-c-router-llm-schema, feature/jarvis-phase2-continuation, feature/jarvis-diagnostic-export, feature/jarvis-command-listener-no-wakeword, feature/jarvis-fast-response-streaming, feature/jarvis-streaming-response, feature/jarvis-contact-app-intent-priority, feature/jarvis-single-floating-overlay]
     paths:
       - "app/**"
       - "scripts/**"
