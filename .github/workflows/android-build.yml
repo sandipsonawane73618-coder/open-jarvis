@@ -2,7 +2,7 @@ name: Android Build
 
 on:
   push:
-    branches: [main, feature/euronics-webview-integration, feature/jarvis-stable-1.0, feature/jarvis-opendroid-agent-loop, feature/jarvis-slice-c-router-llm-schema, feature/jarvis-phase2-continuation, feature/jarvis-diagnostic-export, feature/jarvis-command-listener-no-wakeword, feature/jarvis-fast-response-streaming, feature/jarvis-streaming-response, feature/jarvis-contact-app-intent-priority, feature/jarvis-single-floating-overlay, feature/jarvis-screenshot-capture-reliability]
+    branches: [main, feature/euronics-webview-integration, feature/jarvis-stable-1.0, feature/jarvis-opendroid-agent-loop, feature/jarvis-slice-c-router-llm-schema, feature/jarvis-phase2-continuation, feature/jarvis-diagnostic-export, feature/jarvis-command-listener-no-wakeword, feature/jarvis-fast-response-streaming, feature/jarvis-streaming-response, feature/jarvis-contact-app-intent-priority, feature/jarvis-single-floating-overlay, feature/jarvis-screenshot-capture-reliability, feature/jarvis-false-completion-guard]
     paths:
       - "app/**"
       - "scripts/**"
@@ -14,7 +14,7 @@ on:
       - "settings.gradle"
       - ".github/workflows/android-build.yml"
   pull_request:
-    branches: [feature/jarvis-full-potential-foundation, feature/jarvis-manual-mic-hud-headroom, feature/jarvis-m3-m5-proactive-hud, feature/jarvis-stable-1.0, feature/jarvis-stable-1.0-phase2-wakeword, feature/jarvis-stable-1.0-phase3-ollama, feature/jarvis-stable-1.0-phase4-command-execution, feature/jarvis-jandal-memory-recall, feature/jarvis-slice-c-router-llm-schema, feature/jarvis-phase1-p0-security, feature/jarvis-phase2-continuation, feature/jarvis-command-listener-no-wakeword, feature/jarvis-foreground-banking-guard, feature/jarvis-continuous-voice-session, feature/jarvis-self-healing-retry-gates, feature/jarvis-conversation-memory-marathi, feature/jarvis-fast-response-streaming, feature/jarvis-streaming-response, feature/jarvis-contact-app-intent-priority, feature/jarvis-single-floating-overlay, feature/jarvis-screenshot-capture-reliability]
+    branches: [feature/jarvis-full-potential-foundation, feature/jarvis-manual-mic-hud-headroom, feature/jarvis-m3-m5-proactive-hud, feature/jarvis-stable-1.0, feature/jarvis-stable-1.0-phase2-wakeword, feature/jarvis-stable-1.0-phase3-ollama, feature/jarvis-stable-1.0-phase4-command-execution, feature/jarvis-jandal-memory-recall, feature/jarvis-slice-c-router-llm-schema, feature/jarvis-phase1-p0-security, feature/jarvis-phase2-continuation, feature/jarvis-command-listener-no-wakeword, feature/jarvis-foreground-banking-guard, feature/jarvis-continuous-voice-session, feature/jarvis-self-healing-retry-gates, feature/jarvis-conversation-memory-marathi, feature/jarvis-fast-response-streaming, feature/jarvis-streaming-response, feature/jarvis-contact-app-intent-priority, feature/jarvis-single-floating-overlay, feature/jarvis-screenshot-capture-reliability, feature/jarvis-false-completion-guard]
     paths:
       - "app/**"
       - "scripts/**"

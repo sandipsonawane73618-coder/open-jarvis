@@ -312,7 +312,7 @@ ${rawResponse.take(1000)}
                         nativeResult.fold(
                             onSuccess = {
                                 val reply = when (nativeSkill.kind) {
-                                    SkillRegistry.Kind.OPEN_APP -> "Opened ${nativeSkill.args["app"]}"
+                                    SkillRegistry.Kind.OPEN_APP -> "Launch requested for ${nativeSkill.args["app"]}; foreground confirmation is not available on this route."
                                     SkillRegistry.Kind.SETTINGS -> "Opened ${nativeSkill.args["screen"]} settings"
                                     SkillRegistry.Kind.WHATSAPP_MESSAGE -> "WhatsApp composer opened"
                                     SkillRegistry.Kind.SMS_MESSAGE -> "SMS composer opened"
@@ -711,7 +711,7 @@ ${fullSystem.substringAfter("MEMORY:")}
                                 nativeResult.fold(
                                     onSuccess = {
                                         val reply = when (kind) {
-                                            SkillRegistry.Kind.OPEN_APP -> "Opened ${args["app"]}"
+                                            SkillRegistry.Kind.OPEN_APP -> "Launch requested for ${args["app"]}; foreground confirmation is not available on this route."
                                             SkillRegistry.Kind.SETTINGS -> "Opened ${args["screen"]} settings"
                                             SkillRegistry.Kind.WHATSAPP_MESSAGE -> "WhatsApp composer opened"
                                             SkillRegistry.Kind.SMS_MESSAGE -> "SMS composer opened"
@@ -1053,7 +1053,7 @@ ${fullSystem.substringAfter("MEMORY:")}
                                 val spoken = "Ye command samajhne mein der lag rahi hai, chhota command bolo."
                                 Log.i(TAG, "LLM time budget exceeded; returning spoken slow-model guidance")
                                 graphifyRepo.logTask(safeCommand, "slow local model; shorter command requested", "Ollama (Local)", System.currentTimeMillis() - startTime)
-                                _state.value = AgentState.Done(spoken)
+                                _state.value = AgentState.Error(spoken)
                                 return@fold
                             }
                             val msg = when {
@@ -1093,7 +1093,7 @@ ${fullSystem.substringAfter("MEMORY:")}
                 } catch (e: Exception) {
                     if (e.message?.contains("time budget", ignoreCase = true) == true) {
                         Log.i(TAG, "LLM time budget exceeded; returning spoken slow-model guidance")
-                        _state.value = AgentState.Done("Ye command samajhne mein der lag rahi hai, chhota command bolo.")
+                        _state.value = AgentState.Error("Ye command samajhne mein der lag rahi hai, chhota command bolo.")
                         return@withLock
                     }
                     Log.e(TAG, "Task execution crashed for command: $cleanCommand", e)
@@ -1272,10 +1272,12 @@ ${fullSystem.substringAfter("MEMORY:")}
                         }
                         kotlinx.coroutines.delay(250)
                     }
-                    if (!foregroundConfirmed) {
-                        Log.w(TAG, "Native app launch accepted for $packageName; foreground confirmation unavailable. Continuing with fresh screen observation.")
+                    if (!AgentPlanPolicy.isAppLaunchVerified(launchAccepted = true, foregroundConfirmed = foregroundConfirmed)) {
+                        Log.w(TAG, "Native app launch accepted for $packageName, but foreground confirmation was unavailable; refusing to count it as completed")
+                        "App launch was requested, but Android foreground confirmation was unavailable; action is not verified."
+                    } else {
+                        null
                     }
-                    null
                 }
 
                 Action.CLICK, Action.TAP -> {
@@ -1645,7 +1647,7 @@ ${fullSystem.substringAfter("MEMORY:")}
                         return result.fold(
                             onSuccess = {
                                 val reply = when (skillRequest.kind) {
-                                    SkillRegistry.Kind.OPEN_APP -> "Opened ${skillRequest.args["app"]}"
+                                    SkillRegistry.Kind.OPEN_APP -> "Launch requested for ${skillRequest.args["app"]}; foreground confirmation is not available on this route."
                                     SkillRegistry.Kind.SETTINGS -> "Opened ${skillRequest.args["screen"]} settings"
                                     SkillRegistry.Kind.CALL -> "Dialer opened"
                                     SkillRegistry.Kind.TIME -> "Abhi " + SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date()) + " baj rahe hain."
@@ -1987,7 +1989,7 @@ ${fullSystem.substringAfter("MEMORY:")}
             return nativeResult.fold(
                 onSuccess = {
                     val reply = when (kind) {
-                        SkillRegistry.Kind.OPEN_APP -> "Opened ${args["app"]}"
+                        SkillRegistry.Kind.OPEN_APP -> "Launch requested for ${args["app"]}; foreground confirmation is not available on this route."
                         SkillRegistry.Kind.SETTINGS -> "Opened ${args["screen"]} settings"
                         SkillRegistry.Kind.SEARCH -> "Search opened"
                         SkillRegistry.Kind.WHATSAPP_MESSAGE -> "WhatsApp composer opened"
@@ -2150,7 +2152,7 @@ ${fullSystem.substringAfter("MEMORY:")}
             }
             is StepIntent.AppLaunch -> {
                 run(SkillRegistry.Kind.OPEN_APP, mapOf("app" to intent.label))
-                "Opened ${intent.label}"
+                "Launch requested for ${intent.label}; foreground confirmation is not available on this route."
             }
             is StepIntent.ScreenRead -> {
                 val capture = ScreenshotCapture.getInstance(context)
