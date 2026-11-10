@@ -31,6 +31,12 @@ class AgentPlanPolicyTest {
         }
     }
 
+    @Test fun completionRequiresEveryPlannedActionToBeVerified() {
+        assertFalse(AgentPlanPolicy.isFullyCompleted(0, 0))
+        assertFalse(AgentPlanPolicy.isFullyCompleted(2, 0))
+        assertFalse(AgentPlanPolicy.isFullyCompleted(2, 1))
+        assertTrue(AgentPlanPolicy.isFullyCompleted(2, 2))
+    }
     @Test fun singleOpenAppWithoutActionableFollowUpIsExecutable() {
         assertTrue(AgentPlanPolicy.isExecutablePlan(openInstagram, "Instagram kholo aur batao"))
     }

@@ -35,6 +35,7 @@ internal class NativeLearnedStore(context: Context) {
             is StepIntent.Message -> put("type", "message").put("app", intent.app).put("contact", intent.contact).put("text", intent.text)
             is StepIntent.AppLaunch -> put("type", "app_launch").put("label", intent.label)
             is StepIntent.ScreenRead -> put("type", "screen_read").put("remember", intent.remember)
+            is StepIntent.Screenshot -> put("type", "screenshot").put("saveToGallery", intent.saveToGallery)
         }
     }
 
@@ -49,6 +50,7 @@ internal class NativeLearnedStore(context: Context) {
         "message" -> StepIntent.Message(json.optString("app").takeIf { it.isNotBlank() }, json.optString("contact").takeIf { it.isNotBlank() }, json.optString("text").takeIf { it.isNotBlank() })
         "app_launch" -> StepIntent.AppLaunch(json.getString("label").take(60)).also { require(it.label.isNotBlank()) }
         "screen_read" -> StepIntent.ScreenRead(json.optBoolean("remember", false))
+        "screenshot" -> StepIntent.Screenshot(json.optBoolean("saveToGallery", true))
         else -> throw IllegalArgumentException("Unknown learned native intent")
     }
 

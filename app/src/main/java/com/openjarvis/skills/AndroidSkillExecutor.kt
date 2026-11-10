@@ -64,9 +64,16 @@ class AndroidSkillExecutor(private val context: Context) : SkillRegistry.SkillEx
             }
             SkillRegistry.Kind.VOLUME -> {
                 val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                val adjustment = if (args.getValue("direction") == "up") AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
+                val up = args.getValue("direction") == "up"
+                val before = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+                val maximum = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                val atLimit = if (up) before >= maximum else before <= 0
+                val adjustment = if (up) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
                 audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, adjustment, AudioManager.FLAG_SHOW_UI)
-                audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, adjustment, AudioManager.FLAG_SHOW_UI)
+                val after = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+                if (!atLimit && after == before) {
+                    throw IllegalStateException("Android media volume did not change; action was not verified")
+                }
             }
             SkillRegistry.Kind.TIME -> Unit
             SkillRegistry.Kind.MAPS -> {

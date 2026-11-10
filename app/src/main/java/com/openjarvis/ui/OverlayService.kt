@@ -104,22 +104,8 @@ class OverlayService : Service() {
             voiceManager.state.collect { state ->
                 when (state) {
                     is VoiceManager.VoiceState.Result -> when (CommandListeningPolicy.classify(state.text, isMuted)) {
-                        CommandListeningPolicy.Action.MUTE -> {
-                            isMuted = true
-                            setVisualState("IDLE", "COMMAND MUTED — mic active for Unmute; other commands ignored")
-                            updateNotification("Mic active for Unmute; other commands ignored")
-                            voiceManager.speak("ठीक है, Jarvis command mute हो गया। Unmute बोलकर फिर से शुरू करें।") {
-                                voiceManager.resumeContinuousSession()
-                            }
-                        }
-                        CommandListeningPolicy.Action.UNMUTE -> {
-                            isMuted = false
-                            setVisualState("IDLE", "JARVIS ACTIVE — listening continuously")
-                            updateNotification("Continuous microphone listening active")
-                            voiceManager.speak("Jarvis is active. I am listening.") {
-                                voiceManager.resumeContinuousSession()
-                            }
-                        }
+                        CommandListeningPolicy.Action.MUTE -> enterMuteMode()
+                        CommandListeningPolicy.Action.UNMUTE -> enterUnmuteMode()
                         CommandListeningPolicy.Action.IGNORE -> {
                             statusText?.text = if (isMuted) {
                                 "COMMAND MUTED — mic active for Unmute; other commands ignored"
@@ -428,6 +414,16 @@ class OverlayService : Service() {
             voiceManager.resumeContinuousSession()
         }
     }
+    private fun enterUnmuteMode() {
+        val wasMuted = isMuted
+        isMuted = false
+        setVisualState("IDLE", "JARVIS ACTIVE — listening continuously")
+        updateNotification("Continuous microphone listening active")
+        val reply = if (wasMuted) "Jarvis is active. I am listening." else "Jarvis already active. I am listening."
+        voiceManager.speak(reply) {
+            voiceManager.resumeContinuousSession()
+        }
+    }
 
     private fun submitCommand(voiceCommand: String? = null) {
         val command = if (voiceCommand != null) voiceCommand.trim() else commandInput?.text?.toString()?.trim().orEmpty()
@@ -435,6 +431,26 @@ class OverlayService : Service() {
             statusText?.text = "No speech detected — listening again"
             voiceManager.resumeContinuousSession()
             return
+        }
+        // Typed commands use the same deterministic voice-control gate as speech transcripts.
+        when (CommandListeningPolicy.classify(command, isMuted)) {
+            CommandListeningPolicy.Action.MUTE -> {
+                enterMuteMode()
+                commandInput?.text?.clear()
+                return
+            }
+            CommandListeningPolicy.Action.UNMUTE -> {
+                enterUnmuteMode()
+                commandInput?.text?.clear()
+                return
+            }
+            CommandListeningPolicy.Action.IGNORE -> {
+                statusText?.text = "COMMAND MUTED — only say Unmute / Awaaz chalu karo"
+                commandInput?.text?.clear()
+                voiceManager.resumeContinuousSession()
+                return
+            }
+            CommandListeningPolicy.Action.EXECUTE_COMMAND -> Unit
         }
         if (command.any { it in '\u0900'..'\u097F' }) {
             val marathiMarkers = listOf("आहे", "आणि", "मला", "काय", "झाले", "झालं", "नाही", "दाखवा", "उघडा", "करायचे", "माझे", "तुम्ही", "सांगा", "नको")

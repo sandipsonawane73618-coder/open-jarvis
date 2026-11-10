@@ -3,8 +3,8 @@ package com.openjarvis.agent
 /**
  * Bounds optional action-planning context before it is added to the system prompt.
  *
- * Priority is deliberate: visible interactive targets are most useful for safe UI actions,
- * followed by query-relevant saved facts, OCR text, and installed-app labels. The user's
+ * Priority is deliberate: complete visible interactive targets first, then complete
+ * query-relevant memory facts, OCR words, and complete installed-app labels. The user's
  * command is not accepted by this API, so it cannot be truncated or rewritten here.
  */
 internal object HeadroomContextBudget {
@@ -33,19 +33,33 @@ internal object HeadroomContextBudget {
         installedApps: String
     ): Allocation {
         var remaining = MAX_TOTAL_CHARS
-        fun take(value: String, limit: Int): String {
+
+        fun takeLines(value: String, limit: Int): String {
             if (remaining <= 0 || value.isEmpty()) return ""
-            val allowed = minOf(limit, remaining)
-            val bounded = fitAtLineBoundary(value, allowed)
+            val bounded = fitCompleteLines(value, minOf(limit, remaining))
+            remaining -= bounded.length
+            return bounded
+        }
+
+        fun takeText(value: String, limit: Int): String {
+            if (remaining <= 0 || value.isEmpty()) return ""
+            val bounded = fitTextAtWordBoundary(value, minOf(limit, remaining))
+            remaining -= bounded.length
+            return bounded
+        }
+
+        fun takeApps(value: String, limit: Int): String {
+            if (remaining <= 0 || value.isEmpty()) return ""
+            val bounded = fitDelimitedItems(value, ", ", minOf(limit, remaining))
             remaining -= bounded.length
             return bounded
         }
 
         // Allocate in priority order, independent of argument order.
-        val elements = take(screenElements, MAX_SCREEN_ELEMENTS)
-        val facts = take(memory, MAX_MEMORY)
-        val ocr = take(screenText, MAX_SCREEN_TEXT)
-        val apps = take(installedApps, MAX_INSTALLED_APPS)
+        val elements = takeLines(screenElements, MAX_SCREEN_ELEMENTS)
+        val facts = takeLines(memory, MAX_MEMORY)
+        val ocr = takeText(screenText, MAX_SCREEN_TEXT)
+        val apps = takeApps(installedApps, MAX_INSTALLED_APPS)
 
         return Allocation(
             memory = facts,
@@ -56,17 +70,50 @@ internal object HeadroomContextBudget {
         )
     }
 
-    private fun fitAtLineBoundary(value: String, limit: Int): String {
+    /**
+     * Keep only complete newline-delimited records. Interactive element records must
+     * never be cut mid-label, resource-id, or bounds tuple.
+     */
+    fun fitCompleteLines(value: String, limit: Int): String {
+        if (limit <= 0 || value.isEmpty()) return ""
+        if (value.length <= limit) return value
+
+        val included = ArrayList<String>()
+        var used = 0
+        for (line in value.split('\n')) {
+            val additional = line.length + if (included.isEmpty()) 0 else 1
+            if (used + additional > limit) continue
+            included += line
+            used += additional
+        }
+        return included.joinToString("\n")
+    }
+
+    /** Keep complete comma-delimited app labels instead of cutting an app name in half. */
+    fun fitDelimitedItems(value: String, delimiter: String, limit: Int): String {
+        if (limit <= 0 || value.isEmpty()) return ""
+        if (value.length <= limit) return value
+
+        val included = ArrayList<String>()
+        var used = 0
+        for (item in value.split(delimiter)) {
+            val additional = item.length + if (included.isEmpty()) 0 else delimiter.length
+            if (used + additional > limit) continue
+            included += item
+            used += additional
+        }
+        return included.joinToString(delimiter)
+    }
+
+    /** OCR is descriptive text, so retain whole words and add a clear truncation marker. */
+    fun fitTextAtWordBoundary(value: String, limit: Int): String {
         if (value.length <= limit) return value
         if (limit <= 1) return "…".take(limit)
 
         val candidate = value.take(limit - 1)
-        val lastLineBreak = candidate.lastIndexOf('\n')
-        val safePrefix = if (lastLineBreak >= limit / 2) {
-            candidate.substring(0, lastLineBreak)
-        } else {
-            candidate
-        }
-        return safePrefix.trimEnd() + "…"
+        val boundary = candidate.indexOfLast { it.isWhitespace() }
+        if (boundary < 0) return ""
+        val safePrefix = candidate.substring(0, boundary).trimEnd()
+        return if (safePrefix.isEmpty()) "" else safePrefix + "…"
     }
 }

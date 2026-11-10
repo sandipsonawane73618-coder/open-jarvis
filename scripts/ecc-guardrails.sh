@@ -38,12 +38,14 @@ if grep -nE 'scheduleRetry|retryRunnable|retryAttempt|RETRYING:' "$STT_FILE"; th
   fail "STT engine must not own its own retry/rearm loop: $STT_FILE"
 fi
 
-if grep -R -nE 'VoiceCute|Voicute|WakeWord|Porcupine|Sherpa|sherpa-onnx|prepare-voicute|prepare-sherpa' app/src/main .github/workflows; then
-  fail "wake-word/ONNX runtime or model preparation references remain"
+# Voicute is the sole permitted wake-word engine. Keep legacy engines removed.
+# Do not ban generic wake-word symbols or Voicute's own model preparation.
+if grep -R -nE 'Porcupine|Sherpa|sherpa-onnx|prepare-sherpa' app/src/main .github/workflows; then
+  fail "legacy Porcupine/Sherpa wake-word engine or model preparation reference remains"
 fi
 
-if grep -R -nE 'VoiceCute|Voicute|WakeWord|Porcupine|Sherpa|sherpa-onnx|prepare-voicute|prepare-sherpa' scripts --exclude='ecc-guardrails.sh'; then
-  fail "obsolete wake-word/ONNX preparation script remains"
+if grep -R -nE 'Porcupine|Sherpa|sherpa-onnx|prepare-sherpa' scripts --exclude='ecc-guardrails.sh'; then
+  fail "legacy Porcupine/Sherpa preparation script remains"
 fi
 
 if grep -R -nE 'SpeechRecognizer\.createSpeechRecognizer\(' app/src/main/java/com/openjarvis/voice; then

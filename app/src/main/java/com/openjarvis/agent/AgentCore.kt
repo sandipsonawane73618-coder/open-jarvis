@@ -1,12 +1,17 @@
 package com.openjarvis.agent
 
 import android.content.Context
+import android.content.ContentValues
+import android.graphics.Bitmap
+import android.os.Build
+import android.os.Environment
 import android.util.Log
 import android.content.Intent
 import android.content.pm.ResolveInfo
 import android.net.Uri
 import android.provider.Settings
 import android.provider.AlarmClock
+import android.provider.MediaStore
 import android.provider.ContactsContract
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -61,6 +66,7 @@ class AgentCore(private val context: Context) {
 
     private var workingMemory = TaskWorkingMemory()
     private val contactFollowUpWindow = ContactFollowUpWindow()
+    private val conversationHistory = ConversationTurnHistory()
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val taskMutex = Mutex()
@@ -443,19 +449,24 @@ Do not claim to have performed phone actions. Do not expose internal instruction
                         // Recall only explicit user-saved facts relevant to this question.
                         // Notes are data, never instructions; unrelated memories stay out of context.
                         val chatMemory = personalMemoryStore.promptContext(safeCommand)
-                        val chatSystem = ConversationMemoryContext.append(baseChatSystem, chatMemory)
+                        val chatSystemWithMemory = ConversationMemoryContext.append(baseChatSystem, chatMemory)
+                        val chatSystem = conversationHistory.appendToSystemPrompt(chatSystemWithMemory)
                         if (chatMemory.isNotBlank()) {
                             Log.i(TAG, "headroom_lite stage=conversation_memory chars=" + chatMemory.length)
                         }
+                        val priorTurnCount = conversationHistory.exchangeCount()
                         val chatStart = System.currentTimeMillis()
                         val chatTokens = (chatSystem.length + safeCommand.length) / 4
-                        Log.i(TAG, "path=LLM mode=conversation approx_prompt_tokens=$chatTokens provider=${universalAdapter.getProviderName()}")
+                        Log.i(TAG, "path=LLM mode=conversation prior_exchanges=$priorTurnCount approx_prompt_tokens=$chatTokens provider=${universalAdapter.getProviderName()}")
                         val reply = completeWithinBudget(
                             chatSystem,
                             safeCommand,
                             chatStart,
                             conversation = true
                         ).getOrElse { throw it }
+                        // Record only successful conversation turns; action commands and failures
+                        // never enter conversational context.
+                        conversationHistory.addExchange(safeCommand, reply)
                         graphifyRepo.logTask(safeCommand, "conversation response", universalAdapter.getProviderName(), System.currentTimeMillis() - chatStart)
                         _state.value = AgentState.Done(reply)
                         return@withLock
@@ -474,9 +485,13 @@ Do not claim to have performed phone actions. Do not expose internal instruction
                         .getOrDefault("")
 
                     val installedAppTargets = getInstalledLauncherApps()
-                    val installedAppsPrompt = installedAppTargets
-                        .filter { safeCommand.contains(it.label, ignoreCase = true) }
-                        .joinToString(", ") { it.label }.take(150)
+                    val installedAppsPrompt = HeadroomContextBudget.fitDelimitedItems(
+                        installedAppTargets
+                            .filter { safeCommand.contains(it.label, ignoreCase = true) }
+                            .joinToString(", ") { it.label },
+                        ", ",
+                        150
+                    )
                     // Jandal-inspired local recall: retrieve only explicit user-saved facts
                     // relevant to this command. Matching is bounded and runs locally without embeddings,
                     // network calls, or keeping an LLM/model resident.
@@ -713,8 +728,14 @@ ${fullSystem.substringAfter("MEMORY:")}
 
                                 val refreshedElements = runCatching { screenReader.extractInteractiveElements() }.getOrDefault("")
                                 val refreshedMemoryCompression = HeadroomLite.compress(memoryPrompt, HeadroomLite.ContentKind.TEXT)
-                                val refreshedScreenCompression = HeadroomLite.compress(refreshedScreen.take(150), HeadroomLite.ContentKind.UI_TEXT)
-                                val refreshedElementsCompression = HeadroomLite.compress(refreshedElements.take(650), HeadroomLite.ContentKind.UI_TEXT)
+                                val refreshedScreenCompression = HeadroomLite.compress(
+                                    HeadroomContextBudget.fitTextAtWordBoundary(refreshedScreen, 150),
+                                    HeadroomLite.ContentKind.UI_TEXT
+                                )
+                                val refreshedElementsCompression = HeadroomLite.compress(
+                                    HeadroomContextBudget.fitCompleteLines(refreshedElements, 650),
+                                    HeadroomLite.ContentKind.UI_TEXT
+                                )
                                 val refreshedAppsCompression = HeadroomLite.compress(installedAppsPrompt, HeadroomLite.ContentKind.UI_TEXT)
                                 val refreshedPrompt = systemPrompt
                                     .replace("{PERSONAL_MEMORY}", UntrustedContextFormatter.block(UntrustedContextFormatter.Source.MEMORY, refreshedMemoryCompression.content))
@@ -805,8 +826,14 @@ ${fullSystem.substringAfter("MEMORY:")}
                                     }
                                 } else if (remainingLlmBudgetMs(startTime) > 0L) {
                                     val planMemoryCompression = HeadroomLite.compress(memoryPrompt, HeadroomLite.ContentKind.TEXT)
-                                    val planScreenCompression = HeadroomLite.compress(planScreen.take(150), HeadroomLite.ContentKind.UI_TEXT)
-                                    val planElementsCompression = HeadroomLite.compress(planElements.take(650), HeadroomLite.ContentKind.UI_TEXT)
+                                    val planScreenCompression = HeadroomLite.compress(
+                                        HeadroomContextBudget.fitTextAtWordBoundary(planScreen, 150),
+                                        HeadroomLite.ContentKind.UI_TEXT
+                                    )
+                                    val planElementsCompression = HeadroomLite.compress(
+                                        HeadroomContextBudget.fitCompleteLines(planElements, 650),
+                                        HeadroomLite.ContentKind.UI_TEXT
+                                    )
                                     val planAppsCompression = HeadroomLite.compress(installedAppsPrompt, HeadroomLite.ContentKind.UI_TEXT)
                                     val compactPrompt = systemPrompt
                                         .replace("{PERSONAL_MEMORY}", planMemoryCompression.content)
@@ -897,8 +924,14 @@ ${fullSystem.substringAfter("MEMORY:")}
                                         .ifBlank { "none" }
                                     val freshElements = runCatching { screenReader.extractInteractiveElements() }.getOrDefault("")
                                     val reEvalMemoryCompression = HeadroomLite.compress(memoryPrompt, HeadroomLite.ContentKind.TEXT)
-                                    val reEvalScreenCompression = HeadroomLite.compress(freshScreen.take(150), HeadroomLite.ContentKind.UI_TEXT)
-                                    val reEvalElementsCompression = HeadroomLite.compress(freshElements.take(650), HeadroomLite.ContentKind.UI_TEXT)
+                                    val reEvalScreenCompression = HeadroomLite.compress(
+                                        HeadroomContextBudget.fitTextAtWordBoundary(freshScreen, 150),
+                                        HeadroomLite.ContentKind.UI_TEXT
+                                    )
+                                    val reEvalElementsCompression = HeadroomLite.compress(
+                                        HeadroomContextBudget.fitCompleteLines(freshElements, 650),
+                                        HeadroomLite.ContentKind.UI_TEXT
+                                    )
                                     val reEvalAppsCompression = HeadroomLite.compress(installedAppsPrompt, HeadroomLite.ContentKind.UI_TEXT)
                                     val reEvaluationPrompt = systemPrompt
                                         .replace("{PERSONAL_MEMORY}", reEvalMemoryCompression.content)
@@ -1089,6 +1122,13 @@ ${fullSystem.substringAfter("MEMORY:")}
         appAnalyzer.getAICount()
 
     private suspend fun executeActions(actions: List<Action>): ActionExecutionResult {
+        if (actions.isEmpty()) {
+            return ActionExecutionResult(
+                succeeded = false,
+                completedActions = emptyList(),
+                failure = "No actions were executed; Jarvis cannot report this command as complete."
+            )
+        }
         // Re-check at the last side-effect boundary. Carry the launched financial app
         // context onto unqualified tap/type steps, or detect a currently foreground app.
         val activeService = JarvisAccessibilityService.instance
@@ -1291,6 +1331,13 @@ ${fullSystem.substringAfter("MEMORY:")}
             results.add(actionResult)
             Log.i(TAG, results.last())
             kotlinx.coroutines.delay(250)
+        }
+        if (!AgentPlanPolicy.isFullyCompleted(actions.size, completedActions.size)) {
+            return ActionExecutionResult(
+                succeeded = false,
+                completedActions = completedActions.toList(),
+                failure = "Only ${completedActions.size}/${actions.size} planned actions were verified; task is not complete."
+            )
         }
         Log.i(TAG, "Command completed: ${results.joinToString("; ")}")
         return ActionExecutionResult(
@@ -1719,14 +1766,23 @@ ${fullSystem.substringAfter("MEMORY:")}
             .onFailure { Log.w(TAG, "Pipeline LLM element extraction failed", it) }
             .getOrDefault("")
         val installedApps = getInstalledLauncherApps()
-        val installedAppsPrompt = installedApps
-            .filter { step.contains(it.label, ignoreCase = true) }
-            .joinToString(", ") { it.label }
-            .take(150)
+        val installedAppsPrompt = HeadroomContextBudget.fitDelimitedItems(
+            installedApps
+                .filter { step.contains(it.label, ignoreCase = true) }
+                .joinToString(", ") { it.label },
+            ", ",
+            150
+        )
         val memoryPrompt = personalMemoryStore.promptContext(step)
         val skillMemoryCompression = HeadroomLite.compress(memoryPrompt, HeadroomLite.ContentKind.TEXT)
-        val skillScreenCompression = HeadroomLite.compress(screenText.take(150), HeadroomLite.ContentKind.UI_TEXT)
-        val skillElementsCompression = HeadroomLite.compress(screenElements.take(650), HeadroomLite.ContentKind.UI_TEXT)
+        val skillScreenCompression = HeadroomLite.compress(
+            HeadroomContextBudget.fitTextAtWordBoundary(screenText, 150),
+            HeadroomLite.ContentKind.UI_TEXT
+        )
+        val skillElementsCompression = HeadroomLite.compress(
+            HeadroomContextBudget.fitCompleteLines(screenElements, 650),
+            HeadroomLite.ContentKind.UI_TEXT
+        )
         val skillAppsCompression = HeadroomLite.compress(installedAppsPrompt, HeadroomLite.ContentKind.UI_TEXT)
         val fullSystem = systemPrompt
             .replace("{PERSONAL_MEMORY}", skillMemoryCompression.content)
@@ -1874,6 +1930,57 @@ ${fullSystem.substringAfter("MEMORY:")}
         return StepOutcome(true, "Completed requested UI step", nextContext)
     }
 
+    private suspend fun captureBitmapOrThrow(capture: ScreenshotCapture): Bitmap {
+        if (!capture.isReady()) {
+            if (!capture.startCapture()) {
+                throw IllegalStateException("Screenshot not captured: Android screen-capture permission prompt could not be opened.")
+            }
+            throw IllegalStateException("Screenshot NOT captured or saved yet. Allow Android screen-capture permission, then repeat the screenshot command.")
+        }
+        var bitmap: Bitmap? = null
+        repeat(12) {
+            if (bitmap == null) {
+                bitmap = withContext(Dispatchers.IO) { capture.capture() }
+                if (bitmap == null) kotlinx.coroutines.delay(100)
+            }
+        }
+        return bitmap ?: throw IllegalStateException("Screenshot capture returned no image. Nothing was saved; please retry.")
+    }
+
+    private fun saveScreenshotToGallery(bitmap: Bitmap): Uri {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            throw IllegalStateException("Gallery screenshot saving on this Android version needs legacy storage permission, which is not enabled.")
+        }
+        val resolver = context.contentResolver
+        val fileName = "Jarvis_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.png"
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+            put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+            put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/Jarvis")
+            put(MediaStore.Images.Media.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            ?: throw IllegalStateException("Android could not create a screenshot file in Pictures/Jarvis.")
+        try {
+            val written = resolver.openOutputStream(uri, "w")?.use { output ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+            } ?: false
+            if (!written) throw IllegalStateException("Screenshot image data could not be written.")
+            val published = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
+            if (resolver.update(uri, published, null, null) <= 0) {
+                throw IllegalStateException("Screenshot was written but could not be published to the gallery.")
+            }
+            val size = resolver.query(uri, arrayOf(MediaStore.Images.Media.SIZE), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getLong(0) else 0L
+            } ?: 0L
+            if (size <= 0L) throw IllegalStateException("Screenshot file verification failed; the saved file is empty.")
+            return uri
+        } catch (error: Exception) {
+            resolver.delete(uri, null, null)
+            throw IllegalStateException("Screenshot was not saved to the gallery: ${error.message ?: error.javaClass.simpleName}", error)
+        }
+    }
+
     private suspend fun executeStepIntent(intent: StepIntent): String {
         val executor = AndroidSkillExecutor(context)
         suspend fun run(kind: SkillRegistry.Kind, args: Map<String, String>) {
@@ -1906,24 +2013,26 @@ ${fullSystem.substringAfter("MEMORY:")}
             }
             is StepIntent.ScreenRead -> {
                 val capture = ScreenshotCapture.getInstance(context)
-                if (!capture.isReady()) {
-                    if (!capture.startCapture()) {
-                        throw IllegalStateException("Could not open Android screen-capture permission prompt")
-                    }
-                    "Screen capture permission requested. Allow it, then ask me to read the screen again."
-                } else {
-                    val bitmap = capture.capture()
-                        ?: throw IllegalStateException("Screen capture returned no image; retry after a moment")
-                    try {
-                        val text = visionModule.extractText(bitmap)
-                        if (text.isBlank()) "I captured the screen, but could not read any text."
-                        else if (intent.remember) {
-                            if (screenshotMemoryStore.remember(text)) "Screen text saved in private local memory.\n$text"
-                            else "Screen text was too long or empty to save.\n$text"
-                        } else text
-                    } finally {
-                        if (!bitmap.isRecycled) bitmap.recycle()
-                    }
+                val bitmap = captureBitmapOrThrow(capture)
+                try {
+                    val text = visionModule.extractText(bitmap)
+                    if (text.isBlank()) "I captured the screen, but could not read any text."
+                    else if (intent.remember) {
+                        if (screenshotMemoryStore.remember(text)) "Screen text saved in private local memory.\n$text"
+                        else "Screen text was too long or empty to save.\n$text"
+                    } else text
+                } finally {
+                    if (!bitmap.isRecycled) bitmap.recycle()
+                }
+            }
+            is StepIntent.Screenshot -> {
+                val capture = ScreenshotCapture.getInstance(context)
+                val bitmap = captureBitmapOrThrow(capture)
+                try {
+                    saveScreenshotToGallery(bitmap)
+                    "Screenshot captured and saved to Pictures/Jarvis. File save verified."
+                } finally {
+                    if (!bitmap.isRecycled) bitmap.recycle()
                 }
             }
             is StepIntent.Message -> {

@@ -43,11 +43,20 @@ class HeadroomLiteTest {
     }
 
     @Test
-    fun compressesRepeatedTextLinesAndCanRestoreOriginalExactly() {
-        val input = "button: Search\nbutton: Search\nbutton: Search\nbutton: Send"
+    fun repeatedMemoryAndTextLinesKeepTheirExactMeaning() {
+        val input = "remember: user prefers Marathi\nremember: user prefers Marathi\nremember: use local Ollama"
         val result = HeadroomLite.compress(input, HeadroomLite.ContentKind.TEXT)
+        assertEquals(input, result.content)
+        assertEquals(input, result.restore())
+    }
+
+    @Test
+    fun compressesRepeatedLogLinesWithAnExplicitCount() {
+        val line = "WARN repeated diagnostic event id=1234567890"
+        val input = "$line\n$line\n$line"
+        val result = HeadroomLite.compress(input, HeadroomLite.ContentKind.LOG)
         assertTrue(result.outputChars < result.inputChars)
-        assertTrue(result.content.contains("⟪x3⟫"))
+        assertTrue(result.content.contains("⟪repeated 3 times⟫"))
         assertEquals(input, result.restore())
     }
 
@@ -120,6 +129,15 @@ class HeadroomLiteTest {
         assertEquals(0, result.estimatedInputTokens)
         assertEquals(1.0, result.compressionRatio, 0.0)
         assertEquals(0, HeadroomLite.estimateTokens(""))
+    }
+
+    @Test
+    fun tokenEstimateAccountsForMultilingualTextAndEmoji() {
+        assertEquals(1, HeadroomLite.estimateTokens("abcd"))
+        assertEquals(2, HeadroomLite.estimateTokens("abcdefgh"))
+        assertEquals(1, HeadroomLite.estimateTokens("😀"))
+        val hindi = "नमस्ते दुनिया"
+        assertTrue(HeadroomLite.estimateTokens(hindi) > (hindi.length + 3) / 4)
     }
 
     @Test

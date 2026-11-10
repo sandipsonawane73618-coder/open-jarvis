@@ -84,14 +84,22 @@ class StepIntentParserTest {
     }
 
     @Test
-    fun screenReadCommandsAreRecognizedExplicitly() {
+    fun screenshotCaptureAndScreenReadAreDistinctCommands() {
+        assertEquals(StepIntent.Screenshot(), p("take screenshot"))
+        assertEquals(StepIntent.Screenshot(), p("screenshot"))
+        assertEquals(StepIntent.Screenshot(), p("स्क्रीनशॉट लो"))
+        assertEquals(StepIntent.Screenshot(), p("screen ka photo lo"))
+        assertEquals(StepIntent.Screenshot(), p("screen photo lo"))
+        assertEquals(StepIntent.Screenshot(), p("screen shot lo"))
+        assertEquals(StepIntent.Screenshot(), p("screen capture karo"))
+        assertEquals(StepIntent.Screenshot(), p("photo of screen"))
+        assertEquals(StepIntent.Screenshot(), p("screen cha photo kadh"))
+        assertEquals(StepIntent.Screenshot(), p("स्क्रीनचा फोटो काढ"))
+        assertEquals(StepIntent.Screenshot(), p("पडद्याचा फोटो काढा"))
         assertEquals(StepIntent.ScreenRead(), p("read screen"))
-        assertEquals(StepIntent.ScreenRead(), p("take screenshot"))
         assertEquals(StepIntent.ScreenRead(), p("screen par kya hai"))
         assertEquals(StepIntent.ScreenRead(), p("स्क्रीन पर क्या है बताओ"))
-        assertEquals(StepIntent.ScreenRead(), p("स्क्रीनशॉट लो"))
         assertEquals(StepIntent.ScreenRead(true), p("remember this screen"))
-        assertEquals(StepIntent.ScreenRead(true), p("save screenshot"))
         assertEquals(StepIntent.ScreenRead(true), p("इस स्क्रीन को याद रखो"))
         assertNull(p("read a book"))
         assertNull(p("screen brightness"))

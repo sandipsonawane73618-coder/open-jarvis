@@ -14,7 +14,25 @@ class ConversationIntentPolicyTest {
             "Ollama kya hai?",
             "Java aur Kotlin mein difference?",
             "What is Android?",
-            "काय चाललंय?"
+            "काय चाललंय?",
+            "काय चाललंय",
+            "कुठे आहे",
+            "मला सांग काय झालं",
+            "आज कसा आहेस",
+            "Aaj kasa ahes?",
+            "Aaj kay zala?",
+            "Kay zala?",
+            "Kaay chalu aahe?",
+            "Tu kashi ahes?",
+            "He kuthe aahe?",
+            "Kadhi yenar?",
+            "Kiti vel lagel?",
+            "Mala sang, Ollama kay aahe?",
+            "How do I open YouTube?",
+            "How can I mute the phone?",
+            "WhatsApp kasa open karu?",
+            "Volume kasa kami karaycha?",
+            "Kaise khole settings?"
         ).forEach { assertTrue("$it should use chat", ConversationIntentPolicy.isChatRequest(it)) }
     }
 
@@ -25,7 +43,10 @@ class ConversationIntentPolicyTest {
             "click Search",
             "WhatsApp mein message likho",
             "go back",
-            "mute ho jao"
+            "mute ho jao",
+            "यूट्यूब उघडा",
+            "फोन बंद करो",
+            "YouTube खोलो"
         ).forEach { assertFalse("$it should use action pipeline", ConversationIntentPolicy.isChatRequest(it)) }
     }
 

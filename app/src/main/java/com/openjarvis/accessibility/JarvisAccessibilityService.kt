@@ -308,7 +308,7 @@ class JarvisAccessibilityService : AccessibilityService() {
             }
             if (lines.size >= maxItems) break
         }
-        return lines.joinToString("\\n")
+        return lines.joinToString("\n")
     }
 
     /** Android-use-style indexed lookup over the same visible control order shown to the planner. */
