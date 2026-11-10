@@ -15,12 +15,11 @@ class AndroidTTSEngine(private val context: Context) {
     private var speechRate = 1.05f
     private var pitch = 0.95f
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var completionCallback: (() -> Unit)? = null
+    private val completionCallbacks = UtteranceCompletionRegistry()
 
-    private fun finishSpeech() {
-        val callback = completionCallback
-        completionCallback = null
-        callback?.let { mainHandler.post(it) }
+    private fun finishSpeech(utteranceId: String?) {
+        val callback = utteranceId?.let(completionCallbacks::take) ?: return
+        mainHandler.post(callback)
     }
 
     init {
@@ -33,28 +32,30 @@ class AndroidTTSEngine(private val context: Context) {
                 
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {}
-                    override fun onDone(utteranceId: String?) { finishSpeech() }
-                    override fun onError(utteranceId: String?) { finishSpeech() }
-                    override fun onStop(utteranceId: String?, interrupted: Boolean) { finishSpeech() }
+                    override fun onDone(utteranceId: String?) { finishSpeech(utteranceId) }
+                    override fun onError(utteranceId: String?) { finishSpeech(utteranceId) }
+                    override fun onStop(utteranceId: String?, interrupted: Boolean) { finishSpeech(utteranceId) }
                 })
             }
         }
     }
 
     fun speak(text: String, onDone: (() -> Unit)? = null) {
-        if (!isReady) { onDone?.invoke(); return }
-        completionCallback = onDone
+        if (!isReady) { onDone?.let { mainHandler.post(it) }; return }
         
         val clean = text
             .replace(Regex("\\[\\{.*?\\}\\]"), "")
             .replace(Regex("[\\[\\]{}\":]"), " ")
             .trim()
         
-        if (clean.isBlank()) { finishSpeech(); return }
+        if (clean.isBlank()) { onDone?.let { mainHandler.post(it) }; return }
         configureVoiceForText(clean)
         
         val utteranceId = "jarvis_${UUID.randomUUID()}"
-        tts?.speak(clean, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+        onDone?.let { completionCallbacks.register(utteranceId, it) }
+        val status = tts?.speak(clean, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+            ?: TextToSpeech.ERROR
+        if (status != TextToSpeech.SUCCESS) finishSpeech(utteranceId)
     }
 
     fun speakQueued(text: String) {
@@ -87,7 +88,7 @@ class AndroidTTSEngine(private val context: Context) {
     }
     fun stop() {
         tts?.stop()
-        finishSpeech()
+        completionCallbacks.drain().forEach { callback -> mainHandler.post(callback) }
     }
 
     fun setSpeechRate(rate: Float) {
@@ -107,6 +108,7 @@ class AndroidTTSEngine(private val context: Context) {
 
     fun release() {
         tts?.stop()
+        completionCallbacks.clear()
         tts?.shutdown()
         tts = null
     }
