@@ -33,6 +33,8 @@ class AndroidSTTEngine(private val context: Context) : STTEngine {
     private var currentCallback: ((String?) -> Unit)? = null
     private var currentErrorCallback: ((String) -> Unit)? = null
     private var pendingResult: String? = null
+    // Partial hypotheses are diagnostic only; they are never executed as commands.
+    @Volatile private var latestPartialTranscript: String? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var sessionActive = false
     private var silenceStartTime = -1L
@@ -83,22 +85,36 @@ class AndroidSTTEngine(private val context: Context) : STTEngine {
                         else -> "Speech recognition error ($error)"
                     }
                     sessionActive = false
+                    latestPartialTranscript = null
                     currentErrorCallback?.invoke(message)
                 }
                 override fun onResults(results: Bundle?) {
                     _isListening.value = false
                     val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    val text = matches?.firstOrNull()?.trim()
+                    val confidenceScores = results?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
+                    val text = RecognitionCandidateSelector.select(matches, confidenceScores)
+                    val hadPartialHypothesis = !latestPartialTranscript.isNullOrBlank()
+                    latestPartialTranscript = null
                     pendingResult = text
+                    sessionActive = false
                     if (!text.isNullOrBlank()) {
-                        sessionActive = false
                         currentCallback?.invoke(text)
                     } else {
-                        sessionActive = false
-                        currentErrorCallback?.invoke("No speech detected")
+                        val reason = if (hadPartialHypothesis) {
+                            "Speech was partially recognized, but no final transcript was returned. Please repeat."
+                        } else {
+                            "No speech detected"
+                        }
+                        currentErrorCallback?.invoke(reason)
                     }
                 }
-                override fun onPartialResults(partialResults: Bundle?) {}
+                override fun onPartialResults(partialResults: Bundle?) {
+                    val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    val confidenceScores = partialResults?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
+                    // Empty/blank partial bundles must not erase a previous useful hypothesis.
+                    RecognitionCandidateSelector.select(matches, confidenceScores)
+                        ?.let { latestPartialTranscript = it }
+                }
                 override fun onEvent(eventType: Int, params: Bundle?) {}
             })
         }
@@ -108,6 +124,7 @@ class AndroidSTTEngine(private val context: Context) : STTEngine {
         currentCallback = onResult
         currentErrorCallback = onError
         pendingResult = null
+        latestPartialTranscript = null
         sessionActive = true
         mainHandler.post {
             if (recognizer == null) createRecognizer()
@@ -181,6 +198,7 @@ class AndroidSTTEngine(private val context: Context) : STTEngine {
         audioRecord = null
         val result = pendingResult
         pendingResult = null
+        latestPartialTranscript = null
         currentCallback = null
         currentErrorCallback = null
         return result
