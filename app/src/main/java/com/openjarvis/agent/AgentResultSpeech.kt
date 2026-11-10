@@ -3,6 +3,12 @@ package com.openjarvis.agent
 /** Keeps spoken feedback aligned with the actual task result. */
 internal object AgentResultSpeech {
     fun textForDone(result: String): String = result.trim().ifBlank { "Command completed." }
+
+    fun acknowledgement(language: String): String = when (language) {
+        "mr" -> "ठीक आहे, मी काम सुरू करतो."
+        "hi" -> "ठीक है, मैं अभी करता हूँ।"
+        else -> "Okay, I'm on it."
+    }
 }
 
 /** Single-use time window for the contact-name follow-up after "call karo na". */

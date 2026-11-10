@@ -462,6 +462,11 @@ class OverlayService : Service() {
             return
         }
         statusText?.text = "Jarvis is working…"
+        // Give voice users immediate feedback while the task continues asynchronously.
+        // The final verified result still replaces this acknowledgement when ready.
+        if (voiceCommand != null && voiceManager.isContinuousSessionActive()) {
+            voiceManager.speak(com.openjarvis.agent.AgentResultSpeech.acknowledgement(responseLanguage))
+        }
         voiceManager.markThinking()
         agentCore.executeTask(command)
         commandInput?.text?.clear()

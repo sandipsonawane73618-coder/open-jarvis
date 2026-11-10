@@ -93,3 +93,18 @@ class AgentPlanPolicyTest {
         assertTrue(AgentPlanPolicy.userGuidance("RULE_UNDER_PLANNED").contains("steps"))
     }
 }
+
+
+class AgentResultSpeechAcknowledgementTest {
+    @Test fun acknowledgementUsesRequestedLanguage() {
+        assertEquals("ठीक है, मैं अभी करता हूँ।", AgentResultSpeech.acknowledgement("hi"))
+        assertEquals("ठीक आहे, मी काम सुरू करतो.", AgentResultSpeech.acknowledgement("mr"))
+        assertEquals("Okay, I'm on it.", AgentResultSpeech.acknowledgement("en"))
+        assertEquals("Okay, I'm on it.", AgentResultSpeech.acknowledgement("unknown"))
+    }
+
+    @Test fun finalSpeechPreservesVerifiedResult() {
+        assertEquals("Torch turned on", AgentResultSpeech.textForDone("  Torch turned on  "))
+        assertEquals("Command completed.", AgentResultSpeech.textForDone("  "))
+    }
+}
