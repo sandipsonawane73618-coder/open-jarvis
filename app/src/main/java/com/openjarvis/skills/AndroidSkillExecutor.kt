@@ -8,6 +8,8 @@ import android.net.Uri
 import android.provider.AlarmClock
 import android.provider.Settings
 import com.openjarvis.agent.ContactCommandParser
+import com.openjarvis.agent.AppTargetResolver
+import com.openjarvis.agent.InstalledAppTarget
 import com.openjarvis.agent.SearchCommandParser
 
 /** Android effects live here; SkillRegistry remains JVM-testable and side-effect free. */
@@ -100,6 +102,25 @@ class AndroidSkillExecutor(private val context: Context) : SkillRegistry.SkillEx
 
     private fun resolvePackage(label: String): String {
         val normalized = label.trim().lowercase(java.util.Locale.ROOT)
+        if (normalized in setOf("youtube", "you tube", "yt", "यूट्यूब")) {
+            val launcherIntent = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
+            val installed = context.packageManager.queryIntentActivities(launcherIntent, 0)
+                .mapNotNull { info ->
+                    val activity = info.activityInfo ?: return@mapNotNull null
+                    val appLabel = runCatching { info.loadLabel(context.packageManager).toString().trim() }.getOrNull()
+                    if (appLabel.isNullOrBlank()) null else InstalledAppTarget(appLabel, activity.packageName)
+                }
+                .distinctBy { it.packageName }
+            val candidates = AppTargetResolver.youtubeCandidates(installed)
+            val mods = candidates.filter { it.packageName != "com.google.android.youtube" }
+            if (mods.size > 1) {
+                throw IllegalStateException("Multiple YouTube variants are installed: ${mods.joinToString(", ") { it.label }}. Which one should I open?")
+            }
+            mods.singleOrNull()?.let { return it.packageName }
+            if (context.packageManager.getLaunchIntentForPackage("com.google.android.youtube") != null) {
+                return "com.google.android.youtube"
+            }
+        }
         val known = when (normalized) {
             "youtube" -> "com.google.android.youtube"
             "whatsapp" -> "com.whatsapp"

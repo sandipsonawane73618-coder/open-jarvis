@@ -27,14 +27,14 @@ object ContactCommandParser {
         "karo", "kar", "kro", "kare", "karen", "kardo", "karna", "karni", "kijiye",
         "do", "dena", "de", "na", "please", "plz", "pls", "zara", "jara", "jaldi",
         "abhi", "now", "mujhe", "mera", "meri", "hume", "lagao", "laga", "lagana",
-        "lagado", "lao", "hai", "hain", "hu", "chahiye",
+        "lagado", "lao", "lava", "lawa", "laga", "kara", "karun", "dya", "hai", "hain", "hu", "chahiye",
         "करो", "कर", "करा", "करना", "कीजिए", "दो", "दे", "ना", "प्लीज", "कृपया",
         "ज़रा", "जरा", "जल्दी", "अभी", "मुझे", "मेरा", "मेरी", "लगाओ", "लगा",
-        "लावा", "है", "हैं", "चाहिए", "मला"
+        "लावा", "लावा ना", "करा", "करून", "द्या", "है", "हैं", "चाहिए", "मला"
     )
 
     private val CONNECTORS = words(
-        "ko", "se", "ka", "ki", "ke", "to", "को", "से", "का", "की", "के", "ला"
+        "ko", "la", "se", "ka", "ki", "ke", "to", "को", "से", "का", "की", "के", "ला"
     )
 
     private val NOISE: Set<String> = CALL_WORDS + FILLERS + CONNECTORS

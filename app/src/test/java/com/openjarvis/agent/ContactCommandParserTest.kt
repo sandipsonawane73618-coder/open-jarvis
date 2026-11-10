@@ -23,6 +23,12 @@ class ContactCommandParserTest {
         assertEquals(CallRequest("राहुल"), p("राहुल को कॉल करो"))
     }
 
+    @Test fun recognizesMarathiAndHinglishCallPhrases() {
+        assertEquals(CallRequest("rahul"), p("Rahul la call kara"))
+        assertEquals(CallRequest("राहुल"), p("राहुल ला कॉल करा"))
+        assertEquals(CallRequest("tejas"), p("Tejas la phone lava"))
+    }
+
     @Test fun fullNameIsKept() {
         assertEquals(CallRequest("rahul sharma"), p("Rahul Sharma ko call karo"))
     }

@@ -20,6 +20,11 @@ class FastCommandParserTest {
         assertTrue(FastCommandParser.parse("घर जाओ") is FastCommandParser.Command.Home)
     }
 
+    @Test fun recognizesNaturalHindiMarathiAppLaunchPhrases() {
+        assertEquals(FastCommandParser.Command.OpenApp("YouTube"), FastCommandParser.parse("YouTube chalu karo"))
+        assertEquals(FastCommandParser.Command.OpenApp("YouTube"), FastCommandParser.parse("यूट्यूब चालू करो"))
+    }
+
     @Test fun keepsCompoundAppTasksInTheAiActionPlanner() {
         assertEquals(FastCommandParser.Command.OpenApp("WhatsApp"), FastCommandParser.parse("open WhatsApp"))
         assertNull(FastCommandParser.parse("open WhatsApp and send a message to Rahul"))

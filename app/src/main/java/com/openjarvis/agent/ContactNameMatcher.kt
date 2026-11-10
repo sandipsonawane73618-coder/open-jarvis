@@ -14,6 +14,21 @@ internal object ContactNameMatcher {
         return query.isNotBlank() && (name == query || name.startsWith("$query ") || name.startsWith("$query-"))
     }
 
+    /**
+     * Prefer a unique exact display-name match over every prefix match.
+     * If no exact match exists, return all conservative prefix matches so the
+     * caller can ask the user to disambiguate instead of guessing.
+     */
+    fun exactMatches(requested: String, candidates: List<Pair<String, String>>): List<Pair<String, String>> {
+        val query = normalize(requested)
+        return if (query.isBlank()) emptyList() else candidates.filter { normalize(it.first) == query }
+    }
+
+    fun bestMatches(requested: String, candidates: List<Pair<String, String>>): List<Pair<String, String>> {
+        val exact = exactMatches(requested, candidates)
+        return if (exact.isNotEmpty()) exact else candidates.filter { matches(requested, it.first) }
+    }
+
     internal fun normalize(value: String): String {
         val source = Normalizer.normalize(value, Normalizer.Form.NFKC).lowercase(Locale.ROOT).trim()
         val consonants = mapOf(

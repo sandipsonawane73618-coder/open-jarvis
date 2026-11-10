@@ -1479,8 +1479,12 @@ ${fullSystem.substringAfter("MEMORY:")}
             }
             is FastCommandParser.Command.DialContact -> {
                 val number = resolveContactNumber(command.name)
-                context.startActivity(Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", number, null)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                "Dialer launch requested for ${command.name} (call not placed)"
+                ensureCallPhonePermission()
+                context.startActivity(
+                    Intent(Intent.ACTION_CALL, Uri.fromParts("tel", number, null))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+                "Calling ${command.name}"
             }
             is FastCommandParser.Command.YoutubeSearch -> {
                 val encoded = java.net.URLEncoder.encode(command.query, "UTF-8")
@@ -1533,6 +1537,25 @@ ${fullSystem.substringAfter("MEMORY:")}
                     // StepIntentParser remains the compatibility parser for richer Hindi/Marathi forms.
                     val skillRequest = SkillRegistry.parse(step)
                     if (skillRequest != null) {
+                        // Contact calls must use the same exact-match + runtime-permission
+                        // path as single-step calls. The generic skill executor intentionally
+                        // opens only the dialer and would bypass the direct-call contract.
+                        if (skillRequest.kind == SkillRegistry.Kind.CALL) {
+                            val callName = ContactCommandParser.parse(skillRequest.args["text"].orEmpty())?.name
+                                ?: skillRequest.args["contact"]?.takeIf { it.isNotBlank() }
+                            if (callName != null) {
+                                return try {
+                                    val reply = executeFastCommand(FastCommandParser.Command.DialContact(callName))
+                                    StepOutcome(true, reply, ctx.copy(contact = callName))
+                                } catch (error: Exception) {
+                                    StepOutcome(
+                                        false,
+                                        error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName,
+                                        ctx
+                                    )
+                                }
+                            }
+                        }
                         val result = AndroidSkillExecutor(context).execute(skillRequest)
                         return result.fold(
                             onSuccess = {
@@ -2089,6 +2112,36 @@ ${fullSystem.substringAfter("MEMORY:")}
         }
     }
 
+    private suspend fun ensureCallPhonePermission() {
+        if (context.checkSelfPermission(android.Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) return
+        val prefs = context.getSharedPreferences("jarvis_contact_permission", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("call_completed", false).putBoolean("call_granted", false).apply()
+        try {
+            context.startActivity(
+                Intent(context, com.openjarvis.ui.ContactPermissionActivity::class.java)
+                    .putExtra(com.openjarvis.ui.ContactPermissionActivity.EXTRA_REQUEST_CALL_PHONE, true)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        } catch (error: Exception) {
+            throw IllegalStateException("Phone permission is required for direct calling. Open Jarvis and allow Phone permission.", error)
+        }
+        var completed = false
+        for (attempt in 0 until 60) {
+            kotlinx.coroutines.delay(500)
+            if (prefs.getBoolean("call_completed", false)) {
+                completed = true
+                break
+            }
+            if (context.checkSelfPermission(android.Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
+                completed = true
+                break
+            }
+        }
+        if (!completed || context.checkSelfPermission(android.Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
+            throw IllegalStateException("Phone permission not granted. Enable it in Android Settings > Apps > Open Jarvis > Permissions > Phone.")
+        }
+    }
+
     private suspend fun resolveContactNumber(requestedName: String, purpose: String = "dial"): String {
         if (context.checkSelfPermission(android.Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
             val prefs = context.getSharedPreferences("jarvis_contact_permission", Context.MODE_PRIVATE)
@@ -2117,14 +2170,16 @@ ${fullSystem.substringAfter("MEMORY:")}
             while (cursor.moveToNext()) {
                 val name = cursor.getString(ni).orEmpty()
                 val number = cursor.getString(pi).orEmpty()
-                if (name.isNotBlank() && number.isNotBlank() && contactNameMatches(requestedName, name)) matches += name to number
+                if (name.isNotBlank() && number.isNotBlank()) matches += name to number
             }
         } ?: throw IllegalStateException("Could not read contacts. Check Contacts permission and try again.")
-        val unique = matches.distinctBy {
+        val exactMatches = ContactNameMatcher.exactMatches(requestedName, matches)
+        val preferredMatches = if (exactMatches.isNotEmpty()) exactMatches else ContactNameMatcher.bestMatches(requestedName, matches)
+        val unique = preferredMatches.distinctBy {
             it.first.trim().lowercase(java.util.Locale.ROOT) + "|" + it.second.replace(Regex("[^+0-9]"), "")
         }
         if (unique.isEmpty()) throw IllegalStateException("No contact matched '$requestedName'. Check the name in Contacts.")
-        if (unique.size > 1) {
+        if (exactMatches.isEmpty() || unique.size > 1) {
             val names = unique.take(6).joinToString(", ") { match ->
                 val lastDigits = match.second.filter { it.isDigit() }.takeLast(4)
                 if (lastDigits.isBlank()) match.first else "${match.first} (ending $lastDigits)"
@@ -2155,6 +2210,19 @@ ${fullSystem.substringAfter("MEMORY:")}
             "whatsapp" to "com.whatsapp",
             "facebook" to "com.facebook.katana"
         )
+        if (normalized in setOf("youtube", "you tube", "yt", "यूट्यूब")) {
+            val youtubeApps = AppTargetResolver.youtubeCandidates(getInstalledLauncherApps())
+            val modApps = youtubeApps.filter { it.packageName != "com.google.android.youtube" }
+            if (modApps.size > 1) {
+                throw IllegalStateException(
+                    "Multiple YouTube variants are installed: ${modApps.joinToString(", ") { it.label }}. Which one should I open?"
+                )
+            }
+            modApps.singleOrNull()?.let { return it.packageName }
+            if (context.packageManager.getLaunchIntentForPackage("com.google.android.youtube") != null) {
+                return "com.google.android.youtube"
+            }
+        }
         val knownPackage = knownPackages[normalized]
         if (knownPackage != null && context.packageManager.getLaunchIntentForPackage(knownPackage) != null) {
             return knownPackage

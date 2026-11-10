@@ -24,7 +24,7 @@ internal object FastCommandParser {
     }
 
     private val englishOpen = Regex("^(?:please\\s+)?(?:open|launch|start)\\s+(.+)$", RegexOption.IGNORE_CASE)
-    private val hindiOpen = Regex("^(.+?)\\s+(?:kholo|khol\\s+do|open\\s+karo|खोलो|खोल\\s+दो|खोलें|उघडा|उघड|उघडा\\s+ना)$", RegexOption.IGNORE_CASE)
+    private val hindiOpen = Regex("^(.+?)\\s+(?:kholo|khol\\s+do|open\\s+karo|chalu\\s+karo|start\\s+karo|खोलो|खोल\\s+दो|खोलें|चालू\\s+करो|उघडा|उघड|उघडा\\s+ना|सुरू\\s+करा|चालू\\s+करा)$", RegexOption.IGNORE_CASE)
     private val close = Regex("^(?:please\\s+)?(?:close|exit|band\\s+karo|band\\s+kar\\s+do)(?:\\s+(?:the\\s+)?app)?$", RegexOption.IGNORE_CASE)
     private val dial = Regex("^(?:call|dial|phone|mujhe\\s+call\\s+karo|call\\s+karo)\\s+([+0-9][+0-9() .-]{4,})$", RegexOption.IGNORE_CASE)
     private val youtubeSearch = Regex("^youtube\\s+(?:par\\s+)?(.+?)\\s+(?:search|dhundo|khojo)(?:\\s+karo)?$", RegexOption.IGNORE_CASE)

@@ -60,8 +60,17 @@ internal object AppTargetResolver {
             val sameStart = hits.drop(index).takeWhile { it.start == first.start }
             val longest = sameStart.maxOf { it.alias.length }
             val best = sameStart.filter { it.alias.length == longest }.distinctBy { it.app.packageName }
-            if (best.size > 1) return null
-            val chosen = best.first()
+            val chosen = if (best.size > 1 && isYouTubeAlias(first.alias)) {
+                val modApps = best.filter { it.app.packageName != OFFICIAL_YOUTUBE_PACKAGE }
+                when {
+                    modApps.size == 1 -> modApps.single()
+                    modApps.size > 1 -> return null
+                    else -> best.singleOrNull() ?: return null
+                }
+            } else {
+                if (best.size > 1) return null
+                best.first()
+            }
             if (seen.add(chosen.app.packageName)) output.add(chosen.app)
             cursor = chosen.end
             index = hits.indexOfFirst { it.start >= cursor }.let { if (it < 0) hits.size else it }
@@ -77,6 +86,7 @@ internal object AppTargetResolver {
         val aliases = linkedSetOf(label)
         aliases.addAll(packageAliases[app.packageName].orEmpty())
         aliases.addAll(learned)
+        if (isYouTubeVariant(app)) aliases.addAll(listOf("youtube", "you tube", "yt", "यूट्यूब"))
         when (label) {
             "chrome", "google chrome" -> aliases.addAll(listOf("chrome", "google chrome"))
             "whatsapp", "whats app" -> aliases.addAll(listOf("whatsapp", "whats app", "व्हाट्सएप", "व्हॉट्सअॅप"))
@@ -100,6 +110,27 @@ internal object AppTargetResolver {
         }
         return aliases.filter { normalize(it).length >= 2 }.toSet()
     }
+
+    internal fun youtubeCandidates(installedApps: List<InstalledAppTarget>): List<InstalledAppTarget> =
+        installedApps.filter(::isYouTubeVariant).distinctBy { it.packageName }
+
+    private fun isYouTubeVariant(app: InstalledAppTarget): Boolean {
+        if (app.packageName == OFFICIAL_YOUTUBE_PACKAGE) return true
+        val label = normalize(app.label)
+        // Resolve only the actual YouTube app family. Package-name substring matches
+        // can incorrectly capture downloaders and unrelated companion apps.
+        val excluded = listOf(
+            "youtube music", "youtube kids", "youtube tv", "youtube studio",
+            "youtube create", "youtube downloader", "youtube go"
+        )
+        if (excluded.any { label == it || label.startsWith("$it ") }) return false
+        return label == "youtube" || label.startsWith("youtube ")
+    }
+
+    private fun isYouTubeAlias(alias: String): Boolean =
+        normalize(alias) in setOf("youtube", "you tube", "yt", "यूट्यूब")
+
+    private const val OFFICIAL_YOUTUBE_PACKAGE = "com.google.android.youtube"
 
     private fun normalize(value: String): String =
         Normalizer.normalize(value, Normalizer.Form.NFKC)
