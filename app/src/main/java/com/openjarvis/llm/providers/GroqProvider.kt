@@ -1,7 +1,7 @@
 package com.openjarvis.llm.providers
 
 import com.openjarvis.llm.ConnectionResult
-import com.openjarvis.llm.HttpClient
+import com.openjarvis.llm.HybridChatHttpClient
 import com.openjarvis.llm.LLMProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -10,10 +10,12 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import okhttp3.OkHttpClient
 
 class GroqProvider(
     private val apiKey: String,
-    private val model: String = "openai/gpt-oss-120b"
+    private val model: String = "openai/gpt-oss-120b",
+    private val httpClient: OkHttpClient = HybridChatHttpClient.client
 ) : LLMProvider {
     
     override val name: String = "Groq"
@@ -40,7 +42,6 @@ class GroqProvider(
                 put("temperature", 0.1)
                 put("reasoning_effort", "low")
                 put("reasoning_format", "hidden")
-                put("response_format", JSONObject().put("type", "json_object"))
                 put("stream", false)
             }.toString()
             
@@ -51,7 +52,7 @@ class GroqProvider(
                 .post(requestBody.toRequestBody("application/json".toMediaType()))
                 .build()
             
-            HttpClient.client.newCall(request).execute().use { response ->
+            httpClient.newCall(request).execute().use { response ->
                 val body = response.body?.string() ?: throw Exception("Empty response")
                 val json = JSONObject(body)
                 if (json.has("choices")) {
@@ -77,7 +78,7 @@ class GroqProvider(
                 .get()
                 .build()
             
-            HttpClient.client.newCall(request).execute().use { response ->
+            httpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
                     throw Exception("HTTP ${response.code}")
                 }

@@ -31,6 +31,9 @@ class UniversalAdapter(private val context: Context) {
         val model = OllamaProvider.supportedChatModel(selected)
         return OllamaProvider(OllamaProvider.DEFAULT_BASE_URL, model, context.applicationContext)
     }
+
+    /** Exposes only the configured local conversation provider for HybridChatRouter fallback. */
+    internal fun getLocalChatProvider(): LLMProvider = getChatProvider()
     
     suspend fun complete(
         systemPrompt: String,
