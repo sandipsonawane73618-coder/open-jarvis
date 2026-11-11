@@ -12,7 +12,7 @@ internal object ConversationIntentPolicy {
     )
 
     private val questionIntent = Regex(
-        """(\?|(?<![\p{L}\p{N}_])(what|who|when|where|why|how|which|explain|describe|define|difference|compare|meaning|tell me|teach me|about|joke|story|translate|summarize|kya|kaise|kaisa|kaisi|kyun|kyu|kab|kaha|kaun|kitna|kitni|kis|kay|kaay|kasa|kashi|kase|kuthe|kon|koni|kadhi|kiti|zala|zale|sanga|sang|samjhav|mhanje|आज|कसा|कशी|कसे|काय|का|कधी|कुठे|कोण|समजाव|सांग|फरक|म्हणजे|विनोद|कहानी|जोक|बताओ|समझाओ|क्यों|कैसे|कब|कहाँ|कौन|मतलब)(?![\p{L}\p{N}_]))""",
+        """(\?|(?<![\p{L}\p{N}_])(what|who|when|where|why|how|which|explain|describe|define|difference|compare|meaning|tell me|teach me|about|joke|story|kahani|katha|kissa|translate|summarize|kya|kaise|kaisa|kaisi|kyun|kyu|kab|kaha|kaun|kitna|kitni|kis|kay|kaay|kasa|kashi|kase|kuthe|kon|koni|kadhi|kiti|zala|zale|sanga|sang|samjhav|mhanje|आज|कसा|कशी|कसे|काय|का|कधी|कुठे|कोण|समजाव|सांग|फरक|म्हणजे|विनोद|कहानी|जोक|बताओ|समझाओ|क्यों|कैसे|कब|कहाँ|कौन|मतलब)(?![\p{L}\p{N}_]))""",
         RegexOption.IGNORE_CASE
     )
 

@@ -24,7 +24,8 @@ object VoiceControlVocabulary {
         "माइक बंद करा", "आवाज बंद करा",
         "shant raha",
         "shant raho",
-        "shant ho jao",
+        "shant ho jao", "shant ho", "be quiet", "quiet jarvis", "gapp raha", "gappa bas",
+        "शांत रहा", "शांत रहो", "शांत हो जाओ", "गप्प रहा", "गप्प बसा",
     )
 
     private val unmuteCommands = setOf(
@@ -45,7 +46,9 @@ object VoiceControlVocabulary {
         "ऐकणं सुरू कर", "ऐकायचं सुरू कर", "माइक सुरू कर", "माइक सुरू करा",
         "आवाज सुरू कर", "आवाज़ सुरू कर", "आवाज सुरू करा", "आवाज़ सुरू करा",
         "ab suno",
-        "ab sunna shuru karo",
+        "ab sunna shuru karo", "listen", "start hearing", "resume voice", "speak again",
+        "आता ऐका", "ऐका", "पुन्हा ऐका", "फिर से सुनो", "सुनना शुरू करो",
+        "आज ऐका", "पुन्हा ऐकायला सुरू करा",
     )
 
     val recognitionPhrases: List<String> =

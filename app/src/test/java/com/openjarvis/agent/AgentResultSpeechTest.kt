@@ -10,6 +10,12 @@ class AgentResultSpeechTest {
         assertEquals("Hello! How can I assist you today?", AgentResultSpeech.textForDone("Hello! How can I assist you today?"))
         assertEquals("Kisko call karun?", AgentResultSpeech.textForDone("Kisko call karun?"))
     }
+    @Test fun preservesVerifiedActionResultsAndUsesFallbackOnlyForBlankResult() {
+        assertEquals("WhatsApp khul gaya", AgentResultSpeech.textForDone("  WhatsApp khul gaya  "))
+        assertEquals("Torch turned on", AgentResultSpeech.textForDone("  Torch turned on  "))
+        assertEquals("Command completed.", AgentResultSpeech.textForDone("  "))
+    }
+
     @Test fun usesFallbackOnlyForBlankResult() {
         assertEquals("Command completed.", AgentResultSpeech.textForDone("  "))
     }

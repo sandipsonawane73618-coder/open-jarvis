@@ -306,12 +306,14 @@ class OllamaProvider(
             runCatching {
                 val deadlineNanos = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(timeoutMs.coerceAtLeast(1L))
                 val schemaAvailable = (actionPlan || skillPlan || nativeIntentPlan) && supportsJsonSchema(deadlineNanos)
-                val predictionLimit = if (nativeIntentPlan) 64 else if (skillPlan) 96 else if (actionPlan) 128 else 64
+                val isConversation = !actionPlan && !skillPlan && !nativeIntentPlan
+                val predictionLimit = if (isConversation) 160 else if (nativeIntentPlan) 64 else if (skillPlan) 96 else if (actionPlan) 128 else 64
                 if (schemaAvailable) {
                     runCatching {
                         executeChat(
                             systemPrompt, userMessage, useSchema = actionPlan,
                             numPredict = predictionLimit, timeoutMs = remainingMs(deadlineNanos),
+                            temperature = if (isConversation) 0.5 else 0.1,
                             useSkillSchema = skillPlan, useNativeIntentSchema = nativeIntentPlan,
                             onChunk = onChunk
                         )
@@ -326,7 +328,8 @@ class OllamaProvider(
                 } else {
                     executeChat(
                         systemPrompt, userMessage, useSchema = false, numPredict = predictionLimit,
-                        timeoutMs = remainingMs(deadlineNanos), useSkillSchema = false,
+                        timeoutMs = remainingMs(deadlineNanos),
+                        temperature = if (isConversation) 0.5 else 0.1, useSkillSchema = false,
                         useNativeIntentSchema = false, onChunk = onChunk
                     )
                 }
@@ -370,6 +373,7 @@ class OllamaProvider(
         useSchema: Boolean,
         numPredict: Int,
         timeoutMs: Long,
+        temperature: Double = 0.1,
         useSkillSchema: Boolean = false,
         useNativeIntentSchema: Boolean = false,
         onChunk: ((String) -> Unit)? = null
@@ -379,7 +383,7 @@ class OllamaProvider(
             .addHeader("Content-Type", "application/json")
             .post(
                 OllamaResponseParser.buildChatRequestBody(
-                    model, systemPrompt, userMessage, useSchema, numPredict, useSkillSchema, useNativeIntentSchema
+                    model, systemPrompt, userMessage, useSchema, numPredict, useSkillSchema, useNativeIntentSchema, temperature
                 )
                     .toRequestBody("application/json".toMediaType())
             ).build()

@@ -36,6 +36,7 @@ class VoiceManager(private val context: Context) {
     private val ttsEngine = AndroidTTSEngine(context)
     private val stateMachine = VoiceSessionStateMachine()
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val ttsEchoGuard = TtsEchoGuard()
 
     @Volatile private var listening = false
     @Volatile private var continuousSession = false
@@ -54,6 +55,7 @@ class VoiceManager(private val context: Context) {
         object Speaking : VoiceState()
         data class Result(val text: String) : VoiceState()
         data class Error(val message: String) : VoiceState()
+        object LowConfidence : VoiceState()
     }
 
     init { ttsEngine.setSpeechRate(getSpeechRate()) }
@@ -133,6 +135,16 @@ class VoiceManager(private val context: Context) {
         sttEngine.startListening(
             onResult = { text ->
                 listening = false
+                if (!text.isNullOrBlank() && ttsEchoGuard.shouldIgnore(text, System.currentTimeMillis())) {
+                    retryDelayMs = INITIAL_RETRY_DELAY_MS
+                    stateMachine.onTranscriptReceived(false)
+                    _state.value = VoiceState.Idle
+                    if (continuousSession) {
+                        mainHandler.removeCallbacks(rearmRunnable)
+                        mainHandler.postDelayed(rearmRunnable, VoiceSessionTiming.POST_TTS_REARM_DELAY_MS)
+                    }
+                    return@startListening
+                }
                 retryDelayMs = INITIAL_RETRY_DELAY_MS
                 stateMachine.onTranscriptReceived(!text.isNullOrBlank())
                 if (!text.isNullOrBlank()) {
@@ -148,6 +160,10 @@ class VoiceManager(private val context: Context) {
                 listening = false
                 val cleanError = error.removePrefix("RETRYING: ")
                 stateMachine.onTranscriptReceived(false)
+                if (cleanError.startsWith("LOW_CONFIDENCE:")) {
+                    _state.value = VoiceState.LowConfidence
+                    return@startListening
+                }
                 _state.value = VoiceState.Error(cleanError)
                 if (continuousSession && isRecoverableRecognitionError(cleanError)) {
                     scheduleContinuousRetry()
@@ -183,7 +199,7 @@ class VoiceManager(private val context: Context) {
         mainHandler.removeCallbacks(rearmRunnable)
         retryDelayMs = INITIAL_RETRY_DELAY_MS
         stateMachine.onSpeakingFinished()
-        beginRecognition()
+        mainHandler.postDelayed(rearmRunnable, VoiceSessionTiming.POST_TTS_REARM_DELAY_MS)
     }
 
     fun markThinking() {
@@ -221,7 +237,9 @@ class VoiceManager(private val context: Context) {
         }
         stateMachine.onSpeakingStarted()
         _state.value = VoiceState.Speaking
+        ttsEchoGuard.onSpeechStarted(text)
         ttsEngine.speak(text) {
+            ttsEchoGuard.onSpeechFinished(System.currentTimeMillis())
             stateMachine.onSpeakingFinished()
             _state.value = VoiceState.Idle
             onComplete?.invoke()

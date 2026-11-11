@@ -93,12 +93,36 @@ class AndroidSTTEngine(private val context: Context) : STTEngine {
                     val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     val confidenceScores = results?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
                     val text = RecognitionCandidateSelector.select(matches, confidenceScores)
+                    val candidateCount = matches?.size ?: 0
+                    val nonBlankCandidateCount = matches?.count { it.isNotBlank() } ?: 0
+                    val bestPositiveScore = confidenceScores
+                        ?.filter { it.isFinite() && it > 0f }
+                        ?.maxOrNull()
+                    val scoreSummary = confidenceScores?.joinToString(
+                        prefix = "[", postfix = "]"
+                    ) { score -> if (score.isFinite()) score.toString() else "non_finite" } ?: "unavailable"
+                    val rejectReason = when {
+                        text != null -> "none"
+                        nonBlankCandidateCount == 0 -> "no_nonblank_candidate"
+                        bestPositiveScore != null && bestPositiveScore < RecognitionCandidateSelector.MIN_CONFIDENCE ->
+                            "positive_score_below_threshold"
+                        else -> "no_usable_candidate"
+                    }
+                    // Never include recognized text in diagnostics; scores and counts are sufficient.
+                    android.util.Log.i(
+                        TAG,
+                        "stt_result candidate_count=$candidateCount nonblank_count=$nonBlankCandidateCount " +
+                            "scores=$scoreSummary best_positive_score=$bestPositiveScore " +
+                            "threshold=${RecognitionCandidateSelector.MIN_CONFIDENCE} reject_reason=$rejectReason"
+                    )
                     val hadPartialHypothesis = !latestPartialTranscript.isNullOrBlank()
                     latestPartialTranscript = null
                     pendingResult = text
                     sessionActive = false
                     if (!text.isNullOrBlank()) {
                         currentCallback?.invoke(text)
+                    } else if (matches?.any { it.isNotBlank() } == true) {
+                        currentErrorCallback?.invoke("LOW_CONFIDENCE: transcript confidence was below the safe threshold")
                     } else {
                         val reason = if (hadPartialHypothesis) {
                             "Speech was partially recognized, but no final transcript was returned. Please repeat."

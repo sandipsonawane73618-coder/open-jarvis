@@ -77,7 +77,7 @@ class AndroidSkillExecutor(private val context: Context) : SkillRegistry.SkillEx
                     throw IllegalStateException("Android media volume did not change; action was not verified")
                 }
             }
-            SkillRegistry.Kind.TIME -> Unit
+            SkillRegistry.Kind.TIME, SkillRegistry.Kind.DATE -> Unit
             SkillRegistry.Kind.MAPS -> {
                 val destination = args.getValue("destination")
                 val mapsIntent = Intent(Intent.ACTION_VIEW, Uri.parse("google.navigation:q=" + Uri.encode(destination)))

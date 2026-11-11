@@ -34,7 +34,8 @@ internal object OllamaResponseParser {
         useJsonSchema: Boolean = false,
         numPredict: Int = 128,
         useSkillSchema: Boolean = false,
-        useNativeIntentSchema: Boolean = false
+        useNativeIntentSchema: Boolean = false,
+        temperature: Double = 0.1
     ): String =
         JSONObject().apply {
             put("model", model)
@@ -55,7 +56,7 @@ internal object OllamaResponseParser {
             put("options", JSONObject().apply {
                 put("num_ctx", 2048)
                 put("num_predict", numPredict.coerceIn(32, 512))
-                put("temperature", 0.1)
+                put("temperature", temperature.coerceIn(0.0, 2.0))
             })
         }.toString()
 

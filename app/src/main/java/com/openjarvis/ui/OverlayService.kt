@@ -35,6 +35,7 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.openjarvis.R
 import com.openjarvis.agent.AgentCore
+import com.openjarvis.agent.UnknownCommandPolicy
 import com.openjarvis.graphify.GraphifyRepository
 import com.openjarvis.bridge.SocketServer
 import com.openjarvis.graphify.nodes.TaskNode
@@ -116,6 +117,12 @@ class OverlayService : Service() {
                             voiceManager.resumeContinuousSession()
                         }
                         CommandListeningPolicy.Action.EXECUTE_COMMAND -> submitCommand(state.text)
+                    }
+                    is VoiceManager.VoiceState.LowConfidence -> {
+                        setVisualState("IDLE", "Low-confidence transcript ignored")
+                        voiceManager.speak(UnknownCommandPolicy.FALLBACK) {
+                            voiceManager.resumeContinuousSession()
+                        }
                     }
                     is VoiceManager.VoiceState.Error -> {
                         setVisualState("IDLE", state.message)

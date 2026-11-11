@@ -107,6 +107,7 @@ class OllamaResponseParserTest {
         assertTrue(properties.has("text"))
         assertTrue(properties.has("prompt"))
         assertEquals(112, request.getJSONObject("options").getInt("num_predict"))
+        assertEquals(0.1, request.getJSONObject("options").getDouble("temperature"), 0.0)
         assertEquals(2048, request.getJSONObject("options").getInt("num_ctx"))
     }
 
@@ -123,6 +124,7 @@ class OllamaResponseParserTest {
         assertTrue(schema.getJSONArray("required").toString().contains("skill"))
         assertTrue(schema.getJSONArray("required").toString().contains("args"))
         assertEquals(96, request.getJSONObject("options").getInt("num_predict"))
+        assertEquals(0.1, request.getJSONObject("options").getDouble("temperature"), 0.0)
         assertFalse(request.getBoolean("think"))
     }
 
@@ -141,16 +143,19 @@ class OllamaResponseParserTest {
         assertTrue(skills.toString().contains("none"))
         assertTrue(skills.toString().contains("torch"))
         assertEquals(64, request.getJSONObject("options").getInt("num_predict"))
+        assertEquals(0.1, request.getJSONObject("options").getDouble("temperature"), 0.0)
         assertFalse(request.getBoolean("think"))
     }
 
     @Test fun plainConversationRequestUsesLargerOutputLimitAndNoSchema() {
         val request = org.json.JSONObject(OllamaResponseParser.buildChatRequestBody(
-            "qwen3:1.7b", "system", "hello", useJsonSchema = false, numPredict = 256
+            "qwen3:1.7b", "system", "hello", useJsonSchema = false, numPredict = 160,
+            temperature = 0.5
         ))
         assertTrue(request.getBoolean("stream"))
         assertFalse(request.has("format"))
-        assertEquals(256, request.getJSONObject("options").getInt("num_predict"))
+        assertEquals(160, request.getJSONObject("options").getInt("num_predict"))
+        assertEquals(0.5, request.getJSONObject("options").getDouble("temperature"), 0.0)
     }
 
     @Test fun stripsThinkBlocksEvenWhenTheyAreSurroundedByWhitespace() {
