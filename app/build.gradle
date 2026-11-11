@@ -15,6 +15,7 @@ android {
         targetSdk 34
         versionCode 1
         versionName "1.0.0"
+        ndk { abiFilters "arm64-v8a", "x86_64" }
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -26,6 +27,11 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
+            // Keep the test build alongside the user's existing com.openjarvis app.
+            // CI caches this preview signing key so subsequent preview builds can update it.
+            applicationIdSuffix ".preview"
+            versionNameSuffix "-preview"
+            resValue "string", "app_name", "Open Jarvis Preview"
             debuggable true
         }
     }
@@ -82,6 +88,7 @@ dependencies {
     ksp 'androidx.room:room-compiler:2.6.1'
     
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'
     testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
 

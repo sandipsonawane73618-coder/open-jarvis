@@ -1,5 +1,12 @@
 package com.openjarvis.ui.dashboard
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
@@ -20,12 +27,18 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.PI
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
@@ -38,6 +51,8 @@ import com.openjarvis.graphify.nodes.AppNode
 import com.openjarvis.graphify.nodes.TaskNode
 import com.openjarvis.ui.theme.VoidColor
 import kotlinx.coroutines.delay
+import com.openjarvis.proactive.ProactiveAssistant
+import com.openjarvis.proactive.ProactiveNotificationPolicy
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,11 +61,13 @@ fun DashboardScreen(
     onOpenSettings: () -> Unit,
     onOpenEuronics: () -> Unit,
     graphifyRepo: GraphifyRepository,
+    isSystemActive: Boolean,
     modifier: Modifier = Modifier
 ) {
     var recentTasks by remember { mutableStateOf<List<TaskNode>>(emptyList()) }
     var mostUsedApps by remember { mutableStateOf<List<AppNode>>(emptyList()) }
-    var isSystemActive by remember { mutableStateOf(true) }
+    var totalAppCount by remember { mutableIntStateOf(0) }
+    var activePatternCount by remember { mutableIntStateOf(0) }
     
     var heroAlpha by remember { mutableFloatStateOf(0f) }
     var statsAlpha by remember { mutableFloatStateOf(0f) }
@@ -60,6 +77,8 @@ fun DashboardScreen(
     LaunchedEffect(Unit) {
         recentTasks = graphifyRepo.getRecentTasks(10)
         mostUsedApps = graphifyRepo.getMostUsedApps(4)
+        totalAppCount = graphifyRepo.getMostUsedApps(1000).size
+        activePatternCount = graphifyRepo.getAllPatterns().size
     }
     
     LaunchedEffect(Unit) {
@@ -90,7 +109,11 @@ fun DashboardScreen(
         ) {
             Spacer(modifier = Modifier.height(56.dp))
             
-            HeroSection(isSystemActive = isSystemActive)
+            HeroSection(
+                isSystemActive = isSystemActive,
+                taskCount = recentTasks.size,
+                appCount = totalAppCount
+            )
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -102,9 +125,27 @@ fun DashboardScreen(
                 Text("EURONICS SERVICE REPORT", color = Color.White, fontWeight = FontWeight.Bold)
             }
 
+            Spacer(modifier = Modifier.height(10.dp))
+
+            OutlinedButton(
+                onClick = onStartOverlay,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("OPEN JARVIS FLOATING ASSISTANT")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            ProactiveAssistantCard(taskCount = recentTasks.size)
+
             Spacer(modifier = Modifier.height(16.dp))
             
-            StatsRow(tasks = recentTasks, alpha = statsAlpha)
+            StatsRow(
+                tasks = recentTasks,
+                appCount = totalAppCount,
+                patternCount = activePatternCount,
+                alpha = statsAlpha
+            )
             
             Spacer(modifier = Modifier.height(24.dp))
             
@@ -122,16 +163,6 @@ fun DashboardScreen(
             modifier = Modifier.align(Alignment.BottomCenter)
         )
 
-        FloatingActionButton(
-            onClick = onStartOverlay,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 24.dp, bottom = 88.dp),
-            containerColor = VoidColor.Violet,
-            contentColor = Color.White
-        ) {
-            Text("J", fontWeight = FontWeight.Bold)
-        }
     }
 }
 
@@ -166,16 +197,112 @@ private fun OrbBackground() {
     }
 }
 
+
 @Composable
-private fun HeroSection(isSystemActive: Boolean) {
+private fun ArcReactorHud(isActive: Boolean) {
+    val transition = rememberInfiniteTransition(label = "arc_reactor")
+    val rotation by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(9000, easing = LinearEasing)),
+        label = "reactor_rotation"
+    )
+    val pulse by transition.animateFloat(
+        initialValue = 0.92f,
+        targetValue = 1.04f,
+        animationSpec = infiniteRepeatable(
+            tween(1800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "reactor_pulse"
+    )
+    val glow = if (isActive) VoidColor.Cyan else VoidColor.Amber
+    Box(
+        modifier = Modifier.fillMaxWidth().height(176.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.size(160.dp).scale(pulse)) {
+            val center = Offset(size.width / 2f, size.height / 2f)
+            val radius = size.minDimension * 0.43f
+            drawCircle(glow.copy(alpha = 0.08f), radius = radius * 1.18f, center = center)
+            drawCircle(VoidColor.Void700, radius = radius, center = center, style = Stroke(width = 2.dp.toPx()))
+            drawCircle(glow.copy(alpha = 0.65f), radius = radius * 0.78f, center = center, style = Stroke(width = 2.dp.toPx()))
+            drawArc(
+                color = glow,
+                startAngle = rotation,
+                sweepAngle = 245f,
+                useCenter = false,
+                topLeft = Offset(center.x - radius * 0.92f, center.y - radius * 0.92f),
+                size = androidx.compose.ui.geometry.Size(radius * 1.84f, radius * 1.84f),
+                style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round)
+            )
+            for (tick in 0 until 16) {
+                val angle = (tick * 22.5f + rotation) * (PI.toFloat() / 180f)
+                val inner = radius * 0.84f
+                val outer = radius * if (tick % 4 == 0) 1.02f else 0.94f
+                val start = Offset(center.x + cos(angle) * inner, center.y + sin(angle) * inner)
+                val end = Offset(center.x + cos(angle) * outer, center.y + sin(angle) * outer)
+                drawLine(glow.copy(alpha = if (tick % 4 == 0) 0.9f else 0.45f), start, end, strokeWidth = if (tick % 4 == 0) 2.dp.toPx() else 1.dp.toPx())
+            }
+            drawCircle(glow.copy(alpha = 0.22f), radius = radius * 0.48f, center = center)
+            drawCircle(glow, radius = radius * 0.14f, center = center)
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = "J",
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 34.sp,
+                    color = Color.White
+                )
+            )
+            Text(
+                text = "J.A.R.V.I.S.",
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 8.sp,
+                    letterSpacing = 2.sp,
+                    color = glow
+                )
+            )
+        }
+    }
+}
+
+@Composable
+private fun HeroSection(isSystemActive: Boolean, taskCount: Int, appCount: Int) {
     Column {
+        ArcReactorHud(isActive = isSystemActive)
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text = "STARK SYSTEMS  •  PERSONAL AI",
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight(500),
+                fontSize = 9.sp,
+                letterSpacing = 2.sp,
+                color = VoidColor.Cyan
+            )
+        )
+        Text(
+            text = "CORE  ${if (isSystemActive) "ONLINE" else "STANDBY"}  •  $taskCount TASKS  •  $appCount APPS",
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                fontSize = 9.sp,
+                letterSpacing = 1.sp,
+                color = VoidColor.TextDisabled
+            )
+        )
+        Spacer(modifier = Modifier.height(12.dp))
         Surface(
             shape = RoundedCornerShape(999.dp),
             color = VoidColor.Void800,
             border = androidx.compose.foundation.BorderStroke(1.dp, VoidColor.BorderGlow)
         ) {
             Text(
-                text = "AI AGENT v0.1",
+                text = "JARVIS STABLE 1.0",
                 style = TextStyle(
                     fontFamily = FontFamily.Default,
                     fontWeight = FontWeight(500),
@@ -294,11 +421,21 @@ private fun StatusBadge(isActive: Boolean) {
 }
 
 @Composable
-private fun StatsRow(tasks: List<TaskNode>, alpha: Float) {
+private fun StatsRow(tasks: List<TaskNode>, appCount: Int, patternCount: Int, alpha: Float) {
     val animatedCount by animateIntAsState(
         targetValue = tasks.size.coerceAtLeast(0),
         animationSpec = tween(500, easing = EaseOutQuart),
         label = "count"
+    )
+    val animatedApps by animateIntAsState(
+        targetValue = appCount.coerceAtLeast(0),
+        animationSpec = tween(500, easing = EaseOutQuart),
+        label = "apps_count"
+    )
+    val animatedPatterns by animateIntAsState(
+        targetValue = patternCount.coerceAtLeast(0),
+        animationSpec = tween(500, easing = EaseOutQuart),
+        label = "patterns_count"
     )
     
     Column(modifier = Modifier.alpha(alpha)) {
@@ -312,12 +449,12 @@ private fun StatsRow(tasks: List<TaskNode>, alpha: Float) {
                 modifier = Modifier.weight(1f)
             )
             StatCard(
-                count = 0,
+                count = animatedApps,
                 label = "Apps Used",
                 modifier = Modifier.weight(1f)
             )
             StatCard(
-                count = 0,
+                count = animatedPatterns,
                 label = "Patterns",
                 modifier = Modifier.weight(1f)
             )
@@ -410,7 +547,9 @@ private fun RecentTasksSection(tasks: List<TaskNode>, alpha: Float) {
 
 @Composable
 private fun TaskCard(task: TaskNode) {
-    val isSuccess = task.result.contains("Opened") || task.result.contains("Success")
+    val isSuccess = task.result.contains("opened", ignoreCase = true) ||
+        task.result.contains("success", ignoreCase = true) ||
+        task.result.contains("completed", ignoreCase = true)
     val outcomeColor = if (isSuccess) VoidColor.Green else VoidColor.Red
     
     Surface(
@@ -663,5 +802,183 @@ private fun formatRelativeTime(timestamp: Long): String {
         minutes < 1 -> "now"
         minutes < 60 -> "${minutes}m"
         else -> "${minutes / 60}h"
+    }
+}
+
+@Composable
+private fun ProactiveAssistantCard(taskCount: Int) {
+    val context = LocalContext.current
+    var briefingEnabled by remember { mutableStateOf(ProactiveAssistant.isDailyBriefingEnabled(context)) }
+    var showReminder by remember { mutableStateOf(false) }
+    var reminderTitle by remember { mutableStateOf("") }
+    var reminderMessage by remember { mutableStateOf("") }
+    var reminderMinutes by remember { mutableStateOf("30") }
+    var notice by remember { mutableStateOf("Local reminders • battery alerts • daily briefing") }
+    var notificationPermissionGranted by remember {
+        mutableStateOf(
+            !ProactiveNotificationPolicy.requiresRuntimePermission(Build.VERSION.SDK_INT) ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var pendingNotificationAction by remember { mutableStateOf<String?>(null) }
+
+    fun scheduleCurrentReminder() {
+        val minutes = reminderMinutes.toLongOrNull()
+        if (reminderTitle.isNotBlank() && reminderMessage.isNotBlank() && minutes != null && minutes in 1..10080) {
+            ProactiveAssistant.scheduleReminder(context, reminderTitle, reminderMessage, minutes)
+            notice = "Reminder scheduled in $minutes minute(s)"
+            showReminder = false
+            reminderTitle = ""
+            reminderMessage = ""
+        } else {
+            notice = "Enter title, details and a delay from 1 to 10080 minutes"
+        }
+    }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        notificationPermissionGranted = granted
+        when (pendingNotificationAction) {
+            "briefing" -> {
+                if (granted) {
+                    briefingEnabled = true
+                    ProactiveAssistant.enableDailyBriefing(context, true)
+                    notice = "Daily briefing scheduled"
+                } else {
+                    briefingEnabled = false
+                    notice = "Notifications permission denied — daily briefing not enabled"
+                }
+            }
+            "reminder" -> {
+                if (granted) scheduleCurrentReminder()
+                else notice = "Notifications permission denied — reminder not scheduled"
+            }
+            "permission" -> {
+                notice = if (granted) "Notifications enabled" else "Notifications permission denied"
+            }
+        }
+        pendingNotificationAction = null
+    }
+
+    fun requestNotificationPermission(action: String) {
+        if (notificationPermissionGranted) return
+        pendingNotificationAction = action
+        if (ProactiveNotificationPolicy.requiresRuntimePermission(Build.VERSION.SDK_INT)) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+    val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+    val suggestion = when {
+        taskCount == 0 -> "Try a voice command to start your first task, then save a reminder for its follow-up."
+        hour < 12 -> "Morning suggestion: choose today's top priority and set a reminder for it."
+        hour < 18 -> "Suggestion: review your recent tasks and schedule a follow-up before the day ends."
+        else -> "Evening suggestion: review completed tasks and set tomorrow's first reminder."
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = VoidColor.Void900,
+        border = androidx.compose.foundation.BorderStroke(1.dp, VoidColor.Cyan.copy(alpha = 0.28f))
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                "PROACTIVE ASSISTANT",
+                color = VoidColor.Cyan,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+                letterSpacing = 1.5.sp
+            )
+            Text(
+                "JARVIS can remind you and alert you about battery or charging events.",
+                color = VoidColor.TextSecondary,
+                fontSize = 12.sp
+            )
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f)) {
+                    Text("Daily briefing", color = VoidColor.TextPrimary, fontWeight = FontWeight.SemiBold)
+                    Text("One local notification every 24 hours", color = VoidColor.TextDisabled, fontSize = 11.sp)
+                }
+                Switch(
+                    checked = briefingEnabled,
+                    onCheckedChange = { enabled ->
+                        if (!enabled) {
+                            briefingEnabled = false
+                            ProactiveAssistant.enableDailyBriefing(context, false)
+                            notice = "Daily briefing disabled"
+                        } else if (notificationPermissionGranted) {
+                            briefingEnabled = true
+                            ProactiveAssistant.enableDailyBriefing(context, true)
+                            notice = "Daily briefing scheduled"
+                        } else {
+                            requestNotificationPermission("briefing")
+                        }
+                    }
+                )
+            }
+            if (!notificationPermissionGranted) {
+                OutlinedButton(
+                    onClick = { requestNotificationPermission("permission") },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Enable notifications") }
+            }
+            Button(
+                onClick = { showReminder = true },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = VoidColor.Violet)
+            ) { Text("＋  Create reminder", color = Color.White) }
+            Text(notice, color = VoidColor.TextDisabled, fontSize = 11.sp)
+            Text(
+                "Suggestion: create a reminder for an important task; keep daily briefing enabled for a daily check-in.",
+                color = VoidColor.Cyan.copy(alpha = 0.85f),
+                fontSize = 11.sp
+            )
+        }
+    }
+
+    if (showReminder) {
+        AlertDialog(
+            onDismissRequest = { showReminder = false },
+            title = { Text("New JARVIS reminder") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = reminderTitle,
+                        onValueChange = { reminderTitle = it.take(80) },
+                        label = { Text("Title") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = reminderMessage,
+                        onValueChange = { reminderMessage = it.take(240) },
+                        label = { Text("Reminder details") },
+                        minLines = 2
+                    )
+                    OutlinedTextField(
+                        value = reminderMinutes,
+                        onValueChange = { reminderMinutes = it.filter(Char::isDigit).take(5) },
+                        label = { Text("Remind me in minutes") },
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val minutes = reminderMinutes.toLongOrNull()
+                    if (reminderTitle.isBlank() || reminderMessage.isBlank() || minutes == null || minutes !in 1..10080) {
+                        notice = "Enter title, details and a delay from 1 to 10080 minutes"
+                    } else if (notificationPermissionGranted) {
+                        scheduleCurrentReminder()
+                    } else {
+                        requestNotificationPermission("reminder")
+                    }
+                }) { Text("Schedule") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showReminder = false }) { Text("Cancel") }
+            }
+        )
     }
 }

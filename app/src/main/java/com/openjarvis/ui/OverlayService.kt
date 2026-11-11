@@ -7,15 +7,21 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
+import android.content.ClipboardManager
+import android.content.ClipData
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
@@ -23,11 +29,14 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import android.text.TextUtils
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.openjarvis.R
 import com.openjarvis.agent.AgentCore
 import com.openjarvis.graphify.GraphifyRepository
+import com.openjarvis.bridge.SocketServer
 import com.openjarvis.graphify.nodes.TaskNode
 import com.openjarvis.voice.VoiceManager
 import kotlinx.coroutines.CoroutineScope
@@ -35,7 +44,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
@@ -45,101 +53,249 @@ class OverlayService : Service() {
     private var windowParams: WindowManager.LayoutParams? = null
     private var commandInput: EditText? = null
     private var statusText: TextView? = null
+    private var waveformText: TextView? = null
+    private var visualState: String = "IDLE"
+    private var waveformFrame: Int = 0
+    private val waveformRunnable = object : Runnable {
+        override fun run() {
+            val view = waveformText ?: return
+            if (visualState == "IDLE") return
+            val frames = arrayOf("▁ ▃ ▆ ▄ ▂", "▃ ▆ ▄ ▂ ▅", "▆ ▄ ▂ ▅ ▃", "▄ ▂ ▅ ▃ ▆")
+            view.text = frames[waveformFrame++ % frames.size]
+            mainHandler.postDelayed(this, if (visualState == "THINKING") 420L else 150L)
+        }
+    }
     private var panel: LinearLayout? = null
     private lateinit var agentCore: AgentCore
     private lateinit var voiceManager: VoiceManager
     private lateinit var graphifyRepo: GraphifyRepository
+    private var socketServer: SocketServer? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val overlayAttachmentGate = OverlayAttachmentGate()
+    private val overlayWatchdog = object : Runnable {
+        override fun run() {
+            if (overlayView?.isAttachedToWindow != true) attachAssistant()
+            mainHandler.postDelayed(this, OVERLAY_WATCHDOG_INTERVAL_MS)
+        }
+    }
     private var recentTasks = emptyList<TaskNode>()
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var isExpanded = false
     private var responseLanguage = "hi"
+    @Volatile private var isMuted = false
 
     override fun onCreate() {
         super.onCreate()
+        activeInstance = this
         agentCore = AgentCore(this)
         voiceManager = VoiceManager(this)
         graphifyRepo = GraphifyRepository(this)
-        startForeground(NOTIFICATION_ID, createNotification())
+        socketServer = SocketServer(this, agentCore, graphifyRepo).also { it.start() }
+        val microphoneGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        if (Build.VERSION.SDK_INT >= 34) {
+            val foregroundTypes = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
+                (if (microphoneGranted) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0)
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, createNotification(), foregroundTypes)
+        } else {
+            startForeground(NOTIFICATION_ID, createNotification())
+        }
         attachAssistant()
+        mainHandler.postDelayed(overlayWatchdog, OVERLAY_WATCHDOG_INTERVAL_MS)
         serviceScope.launch {
             voiceManager.state.collect { state ->
                 when (state) {
-                    is VoiceManager.VoiceState.Result -> {
-                        commandInput?.setText(state.text)
-                        statusText?.text = "Voice captured — executing command…"
-                        submitCommand(state.text)
+                    is VoiceManager.VoiceState.Result -> when (CommandListeningPolicy.classify(state.text, isMuted)) {
+                        CommandListeningPolicy.Action.MUTE -> enterMuteMode()
+                        CommandListeningPolicy.Action.UNMUTE -> enterUnmuteMode()
+                        CommandListeningPolicy.Action.IGNORE -> {
+                            statusText?.text = if (isMuted) {
+                                "COMMAND MUTED — mic active for Unmute; other commands ignored"
+                            } else {
+                                "No command detected — listening again"
+                            }
+                            voiceManager.resumeContinuousSession()
+                        }
+                        CommandListeningPolicy.Action.EXECUTE_COMMAND -> submitCommand(state.text)
                     }
-                    is VoiceManager.VoiceState.Error -> statusText?.text = state.message
-                    is VoiceManager.VoiceState.Recording -> statusText?.text = "Listening… speak now"
-                    is VoiceManager.VoiceState.Transcribing -> statusText?.text = "Transcribing…"
-                    is VoiceManager.VoiceState.Idle -> Unit
+                    is VoiceManager.VoiceState.Error -> {
+                        setVisualState("IDLE", state.message)
+                        if (!voiceManager.isContinuousSessionActive()) {
+                            updateNotification("Microphone off — tap Mic to start")
+                        }
+                    }
+                    is VoiceManager.VoiceState.Recording -> {
+                        if (isMuted) setVisualState("IDLE", "COMMAND MUTED — listening only for Unmute")
+                        else setVisualState("LISTENING", "Listening continuously… speak now")
+                    }
+                    is VoiceManager.VoiceState.Transcribing -> setVisualState("THINKING", "Thinking…")
+                    is VoiceManager.VoiceState.Speaking -> setVisualState("SPEAKING", "Speaking…")
+                    is VoiceManager.VoiceState.Idle -> {
+                        // Do not let the voice session's Idle event hide the HUD while
+                        // AgentCore is still executing a command.
+                        if (agentCore.state.value is com.openjarvis.agent.AgentState.Running) {
+                            setVisualState("THINKING", "Jarvis is working…")
+                        } else if (!voiceManager.isVoiceEnabled()) {
+                            setVisualState("IDLE", "Voice assistant disabled — microphone off")
+                        } else if (isMuted) {
+                            setVisualState("IDLE", "COMMAND MUTED — mic active for Unmute; other commands ignored")
+                        } else if (voiceManager.isContinuousSessionActive()) {
+                            setVisualState("IDLE", "Ready — listening continuously")
+                        } else {
+                            setVisualState("IDLE", "Ready — tap Mic once to start continuous voice")
+                        }
+                    }
                 }
             }
         }
         serviceScope.launch {
             agentCore.state.collect { state ->
                 when (state) {
-                    is com.openjarvis.agent.AgentState.Idle -> statusText?.text = "Ready — type a command or use mic"
-                    is com.openjarvis.agent.AgentState.Running -> statusText?.text = state.step
+                    is com.openjarvis.agent.AgentState.Idle -> {
+                        statusText?.text = when {
+                            !voiceManager.isVoiceEnabled() -> "Voice assistant disabled — microphone off"
+                            voiceManager.isContinuousSessionActive() && isMuted -> "COMMAND MUTED — mic active for Unmute; other commands ignored"
+                            voiceManager.isContinuousSessionActive() -> "Ready — listening continuously"
+                            else -> "Ready — tap Mic once to start continuous voice or type a command"
+                        }
+                    }
+                    is com.openjarvis.agent.AgentState.Running -> setVisualState("THINKING", state.step)
                     is com.openjarvis.agent.AgentState.Done -> {
-                        statusText?.text = state.result
-                        voiceManager.speak(if (responseLanguage == "mr") "काम पूर्ण झाले आहे" else "काम पूरा हुआ")
+                        setVisualState("SPEAKING", state.result)
+                        voiceManager.speak(com.openjarvis.agent.AgentResultSpeech.textForDone(state.result)) {
+                            voiceManager.resumeContinuousSession()
+                        }
                     }
                     is com.openjarvis.agent.AgentState.Error -> {
-                        statusText?.text = "Jarvis error: ${state.message}"
-                        voiceManager.speak(if (responseLanguage == "mr") "कमांड पूर्ण झाली नाही. ${state.message}" else "कमांड पूरी नहीं हुई। ${state.message}")
+                        setVisualState("SPEAKING", "Jarvis error: ${state.message} • tap to copy debug log")
+                        voiceManager.speak(if (responseLanguage == "mr") "कमांड पूर्ण झाली नाही. ${state.message}" else "कमांड पूरी नहीं हुई। ${state.message}") {
+                            voiceManager.resumeContinuousSession()
+                        }
                     }
                 }
             }
         }
         serviceScope.launch(Dispatchers.IO) { recentTasks = graphifyRepo.getRecentTasks(10) }
+        if (!microphoneGranted) statusText?.text = "Allow microphone permission, then tap Mic to start"
+        else statusText?.text = "Ready — tap Mic once to start continuous voice"
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (::voiceManager.isInitialized) {
+            if (overlayView?.isAttachedToWindow != true) attachAssistant()
+        }
+        return START_STICKY
+    }
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        mainHandler.removeCallbacks(overlayWatchdog)
         try { overlayView?.let { windowManager?.removeView(it) } } catch (_: Exception) { }
         overlayView = null
+        visualState = "IDLE"
+        mainHandler.removeCallbacks(waveformRunnable)
+        waveformText = null
+        voiceManager.stopListening()
+        if (activeInstance === this) activeInstance = null
+        socketServer?.stop()
+        socketServer = null
         voiceManager.release()
         serviceScope.cancel()
         super.onDestroy()
     }
 
     private fun attachAssistant() {
-        if (!Settings.canDrawOverlays(this) || overlayView != null) return
+        // WindowManager and Android Views must only be touched on the main thread.
+        // Multiple start/watchdog callbacks are serialized before they can create a window.
+        if (Looper.myLooper() !== Looper.getMainLooper()) {
+            mainHandler.post { attachAssistant() }
+            return
+        }
+        if (!Settings.canDrawOverlays(this)) return
+        if (!overlayAttachmentGate.begin(overlayView?.isAttachedToWindow == true)) return
         try {
+            // A stale detached View must not block recreation of the floating overlay.
+            overlayView = null
             windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
             val root = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(10, 8, 10, 8)
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+                minimumWidth = dp(64)
+                minimumHeight = dp(48)
                 background = rounded(Color.rgb(20, 18, 35), 24)
                 elevation = 18f
             }
             val pill = TextView(this).apply {
-                text = "●  JARVIS  ▾"
+                text = "● JARVIS"
                 textSize = 14f
                 setTextColor(Color.WHITE)
                 gravity = Gravity.CENTER
-                setPadding(22, 14, 22, 14)
+                setPadding(dp(22), dp(14), dp(22), dp(14))
                 background = rounded(Color.rgb(55, 35, 95), 40)
-                setOnClickListener { togglePanel() }
+            }
+            var downRawX = 0f
+            var downRawY = 0f
+            var downWindowX = 0
+            var downWindowY = 0
+            var dragged = false
+            pill.setOnTouchListener { _, event ->
+                val params = windowParams
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        downRawX = event.rawX
+                        downRawY = event.rawY
+                        downWindowX = params?.x ?: 0
+                        downWindowY = params?.y ?: 0
+                        dragged = false
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = event.rawX - downRawX
+                        val dy = event.rawY - downRawY
+                        if (kotlin.math.abs(dx) > dp(6) || kotlin.math.abs(dy) > dp(6)) dragged = true
+                        if (dragged && params != null) {
+                            params.x = (downWindowX - dx.toInt()).coerceAtLeast(0)
+                            params.y = (downWindowY + dy.toInt()).coerceAtLeast(0)
+                            runCatching { windowManager?.updateViewLayout(overlayView, params) }
+                        }
+                        true
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        if (!dragged) togglePanel()
+                        true
+                    }
+                    else -> true
+                }
             }
             root.addView(pill, LinearLayout.LayoutParams(-2, -2))
 
             val commandPanel = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 visibility = android.view.View.GONE
-                setPadding(4, 12, 4, 4)
+                setPadding(dp(4), dp(8), dp(4), dp(4))
             }
             val status = TextView(this).apply {
                 text = "Ready — type a command or use mic"
                 textSize = 12f
                 setTextColor(Color.LTGRAY)
-                setPadding(8, 4, 8, 8)
+                setPadding(dp(8), dp(4), dp(8), dp(4))
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.END
             }
             statusText = status
+            status.setOnClickListener { copyLatestDebugLog() }
             commandPanel.addView(status)
+            val waveform = TextView(this).apply {
+                text = "▁ ▃ ▆ ▄ ▂"
+                textSize = 19f
+                letterSpacing = 0.16f
+                gravity = Gravity.CENTER
+                setTextColor(Color.rgb(70, 220, 255))
+                setPadding(dp(8), 0, dp(8), dp(2))
+                visibility = android.view.View.GONE
+                contentDescription = "JARVIS voice activity waveform"
+            }
+            waveformText = waveform
+            commandPanel.addView(waveform, LinearLayout.LayoutParams(-1, dp(30)))
 
             val input = EditText(this).apply {
                 hint = "Ask Jarvis to do something…"
@@ -147,41 +303,66 @@ class OverlayService : Service() {
                 setTextColor(Color.WHITE)
                 setHintTextColor(Color.GRAY)
                 setSingleLine(false)
-                minLines = 2
-                maxLines = 4
+                minLines = 1
+                maxLines = 2
                 inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
                 imeOptions = EditorInfo.IME_ACTION_SEND
-                setPadding(12, 8, 12, 8)
+                setPadding(dp(10), dp(8), dp(10), dp(8))
                 background = rounded(Color.rgb(42, 38, 58), 12)
             }
             commandInput = input
-            commandPanel.addView(input, LinearLayout.LayoutParams(280, -2))
 
+            // Keep the text field and both actions in one weighted row. Fixed action
+            // widths prevent clipping on compact (~360dp) displays.
             val actions = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.END
+                gravity = Gravity.CENTER_VERTICAL
+                minimumHeight = dp(52)
             }
+            actions.addView(input, LinearLayout.LayoutParams(0, dp(52), 1f))
             val mic = Button(this).apply {
-                text = "🎙 Mic"
+                text = "Mic"
+                isAllCaps = false
+                minWidth = 0
+                setPadding(0, 0, 0, 0)
                 setOnClickListener {
                     if (ContextCompat.checkSelfPermission(this@OverlayService, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                         status.text = "Allow microphone permission in Android app settings"
                     } else if (!voiceManager.isVoiceEnabled()) {
                         status.text = "Enable Voice Assistant in Jarvis Settings first"
+                    } else if (voiceManager.isContinuousSessionActive()) {
+                        voiceManager.stopContinuousSession()
+                        isMuted = false
+                        status.text = "Voice session stopped — microphone off"
+                        updateNotification("Microphone off — tap Mic to start")
                     } else {
-                        voiceManager.startListening()
+                        isMuted = false
+                        voiceManager.startContinuousSession()
+                        status.text = "Listening continuously — say “Mute” to lock commands"
+                        updateNotification("Microphone active — say Mute to lock commands")
                     }
                 }
             }
             val send = Button(this).apply {
                 text = "Send"
+                isAllCaps = false
+                minWidth = 0
+                setPadding(0, 0, 0, 0)
                 setOnClickListener { submitCommand() }
             }
-            actions.addView(mic)
-            actions.addView(send)
-            commandPanel.addView(actions)
+            val actionWidth = dp(48)
+            actions.addView(mic, LinearLayout.LayoutParams(actionWidth, dp(48)))
+            actions.addView(send, LinearLayout.LayoutParams(actionWidth, dp(48)))
+            commandPanel.addView(actions, LinearLayout.LayoutParams(-1, -2))
+            val shareReport = Button(this).apply {
+                text = "Share Diagnostic Report"
+                isAllCaps = false
+                setOnClickListener { shareLatestDiagnostic() }
+            }
+            commandPanel.addView(shareReport, LinearLayout.LayoutParams(-1, dp(42)))
             root.addView(commandPanel)
             panel = commandPanel
+            isExpanded = false
 
             val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -202,6 +383,19 @@ class OverlayService : Service() {
             overlayView = root
         } catch (e: Exception) {
             android.util.Log.e("OpenJarvis", "Unable to attach assistant overlay", e)
+        } finally {
+            overlayAttachmentGate.finish()
+        }
+    }
+
+    private fun setVisualState(state: String, label: String) {
+        visualState = state
+        statusText?.text = label
+        waveformText?.visibility = if (state == "IDLE") android.view.View.GONE else android.view.View.VISIBLE
+        mainHandler.removeCallbacks(waveformRunnable)
+        if (state != "IDLE") {
+            waveformFrame = 0
+            waveformRunnable.run()
         }
     }
 
@@ -209,19 +403,63 @@ class OverlayService : Service() {
         isExpanded = !isExpanded
         panel?.visibility = if (isExpanded) android.view.View.VISIBLE else android.view.View.GONE
         windowParams?.let { params ->
-            params.flags = if (isExpanded) WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                else WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+            params.width = if (isExpanded) dp(304) else WindowManager.LayoutParams.WRAP_CONTENT
+            // The overlay must never be touch-modal: taps outside the floating panel
+            // must continue to reach the app underneath, even while the input panel is open.
+            // Keep the expanded panel focusable so its EditText can receive keyboard input.
+            params.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                (if (isExpanded) 0 else WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
             try { windowManager?.updateViewLayout(overlayView, params) } catch (_: Exception) { }
         }
         if (isExpanded) commandInput?.requestFocus()
     }
 
+    private fun enterMuteMode() {
+        isMuted = true
+        statusText?.text = "COMMAND MUTED — mic active for Unmute; other commands ignored"
+        updateNotification("Mic active for Unmute; other commands ignored")
+        voiceManager.speak("ठीक है, Jarvis command mute हो गया। Unmute बोलकर फिर से शुरू करें।") {
+            voiceManager.resumeContinuousSession()
+        }
+    }
+    private fun enterUnmuteMode() {
+        val wasMuted = isMuted
+        isMuted = false
+        setVisualState("IDLE", "JARVIS ACTIVE — listening continuously")
+        updateNotification("Continuous microphone listening active")
+        val reply = if (wasMuted) "Jarvis is active. I am listening." else "Jarvis already active. I am listening."
+        voiceManager.speak(reply) {
+            voiceManager.resumeContinuousSession()
+        }
+    }
+
     private fun submitCommand(voiceCommand: String? = null) {
-        val command = voiceCommand?.trim().takeUnless { it.isNullOrBlank() }
-            ?: commandInput?.text?.toString()?.trim().orEmpty()
+        val command = if (voiceCommand != null) voiceCommand.trim() else commandInput?.text?.toString()?.trim().orEmpty()
         if (command.isBlank()) {
-            statusText?.text = "Type a command first"
+            statusText?.text = "No speech detected — listening again"
+            voiceManager.resumeContinuousSession()
             return
+        }
+        // Typed commands use the same deterministic voice-control gate as speech transcripts.
+        when (CommandListeningPolicy.classify(command, isMuted)) {
+            CommandListeningPolicy.Action.MUTE -> {
+                enterMuteMode()
+                commandInput?.text?.clear()
+                return
+            }
+            CommandListeningPolicy.Action.UNMUTE -> {
+                enterUnmuteMode()
+                commandInput?.text?.clear()
+                return
+            }
+            CommandListeningPolicy.Action.IGNORE -> {
+                statusText?.text = "COMMAND MUTED — only say Unmute / Awaaz chalu karo"
+                commandInput?.text?.clear()
+                voiceManager.resumeContinuousSession()
+                return
+            }
+            CommandListeningPolicy.Action.EXECUTE_COMMAND -> Unit
         }
         if (command.any { it in '\u0900'..'\u097F' }) {
             val marathiMarkers = listOf("आहे", "आणि", "मला", "काय", "झाले", "झालं", "नाही", "दाखवा", "उघडा", "करायचे", "माझे", "तुम्ही", "सांगा", "नको")
@@ -229,12 +467,43 @@ class OverlayService : Service() {
         }
         if (com.openjarvis.accessibility.JarvisAccessibilityService.instance == null) {
             statusText?.text = "Accessibility service is OFF. Enable Open Jarvis in Android Accessibility settings."
+            voiceManager.resumeContinuousSession()
             return
         }
         statusText?.text = "Jarvis is working…"
+        // Give voice users immediate feedback while the task continues asynchronously.
+        // The final verified result still replaces this acknowledgement when ready.
+        if (voiceCommand != null && voiceManager.isContinuousSessionActive()) {
+            voiceManager.speak(com.openjarvis.agent.AgentResultSpeech.acknowledgement(responseLanguage))
+        }
+        voiceManager.markThinking()
         agentCore.executeTask(command)
         commandInput?.text?.clear()
     }
+
+    private fun shareLatestDiagnostic() {
+        val report = com.openjarvis.agent.AgentDiagnostics.latest(this)
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "Open Jarvis Diagnostic Report")
+            putExtra(Intent.EXTRA_TEXT, report)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            startActivity(Intent.createChooser(sendIntent, "Share Jarvis diagnostic").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (error: Exception) {
+            Toast.makeText(this, "Unable to open sharing options: ${error.javaClass.simpleName}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun copyLatestDebugLog() {
+        val report = com.openjarvis.agent.AgentDiagnostics.latest(this)
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("JARVIS Debug Log", report))
+        Toast.makeText(this, "Debug log copied. Paste it here in ChatGPT.", Toast.LENGTH_LONG).show()
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private fun rounded(color: Int, radius: Int) = GradientDrawable().apply {
         setColor(color)
@@ -242,7 +511,14 @@ class OverlayService : Service() {
         setStroke(1, Color.rgb(125, 95, 190))
     }
 
-    private fun createNotification(): Notification {
+    private fun updateNotification(message: String) {
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.notify(NOTIFICATION_ID, createNotification(message))
+    }
+
+    private fun createNotification(
+        message: String = "Assistant is running — tap the floating Jarvis button"
+    ): Notification {
         val channel = NotificationChannel(CHANNEL_ID, getString(R.string.notification_channel_name), NotificationManager.IMPORTANCE_LOW)
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         val pendingIntent = PendingIntent.getActivity(
@@ -251,7 +527,7 @@ class OverlayService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Open Jarvis")
-            .setContentText("Assistant is running — tap the floating Jarvis button")
+            .setContentText(message)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
@@ -264,11 +540,41 @@ class OverlayService : Service() {
 
     fun executeCommand(command: String) = agentCore.executeTask(command)
 
+    private fun applyVoiceAssistantEnabled(enabled: Boolean) {
+        voiceManager.setVoiceEnabled(enabled)
+        if (!enabled) {
+            isMuted = false
+            voiceManager.stopContinuousSession()
+            setVisualState("IDLE", "Voice assistant disabled — microphone off")
+            updateNotification("Voice assistant disabled — microphone off")
+        } else {
+            setVisualState("IDLE", "Voice enabled — tap Mic once to start")
+            updateNotification("Voice enabled — microphone off until Mic is tapped")
+        }
+    }
+
     companion object {
+        @Volatile private var activeInstance: OverlayService? = null
         private const val CHANNEL_ID = "jarvis_overlay_channel"
         private const val NOTIFICATION_ID = 1
+        private const val OVERLAY_WATCHDOG_INTERVAL_MS = 1_500L
+
+        @Synchronized
         fun start(context: Context) {
+            val current = activeInstance
+            if (current != null) {
+                current.mainHandler.post {
+                    if (activeInstance === current && current.overlayView?.isAttachedToWindow != true) {
+                        current.attachAssistant()
+                    }
+                }
+                return
+            }
             context.startForegroundService(Intent(context, OverlayService::class.java))
+        }
+
+        fun onVoiceAssistantToggled(enabled: Boolean) {
+            activeInstance?.applyVoiceAssistantEnabled(enabled)
         }
     }
 }

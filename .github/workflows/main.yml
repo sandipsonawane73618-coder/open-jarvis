@@ -2,6 +2,11 @@ name: Open Jarvis Android APK
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - feature/jarvis-stable-1.0
+      - feature/jarvis-stable-1.0-phase2-wakeword
+      - feature/jarvis-jandal-memory-recall
 
 permissions:
   contents: read
@@ -11,6 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
 
       - uses: actions/setup-java@v4
         with:
@@ -25,8 +31,39 @@ jobs:
         with:
           packages: 'platforms;android-34 build-tools;34.0.0 platform-tools'
 
+      - name: Unit tests
+        run: gradle testDebugUnitTest --no-daemon
+
       - name: Build APK
         run: gradle assembleDebug --no-daemon
+
+      - name: Emulator smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          script: bash scripts/smoke-minimal.sh
+
+      # Always collect diagnostics, including when the smoke test fails.
+      - name: Capture emulator crash diagnostics
+        if: always()
+        run: |
+          mkdir -p emulator-diagnostics
+          # Bound every adb diagnostics command so a wedged emulator cannot hang the job.
+          timeout 30s adb logcat -b all -d -v threadtime > emulator-diagnostics/logcat.txt 2>&1 || echo "logcat collection timed out or failed" >> emulator-diagnostics/diagnostics-errors.txt
+          timeout 20s adb shell dumpsys activity activities > emulator-diagnostics/activities.txt 2>&1 || echo "activity dumpsys timed out or failed" >> emulator-diagnostics/diagnostics-errors.txt
+          timeout 20s adb shell dumpsys activity services > emulator-diagnostics/services.txt 2>&1 || echo "services dumpsys timed out or failed" >> emulator-diagnostics/diagnostics-errors.txt
+          timeout 20s adb shell dumpsys package com.openjarvis > emulator-diagnostics/package.txt 2>&1 || echo "package dumpsys timed out or failed" >> emulator-diagnostics/diagnostics-errors.txt
+          grep -Ei "FATAL EXCEPTION|AndroidRuntime|am_crash|ANR in|Process .* has died|Fatal signal" emulator-diagnostics/logcat.txt > emulator-diagnostics/crash-summary.txt || true
+
+      - name: Upload emulator diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-emulator-crash-diagnostics
+          path: emulator-diagnostics/
+          if-no-files-found: warn
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

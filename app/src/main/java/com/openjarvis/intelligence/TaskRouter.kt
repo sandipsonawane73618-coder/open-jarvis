@@ -15,8 +15,8 @@ class TaskRouter(private val context: Context) {
         
         val candidates = analyzer.getAllSortedByTrust()
             .filter { entity ->
-                (targetCategory.isEmpty() || entity.category == targetCategory) ||
-                neededCaps.any { cap -> entity.capabilities.contains(cap.name) }
+                (targetCategory.isEmpty() || entity.category.orEmpty() == targetCategory) ||
+                neededCaps.any { cap -> entity.capabilities.orEmpty().contains(cap.name) }
             }
             .take(5)
         
@@ -29,7 +29,7 @@ class TaskRouter(private val context: Context) {
         
         val scoring = candidates.mapIndexed { index, entity ->
             val trustScore = entity.trustScore * 0.4f
-            val capMatch = if (neededCaps.any { entity.capabilities.contains(it.name) }) 0.4f else 0f
+            val capMatch = if (neededCaps.any { entity.capabilities.orEmpty().contains(it.name) }) 0.4f else 0f
             val recency = (1f - index * 0.2f).coerceAtLeast(0f) * 0.2f
             val total = trustScore + capMatch + recency
             

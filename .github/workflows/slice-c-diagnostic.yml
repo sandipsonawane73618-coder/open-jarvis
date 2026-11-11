@@ -1,0 +1,33 @@
+name: Slice C Actions Diagnostic
+
+on:
+  push:
+    branches:
+      - feature/jarvis-slice-c-router-llm-schema
+    paths:
+      - .github/workflows/slice-c-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: slice-c-diagnostic-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  startup-check:
+    name: Runner startup diagnostic
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Confirm runner started
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "SLICE_C_DIAGNOSTIC=runner-started"
+          echo "EVENT=${GITHUB_EVENT_NAME}"
+          echo "REF=${GITHUB_REF}"
+          echo "SHA=${GITHUB_SHA}"
+          test -n "${GITHUB_SHA}"
+          echo "SLICE_C_DIAGNOSTIC=passed"

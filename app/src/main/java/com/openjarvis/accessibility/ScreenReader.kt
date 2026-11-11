@@ -11,12 +11,14 @@ class ScreenReader private constructor(
     constructor(service: JarvisAccessibilityService) : this({ service })
 
     fun extractAllText(): String {
-        val rootNode = serviceProvider()?.rootInActiveWindow ?: return ""
-        val builder = StringBuilder()
-        extractTextRecursive(rootNode, builder)
-        rootNode.recycle()
-        return builder.toString()
+        val service = serviceProvider() ?: return ""
+        // The floating JARVIS overlay may own rootInActiveWindow. Read all
+        // interactive windows so the underlying target app remains accessible.
+        return runCatching { service.extractVisibleText() }.getOrDefault("")
     }
+
+    fun extractInteractiveElements(): String =
+        serviceProvider()?.describeVisibleInteractiveElements() ?: ""
 
     private fun extractTextRecursive(node: AccessibilityNodeInfo, builder: StringBuilder) {
         val text = node.text

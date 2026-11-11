@@ -1,152 +1,275 @@
 package com.openjarvis.bridge
 
-import org.junit.Test
 import org.junit.Assert.*
-import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.Dispatchers
+import org.junit.Test
+import java.io.ByteArrayInputStream
 
 class SocketServerTest {
 
     @Test
-    fun `parseRequest with valid JSON returns command and requestId`() {
-        val server = createTestServer()
-        val result = server.parseRequest("""{"cmd":"open chrome","requestId":"abc123"}""")
-        
+    fun `parseRequest with valid JSON returns command requestId and token`() {
+        val result = SocketServer.parseRequest(
+            """{"cmd":"open chrome","requestId":"abc123","token":"secret"}"""
+        )
         assertNotNull(result)
         assertEquals("abc123", result?.first)
         assertEquals("open chrome", result?.second)
+        assertEquals("secret", result?.third)
     }
 
     @Test
-    fun `parseRequest with missing cmd returns null`() {
-        val server = createTestServer()
-        val result = server.parseRequest("""{"requestId":"abc123"}""")
-        
-        assertNull(result)
-    }
-
-    @Test
-    fun `parseRequest with invalid JSON returns null`() {
-        val server = createTestServer()
-        val result = server.parseRequest("not json")
-        
-        assertNull(result)
-    }
-
-    @Test
-    fun `parseRequest with empty request uses empty string`() {
-        val server = createTestServer()
-        val result = server.parseRequest("""{"cmd":"status"}""")
-        
+    fun `parseRequest accepts exact command and request id limits`() {
+        val command = "x".repeat(SocketServer.MAX_COMMAND_LENGTH)
+        val requestId = "r".repeat(SocketServer.MAX_REQUEST_ID_LENGTH)
+        val result = SocketServer.parseRequest(
+            """{"cmd":"$command","requestId":"$requestId","token":"secret"}"""
+        )
         assertNotNull(result)
-        assertEquals("", result?.first)
-        assertEquals("status", result?.second)
+        assertEquals(command, result?.second)
+        assertEquals(requestId, result?.first)
+    }
+
+    @Test
+    fun `parseRequest rejects missing command token or malformed JSON`() {
+        assertNull(SocketServer.parseRequest("""{"requestId":"abc123","token":"secret"}"""))
+        assertNull(SocketServer.parseRequest("""{"cmd":"status","requestId":"abc123"}"""))
+        assertNull(SocketServer.parseRequest("""{"cmd":"status","token":""}"""))
+        assertNull(SocketServer.parseRequest("not json"))
+    }
+
+    @Test
+    fun `parseRequest rejects command and request id one over configured limits`() {
+        assertNull(SocketServer.parseRequest("""{"cmd":"${"x".repeat(SocketServer.MAX_COMMAND_LENGTH + 1)}","token":"secret"}"""))
+        assertNull(SocketServer.parseRequest("""{"cmd":"status","requestId":"${"x".repeat(SocketServer.MAX_REQUEST_ID_LENGTH + 1)}","token":"secret"}"""))
+    }
+
+
+    @Test
+    fun `parseRequest enforces 2000 character limit with Unicode commands`() {
+        val command = "न".repeat(SocketServer.MAX_COMMAND_LENGTH)
+        val accepted = SocketServer.parseRequest(
+            """{"cmd":"$command","requestId":"unicode-limit","token":"secret"}"""
+        )
+        assertNotNull(accepted)
+        assertEquals(command, accepted?.second)
+
+        val tooLong = command + "न"
+        assertNull(
+            SocketServer.parseRequest(
+                """{"cmd":"$tooLong","requestId":"unicode-over-limit","token":"secret"}"""
+            )
+        )
+    }
+
+    @Test
+    fun `bounded line reader enforces 8 KiB using UTF8 bytes not character count`() {
+        val exactlyLimit = "न".repeat(2_730) + "ab"
+        assertEquals(SocketServer.MAX_REQUEST_BYTES, exactlyLimit.toByteArray(Charsets.UTF_8).size)
+        assertEquals(
+            exactlyLimit,
+            SocketServer.readBoundedLine(
+                ByteArrayInputStream((exactlyLimit + "\n").toByteArray(Charsets.UTF_8)),
+                SocketServer.MAX_REQUEST_BYTES
+            )
+        )
+
+        val overLimit = exactlyLimit + "x"
+        assertTrue(overLimit.length < SocketServer.MAX_REQUEST_BYTES)
+        try {
+            SocketServer.readBoundedLine(
+                ByteArrayInputStream((overLimit + "\n").toByteArray(Charsets.UTF_8)),
+                SocketServer.MAX_REQUEST_BYTES
+            )
+            fail("Expected RequestTooLargeException for UTF-8 byte overflow")
+        } catch (_: RequestTooLargeException) {
+            // expected: raw UTF-8 bytes, not Kotlin character count, define the limit.
+        }
+    }
+
+    @Test
+    fun `token comparison accepts exact token and rejects mismatch`() {
+        assertTrue(SocketServer.isValidToken("secret-token", "secret-token"))
+        assertFalse(SocketServer.isValidToken("secret-token", "different-token"))
+        assertFalse(SocketServer.isValidToken("", "secret-token"))
+        assertFalse(SocketServer.isValidToken("secret-token", ""))
+    }
+
+    @Test
+    fun `token comparison is exact and does not normalize whitespace case or unicode`() {
+        assertTrue(SocketServer.isValidToken("jarvis-नमस्ते", "jarvis-नमस्ते"))
+        assertFalse(SocketServer.isValidToken("Secret-Token", "secret-token"))
+        assertFalse(SocketServer.isValidToken("secret-token ", "secret-token"))
+        assertFalse(SocketServer.isValidToken(" secret-token", "secret-token"))
+    }
+
+    @Test
+    fun `token provider accepts only the exact content config URI`() {
+        assertTrue(
+            BridgeTokenProvider.isConfigUri(
+                "content://com.openjarvis.preview.bridgeconfig/config",
+                "com.openjarvis.preview.bridgeconfig"
+            )
+        )
+        assertFalse(
+            BridgeTokenProvider.isConfigUri(
+                "content://com.openjarvis.preview.bridgeconfig/other",
+                "com.openjarvis.preview.bridgeconfig"
+            )
+        )
+        assertFalse(
+            BridgeTokenProvider.isConfigUri(
+                "content://attacker.example/config",
+                "com.openjarvis.preview.bridgeconfig"
+            )
+        )
+        assertFalse(
+            BridgeTokenProvider.isConfigUri(
+                "https://com.openjarvis.preview.bridgeconfig/config",
+                "com.openjarvis.preview.bridgeconfig"
+            )
+        )
+    }
+
+    @Test
+    fun `token provider rejects URI authority and path confusion attempts`() {
+        val authority = "com.openjarvis.bridgeconfig"
+        val invalidUris = listOf(
+            "content://com.openjarvis.bridgeconfig.evil/config",
+            "content://user@com.openjarvis.bridgeconfig/config",
+            "content://com.openjarvis.bridgeconfig:80/config",
+            "content://com.openjarvis.bridgeconfig/config?token=leak",
+            "content://com.openjarvis.bridgeconfig/config#fragment",
+            "content://com.openjarvis.bridgeconfig/config/",
+            "content://com.openjarvis.bridgeconfig//config",
+            "content://com.openjarvis.bridgeconfig/%63onfig",
+            "content://com.openjarvis.bridgeconfig/config/../config",
+            "CONTENT://com.openjarvis.bridgeconfig/config",
+            "not a uri"
+        )
+        invalidUris.forEach { uri ->
+            assertFalse("URI must be rejected: $uri", BridgeTokenProvider.isConfigUri(uri, authority))
+        }
+    }
+
+    @Test
+    fun `token provider allows only app Termux and ADB shell UIDs`() {
+        assertTrue(BridgeTokenProvider.isTrustedUid(10123, appUid = 10123, termuxUid = 10234))
+        assertTrue(BridgeTokenProvider.isTrustedUid(10234, appUid = 10123, termuxUid = 10234))
+        assertTrue(BridgeTokenProvider.isTrustedUid(2000, appUid = 10123, termuxUid = 10234))
+        assertFalse(BridgeTokenProvider.isTrustedUid(10345, appUid = 10123, termuxUid = 10234))
+        assertFalse(BridgeTokenProvider.isTrustedUid(10345, appUid = 10123, termuxUid = null))
+        assertFalse(BridgeTokenProvider.isTrustedUid(10234, appUid = 10123, termuxUid = null))
+    }
+
+    @Test
+    fun `token provider accepts only configured shell UID`() {
+        assertTrue(BridgeTokenProvider.isTrustedUid(2100, appUid = 10123, termuxUid = null, shellUid = 2100))
+        assertFalse(BridgeTokenProvider.isTrustedUid(2100, appUid = 10123, termuxUid = null))
+        assertFalse(BridgeTokenProvider.isTrustedUid(-1, appUid = 10123, termuxUid = null))
     }
 
     @Test
     fun `escapeJson escapes special characters`() {
-        val server = createTestServer()
-        
-        val input = "hello\nworld\"test\tvalue"
-        val escaped = server.escapeJson(input)
-        
+        val escaped = SocketServer.escapeJson("hello\nworld\"test\tvalue")
         assertTrue(escaped.contains("\\n"))
         assertTrue(escaped.contains("\\\""))
         assertTrue(escaped.contains("\\t"))
     }
 
     @Test
-    fun `createErrorResponse formats correctly`() {
-        val server = createTestServer()
-        val response = server.createErrorResponse("req123", "test error")
-        
-        assertTrue(response.contains("req123"))
-        assertTrue(response.contains("error"))
-        assertTrue(response.contains("test error"))
+    fun `createErrorResponse escapes untrusted values`() {
+        val response = SocketServer.createErrorResponse("id\"\n", "bad\"\nvalue")
+        assertTrue(response.contains("id\\\"\\n"))
+        assertTrue(response.contains("bad\\\"\\nvalue"))
     }
 
     @Test
-    fun `special commands handled correctly`() = runTest(Dispatchers.IO) {
-        val server = createTestServer()
-        val context = testContext()
-        
-        // Verify status command structure
-        val statusRequest = server.parseRequest("""{"cmd":"status","requestId":"s1"}""")
-        assertNotNull(statusRequest)
-        assertEquals("status", statusRequest?.second)
-        
-        // Verify history command
-        val historyRequest = server.parseRequest("""{"cmd":"history","requestId":"h1"}""")
-        assertNotNull(historyRequest)
-        assertEquals("history", historyRequest?.second)
-        
-        // Verify memory command
-        val memoryRequest = server.parseRequest("""{"cmd":"memory","requestId":"m1"}""")
-        assertNotNull(memoryRequest)
-        assertEquals("memory", memoryRequest?.second)
-        
-        // Verify providers command
-        val providersRequest = server.parseRequest("""{"cmd":"providers","requestId":"p1"}""")
-        assertNotNull(providersRequest)
-        assertEquals("providers", providersRequest?.second)
+    fun `bounded line reader reads UTF8 request and strips carriage return`() {
+        val bytes = ("""{"cmd":"नमस्ते"}""" + "\r\n").toByteArray(Charsets.UTF_8)
+        assertEquals(
+            """{"cmd":"नमस्ते"}""",
+            SocketServer.readBoundedLine(ByteArrayInputStream(bytes), 100)
+        )
     }
 
     @Test
-    fun `requestId roundtrip preserved`() {
-        val server = createTestServer()
-        
-        val testIds = listOf("abc123", "xyz789", "test-id-001", "")
-        
-        for (id in testIds) {
-            val json = if (id.isEmpty()) {
-                """{"cmd":"test"}"""
-            } else {
-                """{"cmd":"test","requestId":"$id"}"""
-            }
-            
-            val result = server.parseRequest(json)
-            assertNotNull("Failed for id: $id", result)
-            assertEquals(id, result?.first)
+    fun `bounded line reader accepts exactly the configured 8 KiB limit`() {
+        val request = "x".repeat(SocketServer.MAX_REQUEST_BYTES)
+        val input = ByteArrayInputStream((request + "\n").toByteArray())
+        assertEquals(request, SocketServer.readBoundedLine(input, SocketServer.MAX_REQUEST_BYTES))
+    }
+
+    @Test
+    fun `bounded line reader rejects one byte over the configured 8 KiB limit`() {
+        val request = "x".repeat(SocketServer.MAX_REQUEST_BYTES + 1)
+        val input = ByteArrayInputStream((request + "\n").toByteArray())
+        try {
+            SocketServer.readBoundedLine(input, SocketServer.MAX_REQUEST_BYTES)
+            fail("Expected RequestTooLargeException")
+        } catch (_: RequestTooLargeException) {
+            // expected
+        }
+    }
+
+    @Test
+    fun `bounded line reader counts stripped carriage returns toward byte limit`() {
+        val request = "x".repeat(SocketServer.MAX_REQUEST_BYTES - 1) + "\r\r"
+        val input = ByteArrayInputStream((request + "\n").toByteArray())
+        try {
+            SocketServer.readBoundedLine(input, SocketServer.MAX_REQUEST_BYTES)
+            fail("Expected RequestTooLargeException")
+        } catch (_: RequestTooLargeException) {
+            // expected: CR bytes count even though they are removed from parsed content.
+        }
+    }
+
+    @Test
+    fun `bounded line reader returns null for empty stream`() {
+        assertNull(SocketServer.readBoundedLine(ByteArrayInputStream(byteArrayOf()), 8))
+    }
+
+    @Test
+    fun `rate limiter allows ten requests and rejects eleventh in same window`() {
+        val limiter = SlidingWindowRateLimiter(maxRequests = 10, windowMs = 1_000)
+        repeat(10) { assertTrue(limiter.allow(clientKey = 10001, nowMs = it.toLong())) }
+        assertFalse(limiter.allow(clientKey = 10001, nowMs = 10))
+    }
+
+    @Test
+    fun `rate limiter expires a request at the exact rolling window boundary`() {
+        val limiter = SlidingWindowRateLimiter(maxRequests = 1, windowMs = 1_000)
+        assertTrue(limiter.allow(clientKey = 10001, nowMs = 50))
+        assertFalse(limiter.allow(clientKey = 10001, nowMs = 1_049))
+        assertTrue(limiter.allow(clientKey = 10001, nowMs = 1_050))
+    }
+
+    @Test
+    fun `rate limiter isolates client keys and resets after window`() {
+        val limiter = SlidingWindowRateLimiter(maxRequests = 1, windowMs = 1_000)
+        assertTrue(limiter.allow(clientKey = 10001, nowMs = 0))
+        assertFalse(limiter.allow(clientKey = 10001, nowMs = 10))
+        assertTrue(limiter.allow(clientKey = 10002, nowMs = 10))
+        assertTrue(limiter.allow(clientKey = 10001, nowMs = 1_000))
+    }
+
+    @Test
+    fun `special commands are parsed correctly`() {
+        val commands = listOf("status", "history", "memory", "providers")
+        commands.forEachIndexed { index, command ->
+            val result = SocketServer.parseRequest(
+                """{"cmd":"$command","requestId":"request-$index","token":"secret"}"""
+            )
+            assertNotNull(result)
+            assertEquals("request-$index", result?.first)
+            assertEquals(command, result?.second)
+            assertEquals("secret", result?.third)
         }
     }
 
     @Test
     fun `malformed JSON handled gracefully`() {
-        val server = createTestServer()
-        
-        val malformedInputs = listOf(
-            "",
-            "{",
-            "{\"cmd\":",
-            "null",
-            "[][]"
-        )
-        
-        for (input in malformedInputs) {
-            val result = server.parseRequest(input)
-            assertNull("Should return null for: $input", result)
+        listOf("", "{", """{"cmd":""", "null", "[][]").forEach { input ->
+            assertNull("Should return null for: $input", SocketServer.parseRequest(input))
         }
     }
-
-    private fun createTestServer(): SocketServer {
-        return SocketServer(
-            testContext(),
-            TestAgentCore(),
-            TestGraphifyRepo()
-        )
-    }
-
-    private fun testContext(): android.content.Context {
-        return androidx.compose.ui.platform.LocalContext.current.applicationContext
-    }
-}
-
-class TestAgentCore : com.openjarvis.agent.AgentCore(android.content.ContextWrapper(android.content.ContextWrapper::class.java.class.asContextStub())) {
-    override fun getCurrentProviderName(): String = "test-provider"
-}
-
-class TestGraphifyRepo : com.openjarvis.graphify.GraphifyRepository(android.content.ContextWrapper(android.content.ContextWrapper::class.java.asContextStub())) {
-    override suspend fun getRecentTasks(limit: Int): List<com.openjarvis.graphify.nodes.TaskNode> = emptyList()
-    override suspend fun getProviderStats(): List<ProviderStats> = emptyList()
-    override fun buildMemoryContext(command: String): String = "test context"
 }

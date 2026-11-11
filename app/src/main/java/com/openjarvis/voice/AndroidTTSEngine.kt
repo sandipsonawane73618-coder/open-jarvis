@@ -2,6 +2,8 @@ package com.openjarvis.voice
 
 import android.content.Context
 import android.speech.tts.TextToSpeech
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
 import java.util.UUID
@@ -12,6 +14,13 @@ class AndroidTTSEngine(private val context: Context) {
     private var isReady = false
     private var speechRate = 1.05f
     private var pitch = 0.95f
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val completionCallbacks = UtteranceCompletionRegistry()
+
+    private fun finishSpeech(utteranceId: String?) {
+        val callback = utteranceId?.let(completionCallbacks::take) ?: return
+        mainHandler.post(callback)
+    }
 
     init {
         tts = TextToSpeech(context) { status ->
@@ -23,26 +32,30 @@ class AndroidTTSEngine(private val context: Context) {
                 
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {}
-                    override fun onDone(utteranceId: String?) {}
-                    override fun onError(utteranceId: String?) {}
+                    override fun onDone(utteranceId: String?) { finishSpeech(utteranceId) }
+                    override fun onError(utteranceId: String?) { finishSpeech(utteranceId) }
+                    override fun onStop(utteranceId: String?, interrupted: Boolean) { finishSpeech(utteranceId) }
                 })
             }
         }
     }
 
-    fun speak(text: String) {
-        if (!isReady) return
+    fun speak(text: String, onDone: (() -> Unit)? = null) {
+        if (!isReady) { onDone?.let { mainHandler.post(it) }; return }
         
         val clean = text
             .replace(Regex("\\[\\{.*?\\}\\]"), "")
             .replace(Regex("[\\[\\]{}\":]"), " ")
             .trim()
         
-        if (clean.isBlank()) return
+        if (clean.isBlank()) { onDone?.let { mainHandler.post(it) }; return }
         configureVoiceForText(clean)
         
         val utteranceId = "jarvis_${UUID.randomUUID()}"
-        tts?.speak(clean, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+        onDone?.let { completionCallbacks.register(utteranceId, it) }
+        val status = tts?.speak(clean, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+            ?: TextToSpeech.ERROR
+        if (status != TextToSpeech.SUCCESS) finishSpeech(utteranceId)
     }
 
     fun speakQueued(text: String) {
@@ -61,13 +74,7 @@ class AndroidTTSEngine(private val context: Context) {
     }
 
     private fun configureVoiceForText(text: String) {
-        val hasDevanagari = text.any { it in '\u0900'..'\u097F' }
-        val marathiMarkers = listOf("आहे", "आणि", "मला", "काय", "करा", "झाले", "झालं", "नाही", "दाखवा", "उघडा", "करायचे", "माझे", "तुम्ही", "सांगा", "नको")
-        val language = when {
-            !hasDevanagari -> "en"
-            marathiMarkers.any { text.contains(it) } -> "mr"
-            else -> "hi"
-        }
+        val language = SpeechLanguage.languageForText(text)
         val locale = Locale.forLanguageTag("$language-IN")
         val engine = tts ?: return
         val bestVoice = engine.voices
@@ -81,6 +88,7 @@ class AndroidTTSEngine(private val context: Context) {
     }
     fun stop() {
         tts?.stop()
+        completionCallbacks.drain().forEach { callback -> mainHandler.post(callback) }
     }
 
     fun setSpeechRate(rate: Float) {
@@ -100,6 +108,7 @@ class AndroidTTSEngine(private val context: Context) {
 
     fun release() {
         tts?.stop()
+        completionCallbacks.clear()
         tts?.shutdown()
         tts = null
     }
