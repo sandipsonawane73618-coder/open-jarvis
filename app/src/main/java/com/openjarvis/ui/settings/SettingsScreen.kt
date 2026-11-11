@@ -35,6 +35,9 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.openjarvis.agent.PersonalMemoryStore
+import com.openjarvis.agent.JarvisPersonality
+import com.openjarvis.agent.JarvisPersonalityStore
 import com.openjarvis.llm.UniversalAdapter
 import com.openjarvis.llm.providers.OllamaProvider
 import com.openjarvis.llm.providers.OllamaResponseParser
@@ -75,7 +78,8 @@ fun SettingsScreen(
         )
     }
     val savedProvider = "Ollama (Local)"
-    val savedModel = OllamaProvider.DEFAULT_MODEL
+    val savedModel = providerPrefs.getString("provider_model", OllamaProvider.DEFAULT_MODEL)
+        .orEmpty().let { OllamaProvider.supportedChatModel(it) }
     val migratedModel = OllamaProvider.DEFAULT_MODEL
     var selectedProvider by remember { mutableStateOf(savedProvider) }
     var baseUrl by remember { mutableStateOf(OllamaProvider.DEFAULT_BASE_URL) }
@@ -95,6 +99,13 @@ fun SettingsScreen(
     var savedVisible by remember { mutableStateOf(false) }
     var voiceEnabled by remember { mutableStateOf(voicePrefs.getBoolean("voice_enabled", false)) }
     var speakResults by remember { mutableStateOf(voicePrefs.getBoolean("speak_results", true)) }
+    val personalMemoryStore = remember { PersonalMemoryStore(context) }
+    val personalityStore = remember { JarvisPersonalityStore(context) }
+    var memoryFacts by remember { mutableStateOf(personalMemoryStore.getAll()) }
+    var preferredName by remember { mutableStateOf(personalityStore.load().preferredName) }
+    var personalityTone by remember { mutableStateOf(personalityStore.load().tone) }
+    var answerLength by remember { mutableStateOf(personalityStore.load().answerLength) }
+    var personalityLanguage by remember { mutableStateOf(personalityStore.load().language) }
     var speechRate by remember { mutableStateOf(1.05f) }
     var sttMode by remember { mutableStateOf("Push to Talk") }
     val ollamaDebugLogs = remember(selectedProvider) {
@@ -284,6 +295,72 @@ fun SettingsScreen(
                     }
                     Spacer(modifier = Modifier.height(24.dp))
                 }
+
+                SectionLabel("MEMORY & PERSONALITY")
+                Spacer(modifier = Modifier.height(10.dp))
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    color = VoidColor.Void900,
+                    border = BorderStroke(1.dp, VoidColor.BorderSubtle)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Saved personal facts", color = VoidColor.TextPrimary, fontSize = 14.sp, fontWeight = FontWeight(600))
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("Stored encrypted on this phone. Jarvis saves inferred facts only after you say yes.", color = VoidColor.TextDisabled, fontSize = 11.sp)
+                        Spacer(modifier = Modifier.height(10.dp))
+                        if (memoryFacts.isEmpty()) {
+                            Text("No saved facts yet.", color = VoidColor.TextDisabled, fontSize = 12.sp)
+                        } else {
+                            memoryFacts.forEach { fact ->
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(fact, color = VoidColor.TextSecondary, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                                    TextButton(onClick = {
+                                        personalMemoryStore.delete(fact)
+                                        memoryFacts = personalMemoryStore.getAll()
+                                    }) { Text("Delete") }
+                                }
+                            }
+                        }
+                        if (memoryFacts.isNotEmpty()) {
+                            TextButton(onClick = {
+                                personalMemoryStore.clearAll()
+                                memoryFacts = emptyList()
+                            }) { Text("Delete all memories") }
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("How Jarvis should address you", color = VoidColor.TextPrimary, fontSize = 14.sp)
+                        OutlinedTextField(
+                            value = preferredName,
+                            onValueChange = { preferredName = it.take(24) },
+                            label = { Text("Preferred name") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        TextButton(onClick = {
+                            val values = listOf("Friendly", "Professional", "Mazedaar")
+                            personalityTone = values[(values.indexOf(personalityTone).coerceAtLeast(0) + 1) % values.size]
+                        }) { Text("Tone: $personalityTone  ·  tap to change") }
+                        TextButton(onClick = {
+                            val values = listOf("Chhota", "Medium")
+                            answerLength = values[(values.indexOf(answerLength).coerceAtLeast(0) + 1) % values.size]
+                        }) { Text("Answer length: $answerLength  ·  tap to change") }
+                        TextButton(onClick = {
+                            val values = listOf("Auto", "Hindi", "Marathi", "English")
+                            personalityLanguage = values[(values.indexOf(personalityLanguage).coerceAtLeast(0) + 1) % values.size]
+                        }) { Text("Language: $personalityLanguage  ·  tap to change") }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                personalityStore.save(JarvisPersonality(preferredName, personalityTone, answerLength, personalityLanguage))
+                                Toast.makeText(context, "Personality saved locally", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Save personality") }
+                    }
+                }
+                Spacer(modifier = Modifier.height(24.dp))
 
                 SectionLabel("VOICE")
                 Spacer(modifier = Modifier.height(10.dp))

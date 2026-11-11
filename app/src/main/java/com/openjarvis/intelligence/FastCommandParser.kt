@@ -68,12 +68,15 @@ internal object FastCommandParser {
         youtubeSearchWithOpen.matchEntire(normalized)?.let { return Command.YoutubeSearch(it.groupValues[1].trim()) }
         youtubeSearch.matchEntire(normalized)?.let { return Command.YoutubeSearch(it.groupValues[1].trim()) }
 
-        if (Regex("^(?:show|read) (?:my )?memory$|^what do you remember$|^मुझे क्या याद है$|^मला काय लक्षात आहे$", RegexOption.IGNORE_CASE).matches(normalized)) {
+        if (Regex("^(?:show|read|list) (?:my )?memory(?: list)?$|^what do you remember$|^mujhe kya yaad hai(?: list bolo)?$|^मुझे क्या याद है(?: सूची बताओ)?$|^मला काय लक्षात आहे(?: ते सांगा)?$|^माझी आठवण सांगा$", RegexOption.IGNORE_CASE).matches(normalized)) {
             return Command.ShowMemory
         }
-        val remember = Regex("^(?:remember(?: that)?|yaad rakhna(?: ki)?|yaad rakho(?: ki)?|याद रखना|लक्षात ठेव)\\s+(.+)$", RegexOption.IGNORE_CASE).matchEntire(normalized)
+        if (Regex("^(?:forget all|forget everything|sab bhool jao|sab kuch bhool jao|bhool jao sab kuch|sab visra|sagla visra|सभी भूल जाओ|सब भूल जाओ|सब कुछ भूल जाओ|सगळं विसर|सर्व विसर)$", RegexOption.IGNORE_CASE).matches(normalized)) {
+            return Command.Forget("all")
+        }
+        val remember = Regex("^(?:remember(?: that)?|yaad rakhna(?: ki)?|yaad rakho(?: ki)?|याद रखना|याद रखो|लक्षात ठेव|लक्षात ठेवा)\\s+(.+)$", RegexOption.IGNORE_CASE).matchEntire(normalized)
         if (remember != null) return Command.Remember(remember.groupValues[1].trim())
-        val forget = Regex("^(?:forget|bhool jao|bhul jao|भूल जाओ|विसर)\\s+(.+)$", RegexOption.IGNORE_CASE).matchEntire(normalized)
+        val forget = Regex("^(?:forget|bhool jao|bhul jao|भूल जाओ|विसर|विसरा)\\s+(.+)$", RegexOption.IGNORE_CASE).matchEntire(normalized)
         if (forget != null) return Command.Forget(forget.groupValues[1].trim())
 
         if (Regex("^(?:show|open|display)\\s+(?:recent apps|recents)$|^(?:recent apps|recents)\\s+(?:dikhao|dikha do|kholo)$|^अलीकडील अॅप्स\\s+(?:दाखवा|उघडा)$", RegexOption.IGNORE_CASE).matches(normalized)) {

@@ -6,7 +6,7 @@ import androidx.security.crypto.MasterKey
 import org.json.JSONArray
 
 internal object PersonalMemoryCodec {
-    const val MAX_ITEMS = 20
+    const val MAX_ITEMS = 50
     const val MAX_ITEM_LENGTH = 180
 
     fun normalize(value: String): String? {
@@ -17,20 +17,44 @@ internal object PersonalMemoryCodec {
         return clean.takeIf { it.length in 3..MAX_ITEM_LENGTH }
     }
 
+    private fun factKey(value: String): String? {
+        val text = value.lowercase()
+        return when {
+            text.startsWith("my name is ") || text.startsWith("name is ") || text.startsWith("call me ") || text.startsWith("mera naam ") || text.startsWith("मेरा नाम ") || text.startsWith("माझे नाव ") -> "name"
+            text.startsWith("my preferred language ") || text.startsWith("reply in ") || text.startsWith("मेरी भाषा ") || text.startsWith("माझी भाषा ") || (text.startsWith("i prefer ") && Regex("\\b(hindi|marathi|english|gujarati|tamil|telugu|kannada|bengali|punjabi)\\b").containsMatchIn(text)) -> "language"
+            text.startsWith("i like ") || text.startsWith("i love ") || text.startsWith("i prefer ") || text.startsWith("my preference ") || text.contains(" pasand ") || text.contains(" पसंद ") || text.contains(" आवडते") -> "preference"
+            text.startsWith("i work ") || text.startsWith("my work ") || text.startsWith("my job ") || text.startsWith("i am an ") || text.startsWith("i am a ") || text.startsWith("मेरा काम ") || text.startsWith("माझे काम ") -> "work"
+            else -> null
+        }
+    }
+
     fun remember(existing: List<String>, value: String): List<String> {
         val fact = normalize(value) ?: return existing
-        val withoutDuplicate = existing.filterNot { it.equals(fact, ignoreCase = true) }
+        val key = factKey(fact)
+        val withoutDuplicate = existing.filterNot {
+            it.equals(fact, ignoreCase = true) || (key != null && factKey(it) == key)
+        }
         return (listOf(fact) + withoutDuplicate).take(MAX_ITEMS)
     }
 
+    fun update(existing: List<String>, oldFact: String, newFact: String): List<String> {
+        val old = normalize(oldFact) ?: return existing
+        val replacement = normalize(newFact) ?: return existing
+        return remember(existing.filterNot { it.equals(old, ignoreCase = true) }, replacement)
+    }
+
+    fun delete(existing: List<String>, fact: String): List<String> {
+        val normalized = normalize(fact) ?: return existing
+        return existing.filterNot { it.equals(normalized, ignoreCase = true) || it.contains(normalized, ignoreCase = true) }
+    }
+
     fun forget(existing: List<String>, query: String): List<String> {
+        val all = query.trim().lowercase()
+        if (all in setOf("all", "everything", "sab", "sab kuch", "सभी", "सब", "सब कुछ", "सगळं", "सर्व")) {
+            return emptyList()
+        }
         val normalized = normalize(query) ?: return existing
-        if (normalized.equals("all", true) ||
-            normalized.equals("everything", true) ||
-            normalized.equals("sab kuch", true) ||
-            normalized.equals("सभी", true)
-        ) return emptyList()
-        return existing.filterNot { it.contains(normalized, ignoreCase = true) }
+        return delete(existing, normalized)
     }
 
     private val stopWords = setOf(
@@ -82,10 +106,21 @@ internal object PersonalMemoryCodec {
             .map { it.first }
     }
 
+    private fun neutralizePromptPayload(value: String): String =
+        value
+            .replace(Regex("(?i)system\\s*:"), "system∶")
+            .replace(Regex("(?i)ignore"), "i\u200Bgnore")
+            .replace(Regex("(?i)instruction"), "instr\u200Buction")
+            .replace(Regex("(?is)<\\s*/?\\s*think\\s*>"), "‹think›")
+            .replace("<", "‹")
+            .replace(">", "›")
+
     fun promptContext(items: List<String>, query: String): String {
         val matches = retrieve(items, query)
         if (matches.isEmpty()) return ""
-        return matches.joinToString(separator = "\n") { "- $it" }.take(360)
+        val facts = JSONArray()
+        matches.forEach { facts.put(neutralizePromptPayload(it)) }
+        return facts.toString()
     }
 }
 
@@ -131,6 +166,22 @@ class PersonalMemoryStore(context: Context) {
         if (after == before) return false
         save(after)
         return true
+    }
+
+    fun update(oldFact: String, newFact: String): Boolean {
+        val before = read()
+        val after = PersonalMemoryCodec.update(before, oldFact, newFact)
+        if (after == before) return false
+        save(after)
+        return true
+    }
+
+    fun delete(fact: String): Boolean = forget(fact)
+
+    fun clearAll(): Boolean {
+        val hadItems = read().isNotEmpty()
+        save(emptyList())
+        return hadItems
     }
 
     fun getAll(): List<String> = read()

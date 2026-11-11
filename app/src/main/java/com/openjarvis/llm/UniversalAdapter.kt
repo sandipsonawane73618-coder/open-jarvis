@@ -23,15 +23,13 @@ class UniversalAdapter(private val context: Context) {
     fun getActiveProvider(): LLMProvider {
         val baseUrl = OllamaProvider.DEFAULT_BASE_URL
         val model = OllamaProvider.DEFAULT_MODEL
-        // Migrate legacy provider preferences to the required local-only setup.
-        prefs.edit().apply {
-            putString("provider_name", "Ollama (Local)")
-            putString("provider_base_url", baseUrl)
-            putString("provider_api_key", "")
-            putString("provider_model", model)
-            apply()
-        }
         return OllamaProvider(baseUrl, model, context.applicationContext)
+    }
+
+    private fun getChatProvider(): LLMProvider {
+        val selected = prefs.getString("provider_model", OllamaProvider.DEFAULT_MODEL).orEmpty()
+        val model = OllamaProvider.supportedChatModel(selected)
+        return OllamaProvider(OllamaProvider.DEFAULT_BASE_URL, model, context.applicationContext)
     }
     
     suspend fun complete(
@@ -40,20 +38,21 @@ class UniversalAdapter(private val context: Context) {
     ): Result<String> = getActiveProvider().complete(systemPrompt, userMessage)
     
     suspend fun completeConversation(systemPrompt: String, userMessage: String): Result<String> =
-        getActiveProvider().completeConversation(systemPrompt, userMessage)
+        getChatProvider().completeConversation(systemPrompt, userMessage)
 
     suspend fun completeConversationStreaming(
         systemPrompt: String,
         userMessage: String,
         onChunk: (String) -> Unit
-    ): Result<String> = getActiveProvider().completeConversationStreaming(systemPrompt, userMessage, onChunk)
+    ): Result<String> = getChatProvider().completeConversationStreaming(systemPrompt, userMessage, onChunk)
 
     suspend fun completeWithDeadline(
         systemPrompt: String,
         userMessage: String,
         timeoutMs: Long,
         conversation: Boolean = false
-    ): Result<String> = getActiveProvider().completeWithDeadline(systemPrompt, userMessage, timeoutMs, conversation)
+    ): Result<String> = (if (conversation) getChatProvider() else getActiveProvider())
+        .completeWithDeadline(systemPrompt, userMessage, timeoutMs, conversation)
 
     suspend fun completeSkillWithDeadline(
         systemPrompt: String,
@@ -82,7 +81,7 @@ class UniversalAdapter(private val context: Context) {
             putString("provider_name", "Ollama (Local)")
             putString("provider_base_url", OllamaProvider.DEFAULT_BASE_URL)
             putString("provider_api_key", "")
-            putString("provider_model", OllamaProvider.DEFAULT_MODEL)
+            putString("provider_model", model.trim().takeIf { it in OllamaProvider.AVAILABLE_MODELS } ?: OllamaProvider.DEFAULT_MODEL)
             apply()
         }
     }

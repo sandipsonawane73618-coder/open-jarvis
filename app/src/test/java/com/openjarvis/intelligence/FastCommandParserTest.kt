@@ -59,6 +59,18 @@ class FastCommandParserTest {
         assertEquals(FastCommandParser.Command.Remember("मला मराठी आवडते"), FastCommandParser.parse("लक्षात ठेव मला मराठी आवडते"))
     }
 
+    @Test fun recognizesMultilingualMemoryCommands() {
+        assertEquals(FastCommandParser.Command.Remember("mera naam Sagar hai"), FastCommandParser.parse("yaad rakho mera naam Sagar hai"))
+        assertEquals(FastCommandParser.Command.Remember("मला मराठी आवडते"), FastCommandParser.parse("लक्षात ठेवा मला मराठी आवडते"))
+        assertEquals(FastCommandParser.Command.Forget("Marathi"), FastCommandParser.parse("bhool jao Marathi"))
+        assertEquals(FastCommandParser.Command.Forget("all"), FastCommandParser.parse("sab bhool jao"))
+        assertEquals(FastCommandParser.Command.Forget("all"), FastCommandParser.parse("sab kuch bhool jao"))
+        assertEquals(FastCommandParser.Command.Forget("all"), FastCommandParser.parse("सगळं विसर"))
+        assertTrue(FastCommandParser.parse("mujhe kya yaad hai list bolo") is FastCommandParser.Command.ShowMemory)
+        assertTrue(FastCommandParser.parse("मुझे क्या याद है") is FastCommandParser.Command.ShowMemory)
+        assertTrue(FastCommandParser.parse("मला काय लक्षात आहे") is FastCommandParser.Command.ShowMemory)
+    }
+
     @Test fun recognizesYoutubeAndContactFastSkills() {
         assertEquals(FastCommandParser.Command.YoutubeSearch("lofi"), FastCommandParser.parse("YouTube par lofi search karo"))
         assertEquals(FastCommandParser.Command.YoutubeSearch("lofi"), FastCommandParser.parse("YouTube kholo aur lofi search karo"))

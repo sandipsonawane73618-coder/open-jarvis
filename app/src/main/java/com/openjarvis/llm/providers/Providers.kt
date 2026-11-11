@@ -478,7 +478,11 @@ class OllamaProvider(
     companion object {
         const val DEFAULT_MODEL = "qwen3:1.7b"
         const val DEFAULT_BASE_URL = "http://127.0.0.1:11434"
-        val AVAILABLE_MODELS = listOf(DEFAULT_MODEL)
+        const val CHAT_MODEL_4B = "qwen3:4b"
+        val AVAILABLE_MODELS = listOf(DEFAULT_MODEL, CHAT_MODEL_4B)
+
+        fun supportedChatModel(requested: String?): String =
+            requested?.takeIf { it in AVAILABLE_MODELS } ?: DEFAULT_MODEL
     }
 }
 
