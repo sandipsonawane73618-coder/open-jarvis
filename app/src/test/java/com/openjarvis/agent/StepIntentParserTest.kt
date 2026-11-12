@@ -41,11 +41,31 @@ class StepIntentParserTest {
     }
 
     @Test
+    fun recognizesRegionalMarathiWhatsAppMessageCommands() {
+        assertEquals(
+            StepIntent.Message("whatsapp", "राहुल", "मी येतोय"),
+            p("राहुल ला व्हॉट्सॲप मेसेज धाड: मी येतोय")
+        )
+        assertEquals(
+            StepIntent.Message("whatsapp", "amit", "mi yetoy"),
+            p("Amit la WhatsApp message dhad: mi yetoy")
+        )
+    }
+
+    @Test
     fun whatsappMessageUsesColonAsBodyDelimiter() {
         assertEquals(
             StepIntent.Message("whatsapp", "rahul", "main 10 minute mein pahunch raha hoon"),
             p("WhatsApp Rahul ko message bhejo: main 10 minute mein pahunch raha hoon")
         )
+    }
+
+    @Test
+    fun recognizesMaharashtraDialectAppLaunchPhrases() {
+        assertEquals(StepIntent.AppLaunch("whatsapp"), p("व्हॉट्सॲप उघडून दे"))
+        assertEquals(StepIntent.AppLaunch("whatsapp"), p("माका व्हॉट्सॲप उघडून दे"))
+        assertEquals(StepIntent.AppLaunch("whatsapp"), p("मले व्हॉट्सऍप उघड"))
+        assertEquals(StepIntent.AppLaunch("whatsapp"), p("WhatsApp ugadun de"))
     }
 
     @Test

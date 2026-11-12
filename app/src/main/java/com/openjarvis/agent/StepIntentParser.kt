@@ -29,30 +29,36 @@ object StepIntentParser {
 
     private val CONNECTORS = words(
         "ko", "se", "ka", "ki", "ke", "to", "pe", "par", "on", "in", "at", "for",
-        "liye", "tak", "को", "से", "का", "की", "के", "पर", "पे", "तक", "ला", "वर"
+        "liye", "tak", "la", "को", "से", "का", "की", "के", "पर", "पे", "तक", "ला", "वर"
     )
     private val FILLERS = words(
         "karo", "kar", "kro", "kare", "karen", "kardo", "karna", "kijiye",
         "do", "dena", "de", "na", "please", "plz", "pls", "zara", "jara",
-        "mujhe", "mera", "meri", "hume", "lagao", "laga", "lagana", "chalu",
+        "mujhe", "mera", "meri", "hume", "mala", "tula", "maka", "tuka", "male", "tule", "lagao", "laga", "lagana", "chalu",
         "hai", "hain",
-        "करो", "कर", "करा", "करना", "कीजिए", "दो", "दे", "ना", "प्लीज", "कृपया",
-        "ज़रा", "जरा", "मुझे", "लगाओ", "लगा", "है", "हैं"
+        "करो", "कर", "करा", "करना", "कीजिए", "दो", "दे", "द्या", "ना", "प्लीज", "कृपया",
+        "ज़रा", "जरा", "मुझे", "मला", "मले", "माले", "माका", "तुका", "तुले", "लगाओ", "लगा", "है", "हैं"
     )
     private val OPEN_VERBS = words(
-        "open", "kholo", "khol", "launch", "start", "shuru", "खोलो", "खोल", "शुरू"
+        "open", "kholo", "khol", "launch", "start", "shuru", "ughad", "ughadun", "ugadun",
+        "खोलो", "खोल", "उघड", "उघडा", "उघडून", "शुरू"
+    )
+    private val OPEN_VERB_SEQUENCES = listOf(
+        listOf("ughadun", "de"), listOf("ugadun", "de"), listOf("उघडून", "दे"),
+        listOf("ughad", "de"), listOf("उघड", "दे"), listOf("उघड", "ना")
     )
     // Suffixes are removed only from app-launch candidates, never from message text.
     private val APP_TRAILING_NOISE: List<List<String>> = listOf(
         listOf("phir", "se"), listOf("ek", "baar"),
         listOf("again"), listOf("please"), listOf("plz"), listOf("pls"),
         listOf("dobara"), listOf("dear"), listOf("app"),
-        listOf("karo"), listOf("kar"), listOf("kro"),
-        listOf("kholo"), listOf("खोलो"), listOf("करो")
+        listOf("karo"), listOf("kar"), listOf("kro"), listOf("de"), listOf("दे"), listOf("द्या"),
+        listOf("khol"), listOf("kholo"), listOf("ughad"), listOf("ughadun"),
+        listOf("उघड"), listOf("उघडा"), listOf("उघडून"), listOf("खोलो"), listOf("करो")
     )
     private val APP_ALIAS_CANONICAL = mapOf(
         "instagram" to "instagram", "insta" to "instagram", "insta app" to "instagram", "ig" to "instagram",
-        "whatsapp" to "whatsapp", "wa" to "whatsapp", "व्हाट्सएप" to "whatsapp", "व्हॉट्सऍप" to "whatsapp",
+        "whatsapp" to "whatsapp", "wa" to "whatsapp", "व्हाट्सएप" to "whatsapp", "व्हॉट्सऍप" to "whatsapp", "व्हॉट्सॲप" to "whatsapp",
         "chrome" to "chrome",
         "youtube" to "youtube", "yt" to "youtube",
         "maps" to "maps", "google maps" to "google maps",
@@ -66,17 +72,18 @@ object StepIntentParser {
     private val APP_CONNECTORS = words("and", "aur", "और", "आणि", "then", "phir", "फिर")
 
     private val MESSAGE_WORDS = words(
-        "message", "msg", "sms", "whatsapp", "मैसेज", "मेसेज", "संदेश", "एसएमएस",
+        "message", "msg", "sms", "whatsapp", "मैसेज", "मेसेज", "संदेश", "एसएमएस", "निरोप", "व्हॉट्सॲप",
         "व्हाट्सएप", "व्हॉट्सऍप"
     )
-    private val WHATSAPP_WORDS = words("whatsapp", "व्हाट्सएप", "व्हॉट्सऍप")
+    private val WHATSAPP_WORDS = words("whatsapp", "व्हाट्सएप", "व्हॉट्सऍप", "व्हॉट्सॲप")
     private val SMS_WORDS = words("sms", "एसएमएस")
     private val SEND_WORDS = words(
-        "bhejo", "bhej", "send", "saying", "say", "likho", "likh", "bolo", "bol", "keh", "kehdo",
-        "भेजो", "भेज", "लिखो", "लिख", "बोलो", "बोल", "कहो", "पाठवा"
+        "bhejo", "bhej", "send", "saying", "say", "likho", "likh", "bolo", "bol", "keh", "kehdo", "pathav", "pathva", "pathavun", "dhad", "dhada", "dhadun",
+        "भेजो", "भेज", "लिखो", "लिख", "बोलो", "बोल", "कहो", "पाठवा",
+        "पाठव", "पाठवा", "पाठवून", "धाड", "धाडा", "धाडून"
     )
     private val TEXT_DELIMS = words("ki", "कि", "that", "saying", "say")
-    private val KO_WORDS = words("ko", "को", "ला")
+    private val KO_WORDS = words("ko", "la", "को", "ला")
     private val MESSAGE_NOISE: Set<String> =
         MESSAGE_WORDS + SEND_WORDS + CONNECTORS + FILLERS + OPEN_VERBS
 
@@ -277,14 +284,23 @@ object StepIntentParser {
     }
 
     private fun parseAppLaunch(tokens: List<String>): StepIntent.AppLaunch? {
-        val leadingVerb = tokens.firstOrNull()?.let { it in OPEN_VERBS } == true
-        val trailingVerb = tokens.lastOrNull()?.let { it in OPEN_VERBS } == true
+        val leadingSequence = OPEN_VERB_SEQUENCES.firstOrNull { sequence ->
+            sequence.size <= tokens.size && sequence.indices.all { i -> tokens[i] == sequence[i] }
+        }
+        val trailingSequence = OPEN_VERB_SEQUENCES.firstOrNull { sequence ->
+            sequence.size <= tokens.size && sequence.indices.all { i -> tokens[tokens.size - sequence.size + i] == sequence[i] }
+        }
+        val leadingVerbSize = leadingSequence?.size ?: if (tokens.firstOrNull()?.let { it in OPEN_VERBS } == true) 1 else 0
+        val trailingVerbSize = trailingSequence?.size ?: if (tokens.lastOrNull()?.let { it in OPEN_VERBS } == true) 1 else 0
+        val leadingVerb = leadingVerbSize > 0
+        val trailingVerb = trailingVerbSize > 0
         val hasVerb = leadingVerb || trailingVerb
         val candidate = when {
-            leadingVerb -> tokens.drop(1).toMutableList()
-            trailingVerb -> tokens.dropLast(1).toMutableList()
+            leadingVerb -> tokens.drop(leadingVerbSize).toMutableList()
+            trailingVerb -> tokens.dropLast(trailingVerbSize).toMutableList()
             else -> tokens.toMutableList()
         }
+        if (hasVerb) while (candidate.firstOrNull()?.let { it in FILLERS } == true) candidate.removeAt(0)
         while (candidate.isNotEmpty()) {
             val suffix = APP_TRAILING_NOISE.firstOrNull { seq ->
                 seq.size <= candidate.size && seq.indices.all { k ->
