@@ -192,10 +192,17 @@ object StepIntentParser {
             normed.any { it in SMS_WORDS } -> "sms"
             else -> null
         }
-        val delim = normed.indexOfFirst { it in TEXT_DELIMS }
+        val colon = step.indexOf(':')
         val contactTokens: List<String>
         val text: String?
-        if (delim >= 0) {
+        if (colon >= 0) {
+            val beforeColon = step.substring(0, colon).trim().split(SPACES)
+                .map { norm(it).replace(PUNCT_STRIP, "") }.filter { it.isNotEmpty() }
+            contactTokens = stripEdges(beforeColon, MESSAGE_NOISE)
+            text = step.substring(colon + 1).trim().ifEmpty { null }
+        } else {
+            val delim = normed.indexOfFirst { it in TEXT_DELIMS }
+            if (delim >= 0) {
             contactTokens = stripEdges(normed.subList(0, delim), MESSAGE_NOISE)
             text = raw.subList(delim + 1, raw.size).joinToString(" ").trim().ifEmpty { null }
         } else {
@@ -210,6 +217,7 @@ object StepIntentParser {
             } else {
                 contactTokens = stripEdges(normed, MESSAGE_NOISE)
                 text = null
+            }
             }
         }
         val contact = contactTokens.joinToString(" ").trim().ifEmpty { null }
@@ -269,8 +277,14 @@ object StepIntentParser {
     }
 
     private fun parseAppLaunch(tokens: List<String>): StepIntent.AppLaunch? {
-        val hasVerb = tokens.firstOrNull()?.let { it in OPEN_VERBS } == true
-        val candidate = if (hasVerb) tokens.drop(1).toMutableList() else tokens.toMutableList()
+        val leadingVerb = tokens.firstOrNull()?.let { it in OPEN_VERBS } == true
+        val trailingVerb = tokens.lastOrNull()?.let { it in OPEN_VERBS } == true
+        val hasVerb = leadingVerb || trailingVerb
+        val candidate = when {
+            leadingVerb -> tokens.drop(1).toMutableList()
+            trailingVerb -> tokens.dropLast(1).toMutableList()
+            else -> tokens.toMutableList()
+        }
         while (candidate.isNotEmpty()) {
             val suffix = APP_TRAILING_NOISE.firstOrNull { seq ->
                 seq.size <= candidate.size && seq.indices.all { k ->
@@ -299,4 +313,16 @@ object StepIntentParser {
         val place = stripEdges(tokens, NAV_NOISE).joinToString(" ").trim()
         return if (place.isEmpty()) null else StepIntent.Navigate(place)
     }
+}
+
+/** Bounds model fallback for app-control utterances after deterministic parsing. */
+internal object AppCommandLlmPolicy {
+    private val APP_TERMS = Regex(
+        "(?i)(?:^|[^\\p{L}\\p{N}])(?:youtube|you\\s*tube|instagram|insta|whatsapp|telegram|facebook|chrome|maps|google\\s*maps|open|launch|start|kholo|khol|खोलो|खोल)(?:$|[^\\p{L}\\p{N}])"
+    )
+
+    fun isAppCommand(command: String): Boolean = APP_TERMS.containsMatchIn(command)
+
+    fun timeoutMs(command: String, remainingMs: Long): Long =
+        if (isAppCommand(command)) minOf(remainingMs, 10_000L) else remainingMs
 }

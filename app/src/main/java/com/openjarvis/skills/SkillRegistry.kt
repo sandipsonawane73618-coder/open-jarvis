@@ -13,6 +13,16 @@ object SkillRegistry {
     private fun norm(s: String) = Normalizer.normalize(s, Normalizer.Form.NFC)
         .lowercase(Locale.ROOT).trim().replace(Regex("\\s+"), " ")
 
+    private val EXPLICIT_NAVIGATION_WORDS = setOf(
+        "navigate", "navigation", "directions", "direction", "route", "map", "maps",
+        "raasta", "rasta", "रास्ता", "रस्ता", "नेविगेशन", "नेविगेट", "दिशा", "दिशाएं"
+    )
+
+    fun hasExplicitNavigationIntent(raw: String): Boolean {
+        val tokens = norm(raw).split(Regex("[^\\p{L}\\p{N}]+")).filter { it.isNotBlank() }
+        return tokens.any { it in EXPLICIT_NAVIGATION_WORDS }
+    }
+
     fun parse(raw: String): Request? {
         val s = norm(raw)
         if (s.isBlank()) return null
@@ -53,7 +63,7 @@ object SkillRegistry {
         if (wa != null) return Request(Kind.WHATSAPP_MESSAGE, mapOf("text" to wa.groupValues[1]))
         val sms = Regex("^(?:sms|text message) (.+)$").matchEntire(s)
         if (sms != null) return Request(Kind.SMS_MESSAGE, mapOf("text" to sms.groupValues[1]))
-        if (s.contains("map") || s.contains("navigate") || s.contains("रास्ता")) {
+        if (hasExplicitNavigationIntent(s)) {
             val destination = Regex("(?:to|तक|के लिए) (.+)$").find(s)?.groupValues?.get(1)
             if (!destination.isNullOrBlank()) return Request(Kind.MAPS, mapOf("destination" to destination))
         }

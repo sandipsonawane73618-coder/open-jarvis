@@ -10,6 +10,10 @@ class SearchCommandParserTest {
 
     @Test fun youtubeOpenThenSearch() { assertEquals("lofi", yt("YouTube kholo aur lofi search karo")) }
 
+    @Test fun requestedArijitLatestSongsSearchPhraseIsParsedDeterministically() {
+        assertEquals("arijit singh ke latest songs", yt("YouTube par Arijit Singh ke latest songs search karo"))
+    }
+
     @Test fun youtubeVariants() {
         assertEquals("lofi", yt("YouTube par lofi search karo"))
         assertEquals("lofi", yt("YouTube pe lofi chalao"))

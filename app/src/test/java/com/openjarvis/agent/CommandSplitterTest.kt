@@ -85,6 +85,14 @@ class CommandSplitterTest {
     }
 
     @Test
+    fun youtubeOpenAndSearchAreSeparateVerifiedPipelineSteps() {
+        assertEquals(
+            listOf("YouTube kholo", "YouTube par Arijit Singh ke latest songs search karo"),
+            s("YouTube kholo, YouTube par Arijit Singh ke latest songs search karo")
+        )
+    }
+
+    @Test
     fun singleAndEmpty() {
         assertEquals(listOf("torch on karo"), s("torch on karo"))
         assertEquals(emptyList<String>(), s("   "))

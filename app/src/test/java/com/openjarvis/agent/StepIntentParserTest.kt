@@ -41,6 +41,24 @@ class StepIntentParserTest {
     }
 
     @Test
+    fun whatsappMessageUsesColonAsBodyDelimiter() {
+        assertEquals(
+            StepIntent.Message("whatsapp", "rahul", "main 10 minute mein pahunch raha hoon"),
+            p("WhatsApp Rahul ko message bhejo: main 10 minute mein pahunch raha hoon")
+        )
+    }
+
+    @Test
+    fun appCommandLlmFallbackIsCappedAtTenSeconds() {
+        assertEquals(true, AppCommandLlmPolicy.isAppCommand("Instagram kholo aur Shah Rukh Khan search karo"))
+        assertEquals(true, AppCommandLlmPolicy.isAppCommand("WhatsApp kholo"))
+        assertEquals(false, AppCommandLlmPolicy.isAppCommand("aaj ki date kya hai"))
+        assertEquals(10_000L, AppCommandLlmPolicy.timeoutMs("YouTube par song search karo", 45_000L))
+        assertEquals(4_000L, AppCommandLlmPolicy.timeoutMs("WhatsApp kholo", 4_000L))
+        assertEquals(45_000L, AppCommandLlmPolicy.timeoutMs("aaj ki date kya hai", 45_000L))
+    }
+
+    @Test
     fun alarms() {
         assertEquals(StepIntent.Alarm(6, 0), p("subah 6 baje ka alarm lagao"))
         assertEquals(StepIntent.Alarm(17, 30), p("shaam 5:30 baje alarm lagao"))
@@ -73,6 +91,13 @@ class StepIntentParserTest {
         assertEquals(StepIntent.Volume(true), p("awaaz badhao"))
         assertEquals(StepIntent.Volume(true), p("volume up"))
         assertNull(p("volume"))
+    }
+
+    @Test
+    fun hindiTrailingVerbLaunchesInstagramInsteadOfNavigation() {
+        assertEquals(StepIntent.AppLaunch("instagram"), p("Instagram kholo"))
+        assertEquals(StepIntent.AppLaunch("whatsapp"), p("WhatsApp kholo"))
+        assertNull(p("Instagram kholo aur Shah Rukh Khan search karo"))
     }
 
     @Test

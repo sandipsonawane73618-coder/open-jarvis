@@ -150,6 +150,9 @@ fun SettingsScreen(
                     .verticalScroll(scrollState)
                     .padding(horizontal = 24.dp, vertical = 16.dp)
             ) {
+                HybridChatSettingsSection()
+                Spacer(modifier = Modifier.height(28.dp))
+
                 SectionLabel("AI PROVIDER")
                 
                 Spacer(modifier = Modifier.height(12.dp))
