@@ -34,15 +34,25 @@ This map includes only behavior with an existing named JVM test. The CI validato
 | Bounded observe-act-verify-replan loop | `AgentLoopRunner.run` | `app/src/test/java/com/openjarvis/agent/AgentLoopRunnerTest.kt::observesVerifiesAndReplansOneActionAtATime`; `app/src/test/java/com/openjarvis/agent/AgentLoopRunnerTest.kt::sendAndDeletePauseWithoutExecutingUntilConfirmed`; `app/src/test/java/com/openjarvis/agent/AgentLoopRunnerTest.kt::declinedConfirmationNeverExecutesPendingAction`; `app/src/test/java/com/openjarvis/agent/AgentLoopRunnerTest.kt::payIsNeverExecutedEvenAfterConfirmation`; `app/src/test/java/com/openjarvis/agent/AgentLoopRunnerTest.kt::unchangedScreenStopsAndDoesNotRetryClick`; `app/src/test/java/com/openjarvis/agent/AgentLoopRunnerTest.kt::eightActionLimitNeverReportsCompletion`; `app/src/test/java/com/openjarvis/agent/AgentLoopRunnerTest.kt::expiredSessionStopsBeforeObservationOrAction`; `app/src/test/java/com/openjarvis/agent/AgentLoopRunnerTest.kt::plannerCompletionBeforeAnyVerifiedActionIsNotSuccess` |
 | Stable screen-observation fingerprints | `ScreenObservation.fingerprintOf` | `app/src/test/java/com/openjarvis/agent/ScreenObservationTest.kt::identicalSnapshotsHaveIdenticalFingerprints`; `app/src/test/java/com/openjarvis/agent/ScreenObservationTest.kt::textElementsAndPackageContributeToFingerprint` |
 
+| Command listening mute/unmute routing across English, Hindi, Marathi, and Hinglish | `CommandListeningPolicy.classify` | `app/src/test/java/com/openjarvis/agent/UntestedFeatureCoverageTest.kt::commandListeningPolicyClassifiesMuteAndUnmuteAcrossEnglishHindiMarathiAndHinglish`; `app/src/test/java/com/openjarvis/agent/UntestedFeatureCoverageTest.kt::commandListeningPolicyDoesNotMuteOrdinaryConversation` |
+| Volume, torch, timer, and alarm request/intent parsing (not Android execution) | `StepIntentParser.parse` / `SkillRegistry.parse` | `app/src/test/java/com/openjarvis/agent/UntestedFeatureCoverageTest.kt::volumeTorchTimerAndAlarmIntentArgumentsAreDeterministic`; `app/src/test/java/com/openjarvis/agent/UntestedFeatureCoverageTest.kt::skillRegistryBuildsExecutorRequestsForTimerAlarmTorchAndVolume` |
+| App launch foreground verification decision | `AgentPlanPolicy.isAppLaunchVerified` | `app/src/test/java/com/openjarvis/agent/UntestedFeatureCoverageTest.kt::appLaunchIsVerifiedOnlyWhenLaunchAndForegroundAreBothConfirmed`; `app/src/test/java/com/openjarvis/agent/AgentPlanPolicyTest.kt::appLaunchRequiresBothLaunchAcceptanceAndForegroundConfirmation` |
+| YouTube search query extraction, play verb, and leading wake-word handling (not playback) | `SearchCommandParser.parseYouTubeQuery` / `JarvisCommandNormalizer.stripWakeWord` | `app/src/test/java/com/openjarvis/agent/UntestedFeatureCoverageTest.kt::youtubeQueryExtractionStripsOnlyLeadingWakeWordAndSupportsPlayVerb` |
+| WhatsApp colon-delimited message prefill without send | `StepIntentParser.parse` | `app/src/test/java/com/openjarvis/agent/UntestedFeatureCoverageTest.kt::whatsappColonMessageBodyCanBePrefilledWithoutSendKeyword` |
+| WhatsApp explicit Send confirmation decision | `ActionRiskPolicy.requiresConfirmation` / `ActionRiskPolicy.approvalDecision` | `app/src/test/java/com/openjarvis/agent/UntestedFeatureCoverageTest.kt::whatsappExplicitSendTargetRequiresConfirmationAndApprovalIsSeparate`; `app/src/test/java/com/openjarvis/agent/ActionRiskPolicyTest.kt::sendDeleteAndPayButtonsRequireExplicitConfirmation`; `app/src/test/java/com/openjarvis/agent/AgentLoopRunnerTest.kt::sendAndDeletePauseWithoutExecutingUntilConfirmed` |
+
+## DEVICE-ONLY
+
+The following behavior depends on Android framework services, installed apps, Accessibility state, or real UI state. The current local JVM test dependencies do not include Robolectric or a mocking library, and `AndroidSkillExecutor` depends directly on concrete Android `Context`, `PackageManager`, `AudioManager`, `CameraManager`, and `startActivity` APIs. No fake/mock executor test can be responsibly run in the current test setup without adding dependencies or changing production seams.
+
+- **Mute/unmute microphone lifecycle:** `CommandListeningPolicy.classify` is JVM-tested; actual listener/microphone state transition and re-arm require an Android device.
+- **Volume executor:** parser/request arguments are JVM-tested; actual media stream adjustment and before/after volume verification require Android `AudioManager`.
+- **Torch executor:** parser/request arguments are JVM-tested; actual camera selection and torch mode require device camera hardware and `CameraManager`.
+- **Timer/alarm executor:** parser/request arguments are JVM-tested; actual clock-app intent resolution and scheduling require Android apps/system UI.
+- **App launch:** pure foreground-verification predicate is JVM-tested; actual package launch and foreground package observation require Android/Accessibility runtime.
+- **YouTube playback:** query extraction is JVM-tested; opening the app, selecting the intended result, and confirming playback require YouTube UI and device state.
+- **WhatsApp:** parser/prefill and explicit confirmation policy are JVM-tested; installed-contact resolution, composer UI, manual/confirmed send behavior, and end-to-end delivery require WhatsApp and Android device state.
+
 ## UNTESTED
 
-The repository does not currently have a mapped named test method proving these end-to-end executor/device behaviors:
-
-- Mute/unmute execution
-- App launch foreground confirmation
-- YouTube playback start/selection verification
-- WhatsApp end-to-end contact resolution, confirmation, and send flow
-- Volume executor
-- Torch executor
-
-Parser-level intent tests do not count as proof that Android device actions execute successfully.
+No mapped JVM test currently proves the DEVICE-ONLY execution paths above. Parser and pure-policy coverage must not be reported as proof of successful Android execution.

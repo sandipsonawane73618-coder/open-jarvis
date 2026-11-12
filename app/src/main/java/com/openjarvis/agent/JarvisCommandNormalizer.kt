@@ -7,7 +7,7 @@ package com.openjarvis.agent
  */
 internal object JarvisCommandNormalizer {
     private val LEADING_WAKE_WORD = Regex(
-        "^\\s*(?:jarvis|जार्विस)(?:\\s*[,،:;.!?।-]\\s*|\\s+|$)",
+        "^\\s*(?:(?:hey|hi)\\s+)?(?:jarvis|जार्विस)(?:\\s*[,،:;.!?।-]\\s*|\\s+|$)",
         RegexOption.IGNORE_CASE
     )
 

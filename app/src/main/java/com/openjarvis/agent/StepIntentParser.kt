@@ -186,7 +186,10 @@ object StepIntentParser {
             val n = norm(piece).replace(PUNCT_STRIP, "")
             if (n.isNotEmpty()) { raw.add(piece); normed.add(n) }
         }
-        if (normed.none { it in MESSAGE_WORDS } || normed.none { it in SEND_WORDS }) return null
+        if (normed.none { it in MESSAGE_WORDS }) return null
+        val hasSendVerb = normed.any { it in SEND_WORDS }
+        val hasColonPrefill = step.indexOf(':') >= 0
+        if (!hasSendVerb && !hasColonPrefill) return null
         val app = when {
             normed.any { it in WHATSAPP_WORDS } -> "whatsapp"
             normed.any { it in SMS_WORDS } -> "sms"

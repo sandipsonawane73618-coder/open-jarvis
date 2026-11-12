@@ -15,7 +15,7 @@ object VoiceControlVocabulary {
         "stop listening", "jarvis stop listening", "stop hearing",
         "mic off", "microphone off", "turn off mic", "turn off the microphone",
         "chup ho ja", "chup ho jao", "jarvis chup ho ja", "jarvis chup ho jao", "chup raho",
-        "mic band", "mic band karo", "mic bandh karo", "jarvis mic band karo",
+        "mic band", "mic band karo", "mic band kara", "mic bandh karo", "jarvis mic band karo",
         "sunna band karo", "suno band karo", "awaaz band karo", "awaz band karo",
         "mic band kar", "jarvis mic band kar", "aikna band kar", "aikaycha band kar",
         "आवाज बंद करो", "आवाज़ बंद करो", "आवाज बंद कर", "आवाज़ बंद कर", "माइक बंद करो", "माइक बंद कर", "सुनना बंद करो",
