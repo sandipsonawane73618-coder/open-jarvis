@@ -42,6 +42,7 @@ data class Action(
         const val AI_PROMPT = "ai_prompt"
         const val EXTRACT_TEXT = "extract_text"
         const val ERROR = "error"
+        const val COMPLETE = "complete"
     }
 }
 
