@@ -40,6 +40,8 @@ import com.openjarvis.graphify.GraphifyRepository
 import com.openjarvis.bridge.SocketServer
 import com.openjarvis.graphify.nodes.TaskNode
 import com.openjarvis.voice.VoiceManager
+import com.openjarvis.voice.VoiceSessionState
+import com.openjarvis.ui.home.VoiceUiBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -90,6 +92,7 @@ class OverlayService : Service() {
         activeInstance = this
         agentCore = AgentCore(this)
         voiceManager = VoiceManager(this)
+        VoiceUiBridge.registerStopCallback { voiceManager.stopSpeaking() }
         graphifyRepo = GraphifyRepository(this)
         socketServer = SocketServer(this, agentCore, graphifyRepo).also { it.start() }
         val microphoneGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -202,6 +205,8 @@ class OverlayService : Service() {
         mainHandler.removeCallbacks(waveformRunnable)
         waveformText = null
         voiceManager.stopListening()
+        VoiceUiBridge.registerStopCallback(null)
+        VoiceUiBridge.publish(VoiceSessionState.Idle)
         if (activeInstance === this) activeInstance = null
         socketServer?.stop()
         socketServer = null
@@ -397,6 +402,12 @@ class OverlayService : Service() {
 
     private fun setVisualState(state: String, label: String) {
         visualState = state
+        VoiceUiBridge.publish(when (state) {
+            "LISTENING" -> VoiceSessionState.Listening
+            "THINKING" -> VoiceSessionState.Thinking
+            "SPEAKING" -> VoiceSessionState.Speaking
+            else -> VoiceSessionState.Idle
+        })
         statusText?.text = label
         waveformText?.visibility = if (state == "IDLE") android.view.View.GONE else android.view.View.VISIBLE
         mainHandler.removeCallbacks(waveformRunnable)
