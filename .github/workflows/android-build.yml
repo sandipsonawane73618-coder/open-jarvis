@@ -3,7 +3,7 @@ name: Android Build
 
 on:
   push:
-    branches: [main, feature/euronics-webview-integration, feature/jarvis-stable-1.0, feature/jarvis-opendroid-agent-loop, feature/jarvis-slice-c-router-llm-schema, feature/jarvis-phase2-continuation, feature/jarvis-diagnostic-export, feature/jarvis-command-listener-no-wakeword, feature/jarvis-fast-response-streaming, feature/jarvis-streaming-response, feature/jarvis-contact-app-intent-priority, feature/jarvis-single-floating-overlay, feature/jarvis-multilingual-volume-routing, feature/jarvis-tts-utterance-callback-isolation, feature/jarvis-false-completion-guard, feat/jarvis-v3-agent-loop, feat/jarvis-floating-ui]
+    branches: [main, feature/euronics-webview-integration, feature/jarvis-stable-1.0, feature/jarvis-opendroid-agent-loop, feature/jarvis-slice-c-router-llm-schema, feature/jarvis-phase2-continuation, feature/jarvis-diagnostic-export, feature/jarvis-command-listener-no-wakeword, feature/jarvis-fast-response-streaming, feature/jarvis-streaming-response, feature/jarvis-contact-app-intent-priority, feature/jarvis-single-floating-overlay, feature/jarvis-multilingual-volume-routing, feature/jarvis-tts-utterance-callback-isolation, feature/jarvis-false-completion-guard, feat/jarvis-v3-agent-loop, feat/jarvis-floating-ui, feat/jarvis-voice-personality]
     paths:
       - "app/**"
       - "scripts/**"

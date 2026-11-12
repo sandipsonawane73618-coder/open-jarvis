@@ -1,6 +1,8 @@
 package com.openjarvis.voice
 
 import android.content.Context
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import android.speech.tts.TextToSpeech
 import android.os.Handler
 import android.os.Looper
@@ -9,6 +11,38 @@ import java.util.Locale
 import java.util.UUID
 
 class AndroidTTSEngine(private val context: Context) {
+    companion object {
+        fun preview(context: Context, gender: String, localeTag: String, text: String, onUnavailable: () -> Unit = {}) {
+            var previewEngine: TextToSpeech? = null
+            previewEngine = TextToSpeech(context.applicationContext) { status ->
+                val engine = previewEngine
+                if (status != TextToSpeech.SUCCESS || engine == null) {
+                    engine?.shutdown()
+                    onUnavailable()
+                    return@TextToSpeech
+                }
+                val locale = Locale.forLanguageTag(localeTag)
+                val voices = engine.voices.orEmpty().filter {
+                    it.locale.language == locale.language && it.locale.country.equals("IN", true)
+                }
+                val preferred = voices.filter { TtsVoiceSelectionPolicy.matchesGender(it.name, gender) }
+                val selected = (preferred.ifEmpty { voices })
+                    .maxWithOrNull(compareBy<android.speech.tts.Voice> { it.quality }.thenBy { !it.isNetworkConnectionRequired })
+                if (selected != null) engine.voice = selected else engine.language = locale
+                engine.setSpeechRate(0.92f)
+                engine.setPitch(1.0f)
+                engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) {}
+                    override fun onDone(utteranceId: String?) { engine.shutdown() }
+                    override fun onError(utteranceId: String?) { engine.shutdown() }
+                })
+                if (engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis_voice_preview") != TextToSpeech.SUCCESS) {
+                    engine.shutdown()
+                    onUnavailable()
+                }
+            }
+        }
+    }
 
     private var tts: TextToSpeech? = null
     private var isReady = false
@@ -16,6 +50,15 @@ class AndroidTTSEngine(private val context: Context) {
     private var pitch = 0.95f
     private val mainHandler = Handler(Looper.getMainLooper())
     private val completionCallbacks = UtteranceCompletionRegistry()
+    private val voicePreferences by lazy {
+        val key = MasterKey.Builder(context.applicationContext)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
+        EncryptedSharedPreferences.create(
+            context.applicationContext, "voice_prefs", key,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    }
 
     private fun finishSpeech(utteranceId: String?) {
         val callback = utteranceId?.let(completionCallbacks::take) ?: return
@@ -77,9 +120,20 @@ class AndroidTTSEngine(private val context: Context) {
         val language = SpeechLanguage.languageForText(text)
         val locale = Locale.forLanguageTag("$language-IN")
         val engine = tts ?: return
-        val bestVoice = engine.voices
+        val voices = engine.voices
             ?.filter { it.locale.language == language && it.locale.country.equals("IN", ignoreCase = true) }
-            ?.maxWithOrNull(compareBy<android.speech.tts.Voice> { it.quality }.thenBy { it.isNetworkConnectionRequired })
+            .orEmpty()
+        val preferredGender = voicePreferences.getString(
+            "tts_voice_gender_$language",
+            voicePreferences.getString("tts_voice_gender", "Female")
+        ) ?: "Female"
+        val genderMatched = voices.filter { voice ->
+            TtsVoiceSelectionPolicy.matchesGender(voice.name, preferredGender)
+        }
+        // Android does not expose reliable gender metadata. Match descriptive engine voice
+        // names when available; otherwise keep the engine's highest-quality locale voice.
+        val bestVoice = (genderMatched.ifEmpty { voices })
+            .maxWithOrNull(compareBy<android.speech.tts.Voice> { it.quality }.thenBy { !it.isNetworkConnectionRequired })
         if (bestVoice != null) {
             engine.voice = bestVoice
         } else {
@@ -111,5 +165,17 @@ class AndroidTTSEngine(private val context: Context) {
         completionCallbacks.clear()
         tts?.shutdown()
         tts = null
+    }
+}
+
+/** Best-effort name matching only: Android TTS does not expose reliable voice gender metadata. */
+internal object TtsVoiceSelectionPolicy {
+    private val femaleTokens = listOf("female", "woman", "zira", "samantha", "aria", "jenny", "susan", "heera", "lekha")
+    private val maleTokens = listOf("male", "man", "david", "mark", "guy", "ravi", "hemant", "madhur")
+
+    fun matchesGender(voiceName: String, gender: String): Boolean {
+        val nameTokens = voiceName.lowercase().split(Regex("[^a-z0-9]+"))
+        val expected = if (gender.equals("Male", ignoreCase = true)) maleTokens else femaleTokens
+        return nameTokens.any { it in expected }
     }
 }
