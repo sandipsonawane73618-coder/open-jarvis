@@ -1,7 +1,7 @@
 package com.openjarvis.llm.providers
 
 import com.openjarvis.llm.ConnectionResult
-import com.openjarvis.llm.HttpClient
+import com.openjarvis.llm.HybridChatHttpClient
 import com.openjarvis.llm.LLMProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -10,10 +10,12 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import okhttp3.OkHttpClient
 
 class GeminiProvider(
     private val apiKey: String,
-    private val model: String = "gemini-1.5-flash"
+    private val model: String = "gemini-1.5-flash",
+    private val httpClient: OkHttpClient = HybridChatHttpClient.client
 ) : LLMProvider {
     
     override val name: String = "Google Gemini"
@@ -49,7 +51,7 @@ class GeminiProvider(
                 .post(requestBody.toRequestBody("application/json".toMediaType()))
                 .build()
             
-            HttpClient.client.newCall(request).execute().use { response ->
+            httpClient.newCall(request).execute().use { response ->
                 val body = response.body?.string() ?: throw Exception("Empty response")
                 val json = JSONObject(body)
                 if (json.has("candidates")) {
@@ -76,7 +78,7 @@ class GeminiProvider(
                 .get()
                 .build()
             
-            HttpClient.client.newCall(request).execute().use { response ->
+            httpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
                     throw Exception("HTTP ${response.code}")
                 }
