@@ -9,7 +9,7 @@ object LLMResponseValidator {
         Action.OPEN_APP, Action.CLICK, Action.TAP, Action.TYPE_TEXT, Action.TYPE,
         Action.SCROLL, Action.BACK, Action.PRESS_BACK, Action.HOME, Action.PRESS_HOME,
         Action.PRESS_RECENTS, Action.WAIT, Action.WAIT_FOR, Action.READ_SCREEN,
-        Action.AI_PROMPT, Action.EXTRACT_TEXT, Action.ERROR
+        Action.AI_PROMPT, Action.EXTRACT_TEXT, Action.ERROR, Action.COMPLETE
     )
 
     fun validate(rawResponse: String): ValidationResult {

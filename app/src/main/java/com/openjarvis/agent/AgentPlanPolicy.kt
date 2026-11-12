@@ -82,6 +82,7 @@ internal object AgentPlanPolicy {
             !BankingSafetyPolicy.blocksFinancialActions(actions) &&
             actions.none {
                 it.action == Action.ERROR ||
+                    it.action == Action.COMPLETE ||
                     it.action == Action.READ_SCREEN ||
                     it.action == Action.EXTRACT_TEXT
             }
