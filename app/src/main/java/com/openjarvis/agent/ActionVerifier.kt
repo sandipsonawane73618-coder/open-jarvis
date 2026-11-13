@@ -4,6 +4,35 @@ package com.openjarvis.agent
 internal object ActionVerifier {
     data class Verification(val verified: Boolean, val reason: String)
 
+    fun verifySentMessage(
+        action: Action,
+        before: ScreenObservation,
+        after: ScreenObservation,
+        executionAccepted: Boolean,
+        payload: SendConfirmationPayload
+    ): Verification {
+        if (!executionAccepted) return Verification(false, "Send tap was not accepted; send tap kiya, confirm nahi hua.")
+        val whatsappPackages = setOf("com.whatsapp", "com.whatsapp.w4b")
+        if (before.packageName !in whatsappPackages || after.packageName !in whatsappPackages) {
+            return Verification(false, "WhatsApp is not the foreground app; send tap kiya, confirm nahi hua.")
+        }
+        val recipientVisible = after.visibleText.contains(payload.recipientName, ignoreCase = true)
+        val messageVisible = after.visibleText.contains(payload.message)
+        val attachmentVisible = payload.attachmentName?.let { after.visibleText.contains(it, ignoreCase = true) } ?: true
+        val composerCleared = after.interactiveElements.lineSequence().any { line ->
+            line.contains("editable", ignoreCase = true) &&
+                (line.contains("hint=Message", ignoreCase = true) ||
+                    line.contains("id=com.whatsapp:id/entry", ignoreCase = true)) &&
+                !line.contains("text=${payload.message}", ignoreCase = true)
+        }
+        val deliveryMarker = Regex("(?i)\\b(sent|delivered|read)\\b|भेजा गया|पहुंचा दिया").containsMatchIn(after.visibleText)
+        return if (recipientVisible && messageVisible && attachmentVisible && (composerCleared || deliveryMarker)) {
+            Verification(true, "Message is visible in the WhatsApp conversation and the composer is clear.")
+        } else {
+            Verification(false, "send tap kiya, confirm nahi hua")
+        }
+    }
+
     fun verify(
         action: Action,
         before: ScreenObservation,

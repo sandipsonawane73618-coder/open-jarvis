@@ -58,7 +58,7 @@ object StepIntentParser {
     )
     private val APP_ALIAS_CANONICAL = mapOf(
         "instagram" to "instagram", "insta" to "instagram", "insta app" to "instagram", "ig" to "instagram",
-        "whatsapp" to "whatsapp", "wa" to "whatsapp", "व्हाट्सएप" to "whatsapp", "व्हॉट्सऍप" to "whatsapp", "व्हॉट्सॲप" to "whatsapp",
+        "whatsapp" to "whatsapp", "wa" to "whatsapp", "व्हाट्सएप" to "whatsapp", "व्हॉट्सऍप" to "whatsapp", "व्हॉट्सॲप" to "whatsapp", "व्हॉट्सॲप" to "whatsapp",
         "chrome" to "chrome",
         "youtube" to "youtube", "yt" to "youtube",
         "maps" to "maps", "google maps" to "google maps",
@@ -72,14 +72,14 @@ object StepIntentParser {
     private val APP_CONNECTORS = words("and", "aur", "और", "आणि", "then", "phir", "फिर")
 
     private val MESSAGE_WORDS = words(
-        "message", "msg", "sms", "whatsapp", "मैसेज", "मेसेज", "संदेश", "एसएमएस", "निरोप", "व्हॉट्सॲप",
+        "message", "msg", "sms", "whatsapp", "मैसेज", "मेसेज", "संदेश", "एसएमएस", "निरोप", "व्हॉट्सॲप", "व्हॉट्सॲप",
         "व्हाट्सएप", "व्हॉट्सऍप"
     )
     private val WHATSAPP_WORDS = words("whatsapp", "व्हाट्सएप", "व्हॉट्सऍप", "व्हॉट्सॲप")
     private val SMS_WORDS = words("sms", "एसएमएस")
     private val SEND_WORDS = words(
         "bhejo", "bhej", "send", "saying", "say", "likho", "likh", "bolo", "bol", "keh", "kehdo", "pathav", "pathva", "pathavun", "dhad", "dhada", "dhadun",
-        "भेजो", "भेज", "लिखो", "लिख", "बोलो", "बोल", "कहो", "पाठवा",
+        "भेजो", "भेज", "लिखो", "लिख", "बोलो", "बोल", "कहो", "पाठवा", "पाठव", "पाठवून", "धाड", "धाडा", "धाडून", "pathav", "pathva", "pathavun", "dhad", "dhada", "dhadun", "dhadva", "pathvaa", "दे",
         "पाठव", "पाठवा", "पाठवून", "धाड", "धाडा", "धाडून",
         "dhad", "dhada", "dhadva", "pathva", "pathav", "pathvaa",
         "धाड", "धाडा", "पाठवून", "दे"

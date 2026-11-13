@@ -11,6 +11,7 @@ internal data class AgentTaskSession(
     val lastObservationFingerprint: String? = null,
     val lastFailure: String? = null,
     val awaitingConfirmation: Action? = null,
+    val awaitingConfirmationPayload: SendConfirmationPayload? = null,
     val confirmationDeclined: Boolean = false,
     val isComplete: Boolean = false
 ) {
@@ -32,10 +33,13 @@ internal data class AgentTaskSession(
     )
     fun markFailed(action: Action?, reason: String) =
         copy(pendingAction = null, lastFailure = reason.ifBlank { "Action failed" })
-    fun requireConfirmation(action: Action) = copy(pendingAction = null, awaitingConfirmation = action)
+    fun requireConfirmation(action: Action, payload: SendConfirmationPayload? = null) = copy(
+        pendingAction = null, awaitingConfirmation = action, awaitingConfirmationPayload = payload
+    )
     fun resolveConfirmation(approved: Boolean) = copy(
         pendingAction = if (approved) awaitingConfirmation else null,
         awaitingConfirmation = null,
+        awaitingConfirmationPayload = null,
         lastFailure = if (approved) null else "User declined confirmation",
         confirmationDeclined = !approved
     )

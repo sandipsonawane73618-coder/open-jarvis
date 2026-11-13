@@ -48,6 +48,14 @@ internal object AgentLoopCommandPolicy {
         "(?<![\\p{L}\\p{N}])(open|kholo|launch|search|play|chalao|tap|click|type|likho|scroll|dabao)(?![\\p{L}\\p{N}])",
         RegexOption.IGNORE_CASE
     )
+    private val crossAppTerms = Regex(
+        "(?<![\\p{L}\\p{N}])(banao|bhejo|send\\s+karo|attach\\s+karo|phir|then|after\\s+that|uske\\s+baad|बनाओ|भेजो|फिर)(?![\\p{L}\\p{N}])",
+        RegexOption.IGNORE_CASE
+    )
+    private val appTerms = Regex(
+        "(?<![\\p{L}\\p{N}])(gemini|whatsapp|youtube|instagram|chrome|telegram|facebook|gallery|photos|files|messages)(?![\\p{L}\\p{N}])",
+        RegexOption.IGNORE_CASE
+    )
 
     fun isYouTubeFirstVideoGoal(command: String): Boolean {
         if (locationTerms.containsMatchIn(command)) return false
@@ -63,7 +71,9 @@ internal object AgentLoopCommandPolicy {
         val hasUiTarget = uiTerms.containsMatchIn(command)
         val hasAction = actionTerms.containsMatchIn(command)
         val hasSequence = Regex("\\b(and then|then|phir|uske baad|aur)\\b", RegexOption.IGNORE_CASE).containsMatchIn(command)
-        return (hasUiTarget && hasAction) || (hasSequence && hasAction && command.length > 35)
+        val crossAppCount = appTerms.findAll(command).count()
+        val crossAppWorkflow = crossAppCount >= 2 && crossAppTerms.containsMatchIn(command)
+        return crossAppWorkflow || (hasUiTarget && hasAction) || (hasSequence && hasAction && command.length > 35)
     }
 }
 
