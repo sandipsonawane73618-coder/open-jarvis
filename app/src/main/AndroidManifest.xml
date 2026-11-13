@@ -83,6 +83,12 @@
             android:theme="@style/Theme.OpenJarvis" />
 
         <activity
+            android:name=".ui.CommandLabActivity"
+            android:exported="false"
+            android:parentActivityName=".ui.SettingsActivity"
+            android:theme="@style/Theme.OpenJarvis" />
+
+        <activity
             android:name=".ui.SettingsActivity"
             android:exported="false"
             android:parentActivityName=".MainActivity"
