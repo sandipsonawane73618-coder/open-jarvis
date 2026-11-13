@@ -28,7 +28,7 @@ object StepIntentParser {
     private fun words(vararg w: String): Set<String> = w.map { norm(it) }.toSet()
 
     private val CONNECTORS = words(
-        "ko", "la", "se", "ka", "ki", "ke", "to", "pe", "par", "on", "in", "at", "for",
+        "ko", "la", "se", "ka", "ki", "ke", "to", "pe", "par", "per", "on", "in", "at", "for",
         "liye", "tak", "को", "से", "का", "की", "के", "पर", "पे", "तक", "ला", "वर"
     )
     private val FILLERS = words(

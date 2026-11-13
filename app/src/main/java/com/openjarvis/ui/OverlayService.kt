@@ -92,7 +92,7 @@ class OverlayService : Service() {
     private lateinit var agentCore: AgentCore
     private lateinit var voiceManager: VoiceManager
     private val commandLogStore by lazy { CommandLogStore(this) }
-    @Volatile private var activeCommandLogId: String? = null
+
     private lateinit var graphifyRepo: GraphifyRepository
     private var socketServer: SocketServer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -192,16 +192,14 @@ class OverlayService : Service() {
                     }
                     is com.openjarvis.agent.AgentState.Running -> setVisualState("THINKING", state.step)
                     is com.openjarvis.agent.AgentState.Done -> {
-                        commandLogStore.complete(activeCommandLogId, state.result, null)
-                        activeCommandLogId = null
+
                         setVisualState("SPEAKING", state.result)
                         voiceManager.speak(com.openjarvis.agent.AgentResultSpeech.textForDone(state.result)) {
                             voiceManager.resumeContinuousSession()
                         }
                     }
                     is com.openjarvis.agent.AgentState.Error -> {
-                        commandLogStore.complete(activeCommandLogId, null, state.message)
-                        activeCommandLogId = null
+
                         setVisualState("SPEAKING", "Jarvis error: ${state.message} • tap to copy debug log")
                         voiceManager.speak(if (responseLanguage == "mr") "कमांड पूर्ण झाली नाही. ${state.message}" else "कमांड पूरी नहीं हुई। ${state.message}") {
                             voiceManager.resumeContinuousSession()
@@ -224,6 +222,7 @@ class OverlayService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        commandLogStore.completeAllPending("Overlay service stopped before command completion")
         mainHandler.removeCallbacks(overlayWatchdog)
         try { overlayView?.let { windowManager?.removeView(it) } } catch (_: Exception) { }
         overlayView = null
@@ -649,26 +648,26 @@ class OverlayService : Service() {
             route = routeProbe.route.name.lowercase(),
             source = if (voiceCommand != null) "voice" else "typed"
         )
-        activeCommandLogId = logId
+
         // Typed commands use the same deterministic voice-control gate as speech transcripts.
         when (CommandListeningPolicy.classify(command, isMuted)) {
             CommandListeningPolicy.Action.MUTE -> {
                 commandLogStore.complete(logId, "Handled by voice mute control", null)
-                activeCommandLogId = null
+
                 enterMuteMode()
                 commandInput?.text?.clear()
                 return
             }
             CommandListeningPolicy.Action.UNMUTE -> {
                 commandLogStore.complete(logId, "Handled by voice mute control", null)
-                activeCommandLogId = null
+
                 enterUnmuteMode()
                 commandInput?.text?.clear()
                 return
             }
             CommandListeningPolicy.Action.IGNORE -> {
                 commandLogStore.complete(logId, null, "Command ignored while muted")
-                activeCommandLogId = null
+
                 statusText?.text = "COMMAND MUTED — only say Unmute / Awaaz chalu karo"
                 commandInput?.text?.clear()
                 voiceManager.resumeContinuousSession()
@@ -682,7 +681,7 @@ class OverlayService : Service() {
         }
         if (com.openjarvis.accessibility.JarvisAccessibilityService.instance == null) {
             commandLogStore.complete(logId, null, "Accessibility service is disabled")
-            activeCommandLogId = null
+
             statusText?.text = "Accessibility service is OFF. Enable Open Jarvis in Android Accessibility settings."
             voiceManager.resumeContinuousSession()
             return
@@ -694,7 +693,16 @@ class OverlayService : Service() {
             voiceManager.speak(com.openjarvis.agent.AgentResultSpeech.acknowledgement(responseLanguage))
         }
         voiceManager.markThinking()
-        agentCore.executeTask(command)
+        agentCore.executeTask(command) { finalState ->
+            when (finalState) {
+                is com.openjarvis.agent.AgentState.Done ->
+                    commandLogStore.complete(logId, finalState.result, null)
+                is com.openjarvis.agent.AgentState.Error ->
+                    commandLogStore.complete(logId, null, finalState.message)
+                else ->
+                    commandLogStore.complete(logId, null, "Task ended without a terminal result")
+            }
+        }
         commandInput?.text?.clear()
     }
 

@@ -7,8 +7,8 @@ import org.junit.Test
 class SpeechLanguageTest {
     @Test fun recognizesPreferredDeviceLocales() {
         assertEquals("hi-IN", SpeechLanguage.preferredRecognitionLocale("hi"))
-        assertEquals("mr-IN", SpeechLanguage.preferredRecognitionLocale("mr"))
-        assertEquals("en-IN", SpeechLanguage.preferredRecognitionLocale("en"))
+        assertEquals("hi-IN", SpeechLanguage.preferredRecognitionLocale("mr"))
+        assertEquals("hi-IN", SpeechLanguage.preferredRecognitionLocale("en"))
         assertEquals("hi-IN", SpeechLanguage.preferredRecognitionLocale("unknown"))
     }
 

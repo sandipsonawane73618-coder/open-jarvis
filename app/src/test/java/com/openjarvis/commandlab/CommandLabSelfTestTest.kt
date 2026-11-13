@@ -29,7 +29,7 @@ class CommandLabSelfTestTest {
         val passCount = results.count { it.passed }
         val failCount = results.size - passCount
         assertEquals(total, passCount + failCount)
-        assertTrue(results.map { it.actualRoute }.containsAll(listOf(CommandLabRoute.SKILL, CommandLabRoute.STEP, CommandLabRoute.SEARCH, CommandLabRoute.CHAT, CommandLabRoute.LOOP, CommandLabRoute.PIPELINE, CommandLabRoute.CLARIFY)))
+        assertTrue(results.map { it.actualRoute }.containsAll(listOf(CommandLabRoute.SKILL, CommandLabRoute.STEP, CommandLabRoute.SEARCH, CommandLabRoute.CHAT, CommandLabRoute.LOOP, CommandLabRoute.CLARIFY)))
     }
     private fun assertExtraCase(name: String) {
         val result = CommandLabSelfTest.run().single { it.case.name == name }

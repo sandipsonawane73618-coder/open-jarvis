@@ -103,6 +103,16 @@ class CommandSplitterTest {
     }
 
     @Test
+    fun instagramInAppSearchSplitsOnAurAndAndAndPhir() {
+        listOf("aur", "and", "phir").forEach { connector ->
+            assertEquals(
+                listOf("Instagram kholo", "Shahrukh Khan search karo"),
+                s("Instagram kholo $connector Shahrukh Khan search karo")
+            )
+        }
+    }
+
+    @Test
     fun youtubeOpenAndSearchAreSeparateVerifiedPipelineSteps() {
         assertEquals(
             listOf("YouTube kholo", "YouTube par Arijit Singh ke latest songs search karo"),

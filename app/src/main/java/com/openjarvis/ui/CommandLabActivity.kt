@@ -98,6 +98,7 @@ private fun CommandLabScreen(onBack: () -> Unit) {
                             Text(result.case.command, style = MaterialTheme.typography.bodyMedium)
                             Text("Route: ${result.actualRoute.name.lowercase()} • Intent: ${result.parsedIntent}", style = MaterialTheme.typography.bodySmall)
                             if (result.actualResult.isNotBlank()) Text("Result: ${result.actualResult}", style = MaterialTheme.typography.bodySmall)
+                            if (result.actualResult.isNotBlank()) Text("Result: ${result.actualResult}", style = MaterialTheme.typography.bodySmall)
                             result.failReason?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                         }
                     }

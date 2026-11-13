@@ -286,7 +286,7 @@ ${rawResponse.take(1000)}
         else rawResponse to initial
     }
 
-    fun executeTask(cleanCommand: String) {
+    fun executeTask(cleanCommand: String, onFinished: ((AgentState) -> Unit)? = null) {
         scope.launch {
             taskMutex.withLock {
                 // Task-scoped memory must be initialized only after acquiring the mutex.
@@ -1542,6 +1542,8 @@ ${fullSystem.substringAfter("MEMORY:")}
                             lastResult = completedState.result.take(240)
                         )
                     }
+                    // Correlate the final state with the exact submitting command/log entry.
+                    runCatching { onFinished?.invoke(_state.value) }
                 }
             }
         }

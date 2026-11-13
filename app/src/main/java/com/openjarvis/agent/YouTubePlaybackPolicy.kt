@@ -4,11 +4,9 @@ package com.openjarvis.agent
 internal object YouTubePlaybackPolicy {
     fun shouldPlayFirstResult(command: String): Boolean {
         val normalized = command.lowercase(java.util.Locale.ROOT)
-        val hasSearch = normalized.contains("search") || normalized.contains("dhoond") ||
-            normalized.contains("dhund") || normalized.contains("खोज") || normalized.contains("शोध")
         val hasPlay = normalized.contains("play") || normalized.contains("chalao") ||
             normalized.contains("bajao") || normalized.contains("चलाओ") || normalized.contains("बजाओ")
-        return normalized.contains("youtube") && hasSearch && hasPlay
+        return normalized.contains("youtube") && hasPlay
     }
 
     fun isNoResultsScreen(visibleText: String): Boolean {

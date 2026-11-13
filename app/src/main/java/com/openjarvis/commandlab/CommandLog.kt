@@ -37,6 +37,31 @@ object CommandLogPolicy {
 
     fun keepLast100(entries: List<CommandLogEntry>): List<CommandLogEntry> =
         entries.takeLast(100)
+
+    fun complete(
+        entries: List<CommandLogEntry>,
+        id: String?,
+        result: String?,
+        failReason: String? = null
+    ): List<CommandLogEntry> {
+        if (id.isNullOrBlank()) return entries
+        return entries.map { entry ->
+            if (entry.id != id) entry else entry.copy(
+                result = redact(result),
+                failReason = redact(failReason)
+            )
+        }
+    }
+
+    fun completeAllPending(entries: List<CommandLogEntry>, reason: String): List<CommandLogEntry> =
+        entries.map { entry ->
+            if (entry.result.isNullOrBlank() && entry.failReason.isNullOrBlank()) {
+                entry.copy(failReason = redact(reason))
+            } else entry
+        }
+
+    fun hasPending(entries: List<CommandLogEntry>): Boolean =
+        entries.any { it.result.isNullOrBlank() && it.failReason.isNullOrBlank() }
 }
 
 class CommandLogStore(context: Context) {
@@ -79,13 +104,14 @@ class CommandLogStore(context: Context) {
     @Synchronized
     fun complete(id: String?, result: String?, failReason: String? = null) {
         if (id.isNullOrBlank()) return
-        val updated = read().map { entry ->
-            if (entry.id != id) entry else entry.copy(
-                result = CommandLogPolicy.redact(result),
-                failReason = CommandLogPolicy.redact(failReason)
-            )
-        }
-        save(CommandLogPolicy.keepLast100(updated))
+        save(CommandLogPolicy.keepLast100(
+            CommandLogPolicy.complete(read(), id, result, failReason)
+        ))
+    }
+
+    @Synchronized
+    fun completeAllPending(reason: String) {
+        save(CommandLogPolicy.keepLast100(CommandLogPolicy.completeAllPending(read(), reason)))
     }
 
     @Synchronized
