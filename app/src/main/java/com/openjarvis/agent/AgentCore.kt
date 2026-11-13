@@ -215,7 +215,7 @@ Ask at most one question per response. Use Hindi/Marathi/Hinglish/English matchi
             )
         ) return reply
         prefs.edit().putBoolean("local_model_hint_shown", true).apply()
-        return reply.trimEnd() + "\\n\\n" + LocalModelFallbackHintPolicy.HINT
+        return reply.trimEnd() + "\n\n" + LocalModelFallbackHintPolicy.HINT
     }
 
     private fun localHybridRouteExpected(settings: com.openjarvis.llm.HybridChatSettings): Boolean {
