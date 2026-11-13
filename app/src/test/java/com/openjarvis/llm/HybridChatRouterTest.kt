@@ -53,7 +53,7 @@ class HybridChatRouterTest {
         assertTrue(observedSystem.contains("personality: calm and proactive"))
         assertTrue(observedSystem.contains("recent: user asked for weather"))
         assertTrue(observedUser.contains("Rahul"))
-        assertEquals("Rahul ko message bhejo ki main aa raha hoon", observedUser)
+        assertEquals("Rahul ke liye calendar reminder banao", observedUser)
     }
 
     @Test fun failedPrimaryTriesSecondaryBeforeLocal() = runBlocking {
