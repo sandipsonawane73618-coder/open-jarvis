@@ -112,11 +112,22 @@ class FastCommandParserTest {
         listOf(
             "back screen per jao",
             "peeche jao",
+            "peeche ja",
             "wapas jao",
+            "wapas ja",
             "mage ja",
-            "go back"
+            "mage jaa",
+            "go back",
+            "piche jao",
+            "पीछे जाओ",
+            "वापस जाओ",
+            "मागे जा"
         ).forEach { phrase ->
             assertEquals("BACK for: $phrase", FastCommandParser.Command.Back, FastCommandParser.parse(phrase))
         }
+
+        // Navigation route words must not steal a deterministic BACK command.
+        assertNull(FastCommandParser.openAppTarget("peeche jao"))
+        assertNull(FastCommandParser.openAppTarget("maps par jao"))
     }
 }
