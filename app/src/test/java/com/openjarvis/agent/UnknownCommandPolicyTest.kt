@@ -1,5 +1,6 @@
 package com.openjarvis.agent
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -27,5 +28,20 @@ class UnknownCommandPolicyTest {
             "aaj ka screenshot lo",
             "WhatsApp message pathva"
         ).forEach { assertFalse("$it is an explicit action request", UnknownCommandPolicy.shouldStopBeforePlanner(it)) }
+    }
+
+    @Test fun vagueInputsAskForClarificationAndNeverReachActionPlanning() {
+        listOf("kuch bhi", "blah blah").forEach { command ->
+            var clarifyCount = 0
+            var actionPlanCount = 0
+            UnknownCommandPolicy.dispatch(
+                command = command,
+                onStop = {},
+                onAskClarify = { clarifyCount++ },
+                onActionPlan = { actionPlanCount++ }
+            )
+            assertEquals("$command must ask for clarification", 1, clarifyCount)
+            assertEquals("$command must never create an action plan", 0, actionPlanCount)
+        }
     }
 }
