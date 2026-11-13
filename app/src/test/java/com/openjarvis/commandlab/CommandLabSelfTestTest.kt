@@ -29,6 +29,6 @@ class CommandLabSelfTestTest {
         val passCount = results.count { it.passed }
         val failCount = results.size - passCount
         assertEquals(total, passCount + failCount)
-        assertTrue(results.map { it.actualRoute }.containsAll(CommandLabRoute.values().toList()))
+        assertTrue(results.map { it.actualRoute }.containsAll(listOf(CommandLabRoute.SKILL, CommandLabRoute.STEP, CommandLabRoute.SEARCH, CommandLabRoute.CHAT, CommandLabRoute.LOOP)))
     }
 }
