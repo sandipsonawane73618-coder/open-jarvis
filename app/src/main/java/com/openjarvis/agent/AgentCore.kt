@@ -1655,6 +1655,11 @@ ${snapshot.interactiveElements.take(3500)}
                 Action.CLICK, Action.TAP -> {
                     val target = action.text
                     if (target.isNullOrBlank()) return "Click target is missing"
+                    if (activeService?.isPackageActive("com.whatsapp") == true &&
+                        MessageSendApprovalPolicy.isWhatsAppSendControl("com.whatsapp", target)
+                    ) {
+                        return "WhatsApp Send is blocked on the generic UI route. Create an exact contact+text preview and use its spoken Haan approval."
+                    }
                     if (activeService == null || !activeService.tapByText(target)) return "Could not click visible text: $target"
                     null // AccessibilityNodeInfo.ACTION_CLICK returned true.
                 }
