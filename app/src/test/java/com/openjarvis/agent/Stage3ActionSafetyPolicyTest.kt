@@ -84,6 +84,20 @@ class Stage3ActionSafetyPolicyTest {
         )
     }
 
+    @Test fun youtubeSearchAndPlayCommandRequestsFirstResultPlayback() {
+        assertTrue(YouTubePlaybackPolicy.shouldPlayFirstResult(
+            "YouTube par arijit ke gaane search karke play karo"
+        ))
+        assertFalse(YouTubePlaybackPolicy.shouldPlayFirstResult(
+            "YouTube par arijit ke gaane search karo"
+        ))
+    }
+
+    @Test fun youtubeNoResultsScreenIsDetectedWithoutClaimingPlayback() {
+        assertTrue(YouTubePlaybackPolicy.isNoResultsScreen("No results found"))
+        assertFalse(YouTubePlaybackPolicy.isNoResultsScreen("Arijit Singh - Tum Hi Ho"))
+    }
+
     @Test fun localFallbackHintAppearsWhenHybridChatIsOff() {
         assertTrue(LocalModelFallbackHintPolicy.shouldShow(
             onlineChatEnabled = false,
