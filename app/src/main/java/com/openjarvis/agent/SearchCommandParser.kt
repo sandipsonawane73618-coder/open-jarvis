@@ -45,8 +45,8 @@ object SearchCommandParser {
     private val FILLERS = words(
         "karo", "kar", "kro", "kare", "karen", "kardo", "karna", "kijiye",
         "do", "dena", "de", "na", "please", "plz", "pls", "zara", "jara",
-        "mujhe", "mera",
-        "करो", "कर", "करा", "करना", "कीजिए", "दो", "दे", "ना",
+        "mujhe", "mera", "karke", "karake",
+        "करो", "कर", "करा", "करना", "कीजिए", "दो", "दे", "ना", "करके",
         "प्लीज", "कृपया", "ज़रा", "जरा", "मुझे"
     )
 
@@ -75,7 +75,9 @@ object SearchCommandParser {
         if (tokens.none { it in platformWords }) return null
         if (tokens.none { it in SEARCH_VERBS }) return null
 
-        val remaining = tokens.filterNot { it in platformWords }.toMutableList()
+        val remaining = tokens.filterNot {
+            it in platformWords || it in SEARCH_VERBS || it in OPEN_VERBS || it in FILLERS
+        }.toMutableList()
         while (remaining.isNotEmpty() && remaining.first() in NOISE) {
             remaining.removeAt(0)
         }
