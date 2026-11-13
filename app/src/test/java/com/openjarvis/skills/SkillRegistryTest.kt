@@ -116,4 +116,11 @@ class SkillRegistryTest {
         assertNull(SkillRegistry.parse("open insta and tell me what to do dear"))
     }
 
+    @Test fun exactHinglishVolumeCommandsNeverBecomeTorchCommands() {
+        assertEquals(SkillRegistry.Kind.VOLUME, SkillRegistry.parse("awaaz badhao")?.kind)
+        assertEquals("up", SkillRegistry.parse("awaaz badhao")?.args?.get("direction"))
+        assertEquals(SkillRegistry.Kind.VOLUME, SkillRegistry.parse("awaaz kam karo")?.kind)
+        assertEquals("down", SkillRegistry.parse("awaaz kam karo")?.args?.get("direction"))
+        assertEquals(SkillRegistry.Kind.TORCH, SkillRegistry.parse("torch on")?.kind)
+    }
 }
