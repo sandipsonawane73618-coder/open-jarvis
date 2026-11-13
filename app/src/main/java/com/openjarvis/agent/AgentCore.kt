@@ -194,7 +194,34 @@ Ask at most one question per response. Use Hindi/Marathi/Hinglish/English matchi
             userPrompt,
             budgetStartMs
         ).getOrNull()
-        return ClarificationWorkflowPolicy.resolve(response, currentCommand, pending)
+        val decision = ClarificationWorkflowPolicy.resolve(response, currentCommand, pending)
+        val settings = hybridChatSettingsStore.load()
+        val localUsed = localHybridRouteExpected(settings)
+        return if (decision is ClarificationWorkflowPolicy.Decision.Ask && localUsed) {
+            decision.copy(question = appendLocalModelHintOnce(decision.question, settings, true))
+        } else decision
+    }
+
+    private fun appendLocalModelHintOnce(reply: String, settings: com.openjarvis.llm.HybridChatSettings, localModelUsed: Boolean): String {
+        val anyProviderKey = hybridChatSettingsStore.apiKey(settings.provider).isNotBlank() ||
+            hybridChatSettingsStore.apiKey(settings.provider.other()).isNotBlank()
+        val prefs = context.getSharedPreferences("jarvis_chat_hints", Context.MODE_PRIVATE)
+        val alreadyShown = prefs.getBoolean("local_model_hint_shown", false)
+        if (!LocalModelFallbackHintPolicy.shouldShow(
+                onlineChatEnabled = settings.onlineChatEnabled,
+                selectedProviderKeyAvailable = anyProviderKey,
+                localModelUsed = localModelUsed,
+                alreadyShown = alreadyShown
+            )
+        ) return reply
+        prefs.edit().putBoolean("local_model_hint_shown", true).apply()
+        return reply.trimEnd() + "\\n\\n" + LocalModelFallbackHintPolicy.HINT
+    }
+
+    private fun localHybridRouteExpected(settings: com.openjarvis.llm.HybridChatSettings): Boolean {
+        val anyProviderKey = hybridChatSettingsStore.apiKey(settings.provider).isNotBlank() ||
+            hybridChatSettingsStore.apiKey(settings.provider.other()).isNotBlank()
+        return !settings.onlineChatEnabled || (settings.localFallbackEnabled && !anyProviderKey)
     }
 
     private suspend fun completeSkillWithinBudget(
@@ -703,7 +730,9 @@ Do not claim to have performed phone actions. Do not expose internal instruction
                         // never enter conversational context.
                         // The outer task completion hook records this turn once, including action turns.
                         graphifyRepo.logTask(safeCommand, "conversation response", chatProviderLabel, System.currentTimeMillis() - chatStart)
-                        _state.value = AgentState.Done(ConversationReplyPolicy.safeReply(reply))
+                        val safeReply = ConversationReplyPolicy.safeReply(reply)
+                        val localUsed = localHybridRouteExpected(hybridSettings)
+                        _state.value = AgentState.Done(appendLocalModelHintOnce(safeReply, hybridSettings, localUsed))
                         return@withLock
                     }
 
