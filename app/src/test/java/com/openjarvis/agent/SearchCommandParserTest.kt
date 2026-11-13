@@ -53,4 +53,8 @@ class SearchCommandParserTest {
             SearchCommandParser.parseYouTubeQuery("YouTube par arijit ke gaane search karke play karo")
         )
     }
+    @Test fun youtubePlayQueryStripsPerAndOtherHindiLocationFillers() {
+        assertEquals("arijeet singh", yt("YouTube per arijeet Singh play karo"))
+        assertEquals("arijit singh", yt("YouTube par arijit Singh play karo"))
+    }
 }
