@@ -19,6 +19,7 @@ import java.util.Locale
 import android.app.SearchManager
 import android.content.pm.PackageManager
 import com.openjarvis.accessibility.JarvisAccessibilityService
+import com.openjarvis.devicecontrol.PowerOffActivity
 import com.openjarvis.accessibility.ScreenReader
 import com.openjarvis.graphify.AnalysisEngine
 import com.openjarvis.graphify.GraphifyRepository
@@ -87,6 +88,7 @@ class AgentCore(private val context: Context) {
     // Carries app/contact/message/group context between deterministic pipeline turns.
     private var actionStepContext = StepContext()
     private var pendingAgentLoopSession: AgentTaskSession? = null
+    private var pendingPowerOffUntilMs: Long? = null
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val taskMutex = Mutex()
@@ -318,7 +320,56 @@ ${rawResponse.take(1000)}
                         else -> cleanCommand
                     }
 
-                    // Block financial side effects before native skills, learned intents,
+                    // Full-device power off is a dedicated deterministic action, never an LLM plan.
+                    val nowMs = System.currentTimeMillis()
+                    val pendingPowerOff = pendingPowerOffUntilMs
+                    if (pendingPowerOff != null) {
+                        pendingPowerOffUntilMs = null
+                        if (nowMs <= pendingPowerOff) {
+                            when (PowerOffCommandPolicy.confirmationDecision(safeCommand)) {
+                                true -> {
+                                    _state.value = AgentState.Running("requesting Android power off...")
+                                    val launched = runCatching {
+                                        context.startActivity(
+                                            Intent(context, PowerOffActivity::class.java)
+                                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        )
+                                    }
+                                    launched.fold(
+                                        onSuccess = {
+                                            graphifyRepo.logTask(safeCommand, "power-off confirmation accepted; Shizuku handoff started", "ShizukuPowerOff", 0)
+                                            _state.value = AgentState.Done("Power-off confirmation accepted. Jarvis is checking Shizuku access; phone will turn off if access is available.")
+                                        },
+                                        onFailure = { error ->
+                                            val detail = error.message?.takeIf { it.isNotBlank() } ?: "Could not start the power-off flow."
+                                            AgentDiagnostics.record(context, "power-off-launch", safeCommand, detail, error = error, provider = "ShizukuPowerOff", model = "Not used")
+                                            _state.value = AgentState.Error(detail)
+                                        }
+                                    )
+                                    return@withLock
+                                }
+                                false -> {
+                                    _state.value = AgentState.Done("Theek hai, phone power off cancel kar diya.")
+                                    graphifyRepo.logTask(safeCommand, "power-off cancelled by user", "PowerOffCommandPolicy", 0)
+                                    return@withLock
+                                }
+                                null -> Unit
+                            }
+                        }
+                    }
+
+                    if (PowerOffCommandPolicy.isPowerOffCommand(safeCommand)) {
+                        // A new full-device power-off request supersedes any other pending confirmation.
+                        pendingMemoryFact = null
+                        pendingAgentLoopSession = null
+                        pendingPowerOffUntilMs = nowMs + 20_000L
+                        val reply = "Poora phone power off karne ke liye 20 seconds ke andar 'haan power off' bolo. Cancel karne ke liye 'nahi' bolo."
+                        graphifyRepo.logTask(safeCommand, "awaiting explicit voice confirmation", "PowerOffCommandPolicy", 0)
+                        _state.value = AgentState.Done(reply)
+                        return@withLock
+                    }
+
+                    // Block financial side effects before native skills,
                     // step routing, or the LLM can reach an Android executor.
                     if (BankingSafetyPolicy.isBlockedCommand(safeCommand)) {
                         val rule = BankingSafetyPolicy.failureRule(safeCommand, emptyList())
