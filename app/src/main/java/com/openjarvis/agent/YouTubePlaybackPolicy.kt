@@ -31,9 +31,10 @@ internal object YouTubePlaybackPolicy {
         val text = visibleText.lowercase(java.util.Locale.ROOT)
         val hasPlaybackControl = listOf("pause", "play/pause", "video player", "seek bar")
             .any { text.contains(it) }
-        val hasPlayerSurface = listOf("comments", "subscribe", "up next", "views", "description")
-            .any { text.contains(it) }
-        return hasPlaybackControl && hasPlayerSurface
+        val hasVideoContext = text.isNotBlank() &&
+            !text.contains("search results") &&
+            !text.contains("no results")
+        return hasPlaybackControl && hasVideoContext
     }
 
     fun noResultsReply(): String = "YouTube par koi matching video nahi mila."
