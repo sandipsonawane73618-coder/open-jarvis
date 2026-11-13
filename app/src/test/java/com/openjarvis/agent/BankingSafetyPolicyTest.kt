@@ -150,4 +150,15 @@ class BankingSafetyPolicyTest {
         assertFalse(BankingSafetyPolicy.blocksFinancialActions(search))
         assertFalse(BankingSafetyPolicy.blocksFinancialActions(read))
     }
+    @Test fun messageRecipientKoDoesNotBecomeMoneyTransferWithoutMoneyIntent() {
+        assertFalse(BankingSafetyPolicy.isBlockedCommand("WhatsApp per Rahul ko message bhejo ki hello"))
+        listOf(
+            "Rahul ko 500 rupaye bhejo",
+            "paise bhejo",
+            "send money to Rahul",
+            "UPI payment karo"
+        ).forEach { command ->
+            assertTrue("Real-money intent must remain blocked: $command", BankingSafetyPolicy.isBlockedCommand(command))
+        }
+    }
 }
