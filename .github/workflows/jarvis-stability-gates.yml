@@ -30,8 +30,6 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platforms;android-34 build-tools;34.0.0 platform-tools'
-      - name: Prepare sherpa-onnx runtime
-        run: bash scripts/prepare-sherpa.sh aar
       - name: Run all debug unit tests
         run: gradle testDebugUnitTest --no-daemon
 
@@ -50,8 +48,6 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platforms;android-34 build-tools;34.0.0 platform-tools'
-      - name: Prepare sherpa-onnx runtime and KWS model
-        run: bash scripts/prepare-sherpa.sh all
       - name: Build preview APK
         run: gradle assembleDebug --no-daemon
       - name: Upload preview APK
