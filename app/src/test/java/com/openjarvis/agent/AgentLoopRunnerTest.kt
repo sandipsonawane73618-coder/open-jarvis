@@ -18,7 +18,8 @@ class AgentLoopRunnerTest {
         val result = runner.run(AgentTaskSession("open screen and tap", 0), nowMs = { 1 },
             observe = { observation },
             plan = { _, _ -> plans++; if (plans == 1) Result.success(Action(action = Action.CLICK, text = "Search")) else Result.success(Action(action = Action.COMPLETE)) },
-            execute = { actions++; observation = screen("Search results"); true }, verify = ::verifier)
+            execute = { actions++; observation = screen("Search results"); true }, verify = ::verifier,
+            verifyGoal = { _, latest -> GoalVerification(latest.visibleText.contains("Search results"), "Search results not visible") })
         assertEquals(AgentLoopStatus.COMPLETED, result.status); assertEquals(2, plans); assertEquals(1, actions)
         assertEquals(1, result.session.completedActions.size)
     }
@@ -30,10 +31,11 @@ class AgentLoopRunnerTest {
             resolveSendPayload = { _, _ -> sendPayload }, verify = ::verifier)
         assertEquals(AgentLoopStatus.NEEDS_CONFIRMATION, initial.status); assertEquals(0, executions)
         assertEquals(sendPayload, initial.session.awaitingConfirmationPayload)
-        val resumed = runner.run(initial.session, approvedConfirmation = true, nowMs = { 2 }, observe = { whatsappScreen("Dad\\nHello Dad") },
+        val resumed = runner.run(initial.session, approvedConfirmation = true, nowMs = { 2 }, observe = { whatsappScreen("Dad\nHello Dad") },
             plan = { _, _ -> Result.success(Action(action = Action.COMPLETE)) },
             execute = { executions++; true },
-            resolveSendPayload = { _, _ -> sendPayload }, verify = ::verifier)
+            resolveSendPayload = { _, _ -> sendPayload }, verify = ::verifier,
+            verifyGoal = { _, _ -> GoalVerification(true, "Verified sent-message evidence") })
         assertEquals(1, executions); assertEquals(AgentLoopStatus.COMPLETED, resumed.status)
     }
     @Test fun sendIsBlockedWhenRecipientPayloadCannotBeResolved() = runBlocking {

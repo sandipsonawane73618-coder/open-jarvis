@@ -79,9 +79,9 @@ class SendConfirmationPayloadTest {
     }
 
     @Test fun visibleRecipientHeaderMustBeAnExactStandaloneLine() {
-        assertTrue(SendConfirmationPolicy.hasExactVisibleRecipientHeader("Dad\\nHello", "Dad"))
-        assertFalse(SendConfirmationPolicy.hasExactVisibleRecipientHeader("Dad Work\\nHello", "Dad"))
-        assertFalse(SendConfirmationPolicy.hasExactVisibleRecipientHeader("Mom\\nDad Work\\nHello", "Dad"))
+        assertTrue(SendConfirmationPolicy.hasExactVisibleRecipientHeader("Dad\nHello", "Dad"))
+        assertFalse(SendConfirmationPolicy.hasExactVisibleRecipientHeader("Dad Work\nHello", "Dad"))
+        assertFalse(SendConfirmationPolicy.hasExactVisibleRecipientHeader("Mom\nDad Work\nHello", "Dad"))
     }
 
     @Test fun sendApprovalRequiresExactHaanNotGenericYesOrConfirm() {
@@ -94,7 +94,7 @@ class SendConfirmationPayloadTest {
 
     @Test fun composerMessageMustBeUnambiguous() {
         assertNull(SendConfirmationPolicy.composerMessage(
-            "[#1 editable] text=Hello hint=Message\\n[#2 editable] text=Other hint=Search"
+            "[#1 editable] text=Hello hint=Message\n[#2 editable] text=Other hint=Search"
         ))
     }
 }

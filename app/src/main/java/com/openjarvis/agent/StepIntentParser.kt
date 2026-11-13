@@ -195,7 +195,10 @@ object StepIntentParser {
             val n = norm(piece).replace(PUNCT_STRIP, "")
             if (n.isNotEmpty()) { raw.add(piece); normed.add(n) }
         }
-        if (normed.none { it in MESSAGE_WORDS } || normed.none { it in SEND_WORDS }) return null
+        if (normed.none { it in MESSAGE_WORDS }) return null
+        val hasSendVerb = normed.any { it in SEND_WORDS }
+        val hasColonPrefill = step.indexOf(':') >= 0
+        if (!hasSendVerb && !hasColonPrefill) return null
         // The Marathi auxiliary "de" is also a send verb, but in "app ugadun de"
         // it completes an app-launch phrase. Do not classify that as a message
         // unless the utterance contains an explicit message noun (message/msg/etc.).
