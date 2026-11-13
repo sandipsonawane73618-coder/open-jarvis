@@ -15,7 +15,7 @@ internal data class MessageRequest(
 /** Parses explicit contact + channel + message requests without involving the LLM. */
 internal object MessageCommandParser {
     private val commandPattern = Regex(
-        "^(.+?)\\s+(?:ko|को|ला)\\s+(whatsapp|wa|व्हाट्सएप|व्हॉट्सअॅप|व्हॉट्सॲप|sms|message|संदेश)\\s*(?:(?:pe|par|पर|वर)\\s*)?(.+)$",
+        "^(.+?)\\s+(?:ko|la|को|ला)\\s+(whatsapp|wa|व्हाट्सएप|व्हॉट्सअॅप|व्हॉट्सॲप|sms|message|संदेश)\\s*(?:(?:pe|par|पर|वर)\\s*)?(.+)$",
         RegexOption.IGNORE_CASE
     )
     private val sendSuffix = Regex(
