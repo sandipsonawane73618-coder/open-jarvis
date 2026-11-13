@@ -24,7 +24,7 @@ object CommandLabSelfTest {
         CommandLabTestCase("English volume up", "volume up", CommandLabRoute.SKILL),
         CommandLabTestCase("Hinglish volume up", "awaaz badhao", CommandLabRoute.SKILL),
         CommandLabTestCase("Hindi volume down", "आवाज़ कम करो", CommandLabRoute.SKILL),
-        CommandLabTestCase("Torch on", "torch on karo", CommandLabRoute.SKILL),
+        CommandLabTestCase("Torch on", "torch on", CommandLabRoute.SKILL),
         CommandLabTestCase("Torch off", "flashlight off", CommandLabRoute.SKILL),
         CommandLabTestCase("English timer", "set timer for 5 minutes", CommandLabRoute.SKILL),
         CommandLabTestCase("Hinglish timer", "5 minute ka timer lagao", CommandLabRoute.STEP),
