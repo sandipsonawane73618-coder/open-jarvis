@@ -6,6 +6,7 @@ internal object ActionRiskPolicy {
         "purchase", "buy", "post", "submit", "uninstall", "confirm"
     )
     private val irreversiblePhrases = listOf(
+        Regex("(?i)^pay\\s+now$"),
         Regex("(?i)^post\\s+(update|content)$"),
         Regex("(?i)^submit\\s+(form|order)$"),
         Regex("(?i)^uninstall\\s+(app|application|package)$")
