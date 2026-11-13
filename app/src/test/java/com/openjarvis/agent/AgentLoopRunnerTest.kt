@@ -30,7 +30,7 @@ class AgentLoopRunnerTest {
             resolveSendPayload = { _, _ -> sendPayload }, verify = ::verifier)
         assertEquals(AgentLoopStatus.NEEDS_CONFIRMATION, initial.status); assertEquals(0, executions)
         assertEquals(sendPayload, initial.session.awaitingConfirmationPayload)
-        val resumed = runner.run(initial.session, approvedConfirmation = true, nowMs = { 2 }, observe = { whatsappScreen("Hello Dad") },
+        val resumed = runner.run(initial.session, approvedConfirmation = true, nowMs = { 2 }, observe = { whatsappScreen("Dad\\nHello Dad") },
             plan = { _, _ -> Result.success(Action(action = Action.COMPLETE)) },
             execute = { executions++; true },
             resolveSendPayload = { _, _ -> sendPayload }, verify = ::verifier)

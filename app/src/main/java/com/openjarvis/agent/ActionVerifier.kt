@@ -16,7 +16,7 @@ internal object ActionVerifier {
         if (before.packageName !in whatsappPackages || after.packageName !in whatsappPackages) {
             return Verification(false, "WhatsApp is not the foreground app; send tap kiya, confirm nahi hua.")
         }
-        val recipientVisible = after.visibleText.contains(payload.recipientName, ignoreCase = true)
+        val recipientVisible = SendConfirmationPolicy.hasExactVisibleRecipientHeader(after.visibleText, payload.recipientName)
         val messageVisible = after.visibleText.contains(payload.message)
         val attachmentVisible = payload.attachmentName?.let { after.visibleText.contains(it, ignoreCase = true) } ?: true
         val composerCleared = after.interactiveElements.lineSequence().any { line ->

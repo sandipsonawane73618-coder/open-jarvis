@@ -78,6 +78,12 @@ class SendConfirmationPayloadTest {
         assertEquals("anime.png", SendConfirmationPolicy.attachmentName("Preview anime.png Remove"))
     }
 
+    @Test fun visibleRecipientHeaderMustBeAnExactStandaloneLine() {
+        assertTrue(SendConfirmationPolicy.hasExactVisibleRecipientHeader("Dad\\nHello", "Dad"))
+        assertFalse(SendConfirmationPolicy.hasExactVisibleRecipientHeader("Dad Work\\nHello", "Dad"))
+        assertFalse(SendConfirmationPolicy.hasExactVisibleRecipientHeader("Mom\\nDad Work\\nHello", "Dad"))
+    }
+
     @Test fun sendApprovalRequiresExactHaanNotGenericYesOrConfirm() {
         assertTrue(SendConfirmationPolicy.isExplicitHaan("haan"))
         assertTrue(SendConfirmationPolicy.isExplicitHaan("हाँ"))

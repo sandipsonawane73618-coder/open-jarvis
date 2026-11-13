@@ -1590,9 +1590,9 @@ ${fullSystem.substringAfter("MEMORY:")}
             return null
         }
         val requestedLastFour = SendConfirmationPolicy.requestedPhoneLastFour(command)
-        val exactVisibleName = Regex(
-            "(?i)(?<![\\p{L}\\p{N}])${Regex.escape(requestedName)}(?![\\p{L}\\p{N}])"
-        ).containsMatchIn(observation.visibleText)
+        val exactVisibleName = SendConfirmationPolicy.hasExactVisibleRecipientHeader(
+            observation.visibleText, requestedName
+        )
         if (!exactVisibleName) {
             pendingSendSafetyPrompt = "The WhatsApp chat header does not match $requestedName. Open the exact contact chat, then repeat the send request."
             return null

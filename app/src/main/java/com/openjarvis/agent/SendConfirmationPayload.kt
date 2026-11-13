@@ -75,6 +75,10 @@ internal object SendConfirmationPolicy {
     fun approvalStillValid(approved: SendConfirmationPayload, current: SendConfirmationPayload?): Boolean =
         approved.matches(current)
 
+    /** Require a standalone exact chat-header line; substring matches such as "Dad Work" are unsafe. */
+    fun hasExactVisibleRecipientHeader(visibleText: String, requestedName: String): Boolean =
+        visibleText.lineSequence().any { normalizeName(it) == normalizeName(requestedName) }
+
     /** Outbound sends require the exact spoken Haan; generic yes/confirm phrases do not qualify. */
     fun isExplicitHaan(command: String): Boolean =
         command.trim().lowercase(java.util.Locale.ROOT)
