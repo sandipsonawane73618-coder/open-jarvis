@@ -2,6 +2,21 @@ package com.openjarvis.agent
 
 /** Screen-grounded YouTube selection and player verification rules. */
 internal object YouTubePlaybackPolicy {
+    fun shouldPlayFirstResult(command: String): Boolean {
+        val normalized = command.lowercase(java.util.Locale.ROOT)
+        val hasSearch = normalized.contains("search") || normalized.contains("dhoond") ||
+            normalized.contains("dhund") || normalized.contains("खोज") || normalized.contains("शोध")
+        val hasPlay = normalized.contains("play") || normalized.contains("chalao") ||
+            normalized.contains("bajao") || normalized.contains("चलाओ") || normalized.contains("बजाओ")
+        return normalized.contains("youtube") && hasSearch && hasPlay
+    }
+
+    fun isNoResultsScreen(visibleText: String): Boolean {
+        val text = visibleText.lowercase(java.util.Locale.ROOT)
+        return listOf("no results found", "no results", "no videos found", "no matching videos",
+            "कोई परिणाम नहीं", "कोई वीडियो नहीं मिला").any { text.contains(it) }
+    }
+
     fun firstVideoTarget(observation: ScreenObservation): String? {
         if (observation.packageName != "com.google.android.youtube") return null
         return observation.interactiveElements.lineSequence()
