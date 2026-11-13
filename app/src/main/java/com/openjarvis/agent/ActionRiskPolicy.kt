@@ -1,14 +1,26 @@
 package com.openjarvis.agent
+
 internal object ActionRiskPolicy {
-    private val irreversibleTarget = Regex(
-        "(?i)(?<![\\\\p{L}\\\\p{N}])(?:send(?:\\\\s+message)?|delete|remove|pay|payment|purchase|buy|post\\\\s+(?:update|content)|submit\\\\s+(?:form|order)|uninstall\\\\s+(?:app|application|package)|confirm)(?![\\\\p{L}\\\\p{N}])"
+    private val exactIrreversibleTargets = setOf(
+        "send", "send message", "delete", "remove", "pay", "payment",
+        "purchase", "buy", "post", "submit", "uninstall", "confirm"
     )
-    private val paymentTarget = Regex("(?i)(?<![\\\\p{L}\\\\p{N}])(pay|payment|purchase|buy|transfer)(?![\\\\p{L}\\\\p{N}])")
+    private val irreversiblePhrases = listOf(
+        Regex("(?i)^post\\s+(update|content)$"),
+        Regex("(?i)^submit\\s+(form|order)$"),
+        Regex("(?i)^uninstall\\s+(app|application|package)$")
+    )
+    private val paymentTarget = Regex("(?i)(?<![\\p{L}\\p{N}])(pay|payment|purchase|buy|transfer)(?![\\p{L}\\p{N}])")
+
+    private fun targetIsIrreversible(value: String): Boolean {
+        val normalized = value.trim().replace(Regex("\\s+"), " ").lowercase()
+        return normalized in exactIrreversibleTargets ||
+            irreversiblePhrases.any { it.matches(normalized) }
+    }
 
     fun requiresConfirmation(action: Action): Boolean {
         if (action.action !in setOf(Action.CLICK, Action.TAP)) return false
-        val target = listOfNotNull(action.text, action.hint, action.value).joinToString(" ")
-        return irreversibleTarget.containsMatchIn(target)
+        return listOfNotNull(action.text, action.hint, action.value).any(::targetIsIrreversible)
     }
 
     fun isPaymentAction(action: Action): Boolean {
