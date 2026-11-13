@@ -42,8 +42,9 @@ internal class AgentLoopRunner {
             val before = observe()
             val accepted = runCatching { execute(pending) }.getOrDefault(false)
             val after = observe()
-            val goalCheck = verifyGoal?.invoke(session.goal, after)
-            if (goalCheck != null && !goalCheck.verified) return failed(session.markFailed(pending, goalCheck.reason), goalCheck.reason)
+            // Check the user's goal against every fresh screen, but allow intermediate
+            // screens while the planner still has more steps to perform.
+            verifyGoal?.invoke(session.goal, after)
             val checked = verify(pending, before, after, accepted)
             if (!checked.verified) return failed(session.markFailed(pending, checked.reason), checked.reason)
             session = session.markCompleted(pending, after.fingerprint)
@@ -58,7 +59,8 @@ internal class AgentLoopRunner {
             if (action.action == Action.COMPLETE) {
                 if (session.completedActions.isEmpty()) return failed(session, "Planner declared completion before any action was verified.")
                 val goalCheck = verifyGoal?.invoke(session.goal, before)
-                if (goalCheck != null && !goalCheck.verified) return failed(session, goalCheck.reason)
+                    ?: return failed(session, "Independent goal verification is unavailable; refusing to report success.")
+                if (!goalCheck.verified) return failed(session, goalCheck.reason)
                 return AgentLoopRunResult(AgentLoopStatus.COMPLETED, session.finish(),
                     "Goal completed; ${session.completedActions.size} action(s) verified.")
             }
@@ -77,10 +79,9 @@ internal class AgentLoopRunner {
                 attempts++
                 val accepted = runCatching { execute(action) }.getOrDefault(false)
                 val after = observe()
-                val goalCheck = verifyGoal?.invoke(session.goal, after)
-                if (goalCheck != null && !goalCheck.verified) {
-                    return failed(session.markFailed(action, goalCheck.reason), goalCheck.reason)
-                }
+                // Evaluate goal evidence after each action; intermediate false results
+                // are not terminal because the planner may need another action.
+                verifyGoal?.invoke(session.goal, after)
                 verified = verify(action, before, after, accepted)
                 if (verified.verified) { session = session.markCompleted(action, after.fingerprint); break }
                 if (!ActionRetryPolicy.shouldRetry(action, attempts)) break
