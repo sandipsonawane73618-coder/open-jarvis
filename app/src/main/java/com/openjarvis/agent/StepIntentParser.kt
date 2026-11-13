@@ -196,6 +196,15 @@ object StepIntentParser {
             if (n.isNotEmpty()) { raw.add(piece); normed.add(n) }
         }
         if (normed.none { it in MESSAGE_WORDS } || normed.none { it in SEND_WORDS }) return null
+        // The Marathi auxiliary "de" is also a send verb, but in "app ugadun de"
+        // it completes an app-launch phrase. Do not classify that as a message
+        // unless the utterance contains an explicit message noun (message/msg/etc.).
+        val hasExplicitMessageNoun = normed.any { it in MESSAGE_WORDS && it !in WHATSAPP_WORDS }
+        val hasAppLaunchVerb = normed.any { it in OPEN_VERBS } ||
+            OPEN_VERB_SEQUENCES.any { sequence ->
+                normed.windowed(sequence.size).any { it == sequence }
+            }
+        if (!hasExplicitMessageNoun && hasAppLaunchVerb) return null
         val app = when {
             normed.any { it in WHATSAPP_WORDS } -> "whatsapp"
             normed.any { it in SMS_WORDS } -> "sms"
