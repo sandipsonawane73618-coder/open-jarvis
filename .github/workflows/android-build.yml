@@ -41,6 +41,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Report @Test count before and after this PR
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          before_count=$(git grep -h -E '^[[:space:]]*@Test([[:space:](]|$)' "$BASE_SHA" -- app/src/test app/src/androidTest | wc -l | tr -d ' ')
+          after_count=$(git grep -h -E '^[[:space:]]*@Test([[:space:](]|$)' HEAD -- app/src/test app/src/androidTest | wc -l | tr -d ' ')
+          echo "@Test count before=$before_count after=$after_count delta=$((after_count-before_count))"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
