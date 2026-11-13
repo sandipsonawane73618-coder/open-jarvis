@@ -12,7 +12,8 @@ class AgentLoopRunnerTest {
         val result = runner.run(AgentTaskSession("open screen and tap", 0), nowMs = { 1 },
             observe = { observation },
             plan = { _, _ -> plans++; if (plans == 1) Result.success(Action(action = Action.CLICK, text = "Search")) else Result.success(Action(action = Action.COMPLETE)) },
-            execute = { actions++; observation = screen("Search results"); true }, verify = ::verifier,\n            verifyGoal = { _, latest -> GoalEvidencePolicy.verify("Search results", latest) })
+            execute = { actions++; observation = screen("Search results"); true }, verify = ::verifier,
+            verifyGoal = { _, latest -> GoalEvidencePolicy.verify("Search results", latest) })
         assertEquals(AgentLoopStatus.COMPLETED, result.status); assertEquals(2, plans); assertEquals(1, actions)
         assertEquals(1, result.session.completedActions.size)
     }
@@ -24,7 +25,8 @@ class AgentLoopRunnerTest {
         assertEquals(AgentLoopStatus.NEEDS_CONFIRMATION, initial.status); assertEquals(0, executions)
         val resumed = runner.run(initial.session, approvedConfirmation = true, nowMs = { 2 }, observe = { screen("Message sent") },
             plan = { _, _ -> Result.success(Action(action = Action.COMPLETE)) },
-            execute = { executions++; true }, verify = ::verifier)
+            execute = { executions++; true }, verify = ::verifier,
+            verifyGoal = { _, _ -> GoalVerification(true, "Message sent evidence") })
         assertEquals(1, executions); assertEquals(AgentLoopStatus.COMPLETED, resumed.status)
     }
     @Test fun declinedConfirmationNeverExecutesPendingAction() = runBlocking {
