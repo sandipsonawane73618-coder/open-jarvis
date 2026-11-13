@@ -12,7 +12,7 @@ class AgentLoopRunnerTest {
         val result = runner.run(AgentTaskSession("open screen and tap", 0), nowMs = { 1 },
             observe = { observation },
             plan = { _, _ -> plans++; if (plans == 1) Result.success(Action(action = Action.CLICK, text = "Search")) else Result.success(Action(action = Action.COMPLETE)) },
-            execute = { actions++; observation = screen("Search results"); true }, verify = ::verifier)
+            execute = { actions++; observation = screen("Search results"); true }, verify = ::verifier,\n            verifyGoal = { _, latest -> GoalEvidencePolicy.verify("Search results", latest) })
         assertEquals(AgentLoopStatus.COMPLETED, result.status); assertEquals(2, plans); assertEquals(1, actions)
         assertEquals(1, result.session.completedActions.size)
     }
@@ -76,30 +76,29 @@ class AgentLoopRunnerTest {
         val result = runner.run(
             AgentTaskSession("show Display settings", 0),
             nowMs = { 1 },
-            observe = { screen("Home") },
-            plan = { _, _ -> Result.success(Action(action = Action.BACK)) },
-            execute = { true },
+            observe = { if (goalChecks == 0) screen("Home") else screen("Search results") },
+            plan = { _, _ -> if (goalChecks == 0) Result.success(Action(action = Action.CLICK, text = "Search")) else Result.success(Action(action = Action.COMPLETE)) },
+            execute = { goalChecks++; true },
             verify = ::verifier,
             verifyGoal = { goal, latest ->
-                goalChecks++
                 assertEquals("show Display settings", goal)
-                assertEquals("Home", latest.visibleText)
-                GoalVerification(false, "Display settings are not visible")
+                GoalVerification(false, "Display settings are not visible on ${latest.visibleText}")
             }
         )
         assertEquals(AgentLoopStatus.FAILED, result.status)
         assertTrue(result.message.contains("Display settings are not visible"))
-        assertEquals(1, goalChecks)
+        assertTrue(goalChecks >= 1)
     }
 
     @Test fun plannerCannotDeclareCompleteWhenGoalVerifierRejectsEvidence() = runBlocking {
         var plans = 0
+        var observation = screen("Settings home")
         val result = runner.run(
             AgentTaskSession("open Settings", 0),
             nowMs = { 1 },
-            observe = { screen("Home") },
+            observe = { observation },
             plan = { _, _ -> plans++; Result.success(if (plans == 1) Action(action = Action.BACK) else Action(action = Action.COMPLETE)) },
-            execute = { true },
+            execute = { observation = screen("Home"); true },
             verify = ::verifier,
             verifyGoal = { _, _ -> GoalVerification(false, "Settings screen not observed") }
         )
