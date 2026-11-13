@@ -619,7 +619,7 @@ ${rawResponse.take(1000)}
                                     SkillRegistry.Kind.ALARM -> "Alarm set"
                                     SkillRegistry.Kind.TIMER -> "Timer started"
                                     SkillRegistry.Kind.TORCH -> if (nativeSkill.args["enabled"] == "true") "Torch turned on" else "Torch turned off"
-                                    SkillRegistry.Kind.VOLUME -> if (args["direction"] == "up") "Volume badha diya" else "Volume kam kar diya"
+                                    SkillRegistry.Kind.VOLUME -> if (nativeSkill.args["direction"] == "up") "Volume badha diya" else "Volume kam kar diya"
                                     SkillRegistry.Kind.MAPS -> "Opening navigation"
                                     SkillRegistry.Kind.CALL -> "Dialer opened"
                                     SkillRegistry.Kind.TIME -> SkillRegistry.timeReply(safeCommand)
