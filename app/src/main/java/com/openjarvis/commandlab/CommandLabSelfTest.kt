@@ -28,7 +28,7 @@ object CommandLabSelfTest {
         CommandLabTestCase("Torch off", "flashlight off", CommandLabRoute.SKILL),
         CommandLabTestCase("English timer", "set timer for 5 minutes", CommandLabRoute.SKILL),
         CommandLabTestCase("Hinglish timer", "5 minute ka timer lagao", CommandLabRoute.STEP),
-        CommandLabTestCase("Marathi alarm", "सकाळी ६ वाजता अलार्म लावा", CommandLabRoute.STEP),
+        CommandLabTestCase("English AM alarm", "6 am alarm", CommandLabRoute.STEP),
         CommandLabTestCase("Hindi alarm", "subah 6 baje alarm lagao", CommandLabRoute.SKILL),
         CommandLabTestCase("Open WhatsApp", "open WhatsApp", CommandLabRoute.SKILL),
         CommandLabTestCase("WhatsApp kholo", "WhatsApp kholo", CommandLabRoute.STEP),
