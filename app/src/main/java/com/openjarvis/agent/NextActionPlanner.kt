@@ -70,13 +70,8 @@ internal object AgentLoopCommandPolicy {
 /** Small, grounded deterministic UI actions that do not need a model call. */
 internal object DeterministicUiActionResolver {
     fun resolve(command: String, observation: ScreenObservation): Action? {
-        if (AgentLoopCommandPolicy.isYouTubeFirstVideoGoal(command) &&
-            observation.packageName == "com.google.android.youtube"
-        ) {
-            val target = observation.interactiveElements.lineSequence()
-                .filter { it.contains("clickable", ignoreCase = true) }
-                .mapNotNull(::visibleTargetFromLine)
-                .firstOrNull { !isNavigationLabel(it) } ?: return null
+        if (AgentLoopCommandPolicy.isYouTubeFirstVideoGoal(command)) {
+            val target = YouTubePlaybackPolicy.firstVideoTarget(observation) ?: return null
             return Action(action = Action.CLICK, text = target)
         }
         val searchTap = Regex(

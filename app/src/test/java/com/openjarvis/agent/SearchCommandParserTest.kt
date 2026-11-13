@@ -46,4 +46,11 @@ class SearchCommandParserTest {
         assertNull(web("Chrome kholo")); assertNull(web("hello"))
         assertNull(web("YouTube par lofi search karo"))
     }
+
+    @Test fun youtubeSearchAndPlayKeepsOnlyTheRequestedSearchTerms() {
+        assertEquals(
+            "arijit ke gaane",
+            SearchCommandParser.parseYouTubeQuery("YouTube par arijit ke gaane search karke play karo")
+        )
+    }
 }

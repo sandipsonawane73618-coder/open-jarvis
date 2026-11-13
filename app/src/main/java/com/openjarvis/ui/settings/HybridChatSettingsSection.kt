@@ -93,6 +93,12 @@ internal fun HybridChatSettingsSection() {
                         }
                     )
                 }
+                if (!onlineEnabled || !hasSavedKey) {
+                    Text(
+                        "Behtar samajhne ke liye Settings me Gemini key daalo.",
+                        color = VoidColor.TextDisabled
+                    )
+                }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Local fallback", color = VoidColor.TextPrimary)
