@@ -28,7 +28,7 @@ object StepIntentParser {
     private fun words(vararg w: String): Set<String> = w.map { norm(it) }.toSet()
 
     private val CONNECTORS = words(
-        "ko", "se", "ka", "ki", "ke", "to", "pe", "par", "on", "in", "at", "for",
+        "ko", "la", "se", "ka", "ki", "ke", "to", "pe", "par", "on", "in", "at", "for",
         "liye", "tak", "को", "से", "का", "की", "के", "पर", "पे", "तक", "ला", "वर"
     )
     private val FILLERS = words(
@@ -78,7 +78,7 @@ object StepIntentParser {
         "धाड", "धाडा", "पाठवून", "दे"
     )
     private val TEXT_DELIMS = words("ki", "कि", "that", "saying", "say")
-    private val KO_WORDS = words("ko", "को", "ला")
+    private val KO_WORDS = words("ko", "la", "को", "ला")
     private val MESSAGE_NOISE: Set<String> =
         MESSAGE_WORDS + SEND_WORDS + CONNECTORS + FILLERS + OPEN_VERBS
 
