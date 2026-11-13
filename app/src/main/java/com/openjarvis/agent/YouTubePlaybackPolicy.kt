@@ -20,7 +20,7 @@ internal object YouTubePlaybackPolicy {
         return observation.interactiveElements.lineSequence()
             .filter { it.contains("clickable", ignoreCase = true) }
             .mapNotNull { line ->
-                Regex("""text=(.+?)(?:\s+(?:desc=|hint=|id=|class=|bounds=)|$)""")
+                Regex("""text=(.+?)(?:\s+(?:clickable|editable|long-clickable|desc=|hint=|id=|class=|bounds=)|$)""")
                     .find(line)?.groupValues?.get(1)?.trim()
                     ?: Regex("""desc=(.+?)(?:\s+(?:hint=|id=|class=|bounds=)|$)""")
                         .find(line)?.groupValues?.get(1)?.trim()

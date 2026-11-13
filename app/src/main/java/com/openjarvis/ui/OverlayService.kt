@@ -840,7 +840,7 @@ class OverlayService : Service() {
     fun getVoiceManager() = voiceManager
     fun getRecentTasks() = recentTasks
 
-    fun executeCommand(command: String) = agentCore.executeTask(command)
+    fun executeCommand(command: String) = submitCommand(command)
 
     private fun applyVoiceAssistantEnabled(enabled: Boolean) {
         voiceManager.setVoiceEnabled(enabled)

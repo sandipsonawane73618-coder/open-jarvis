@@ -559,6 +559,14 @@ ${rawResponse.take(1000)}
                         }
                     }
 
+                    // A play command without a media query must clarify before any action planner.
+                    val youtubeForeground = JarvisAccessibilityService.instance
+                        ?.isPackageActive("com.google.android.youtube") == true
+                    if (PlayCommandPolicy.shouldAskForQuery(safeCommand, youtubeForeground)) {
+                        _state.value = AgentState.Done("Kya play karun?")
+                        return@withLock
+                    }
+
                     // Multi-step commands use the ordered deterministic pipeline.
                     // A single step deliberately stays on the legacy path below to preserve
                     // the exact Slice A single-command behavior.
@@ -2209,6 +2217,37 @@ Actions remaining: ${session.remainingActions}
         }
     }
 
+    private suspend fun executeInstagramInAppSearch(query: String): String {
+        require(query.isNotBlank()) { "Instagram search query is empty" }
+        val service = JarvisAccessibilityService.instance
+            ?: throw IllegalStateException("Accessibility service is unavailable for Instagram search")
+        val instagramPackage = "com.instagram.android"
+        var foreground = false
+        for (attempt in 0 until 20) {
+            if (service.isPackageActive(instagramPackage)) {
+                foreground = true
+                break
+            }
+            kotlinx.coroutines.delay(250)
+        }
+        if (!foreground) throw IllegalStateException("Instagram is not foreground; refusing to search another app")
+        val searchOpened = service.tapByText("Search") || service.tapByText("Explore")
+        if (!searchOpened) throw IllegalStateException("Instagram Search control was not found")
+        kotlinx.coroutines.delay(450)
+        if (!service.typeText(query, "Search")) {
+            throw IllegalStateException("Instagram search field was not found; no LLM fallback was attempted")
+        }
+        // Instagram filters the visible suggestions as text changes; verify the resulting tree.
+        kotlinx.coroutines.delay(900)
+        val visibleText = service.extractVisibleText()
+        if (!service.isPackageActive(instagramPackage) ||
+            !InAppSearchPolicy.isVerified(instagramPackage, query, visibleText)
+        ) {
+            throw IllegalStateException("Instagram search results could not be verified")
+        }
+        return "Searched Instagram for $query (results verified; deterministic in-app route)"
+    }
+
     private fun canParsePipelineStep(step: String): Boolean =
         CommandRouter.classify(step) != CommandRouter.Route.NONE
 
@@ -2312,15 +2351,19 @@ Actions remaining: ${session.remainingActions}
                             val reply = executeStepIntent(intent)
                             // Learning is success-only; failed execution is never persisted.
                             nativeLearnedStore.save(step, intent)
-                            val nextContext = if (intent is StepIntent.Message &&
-                                !intent.contact.isNullOrBlank() && !intent.text.isNullOrBlank()
-                            ) {
-                                ctx.copy(
-                                    app = selectedMessageApp(intent.app),
-                                    contact = intent.contact,
-                                    messageText = intent.text
-                                )
-                            } else ctx
+                            val nextContext = when (intent) {
+                                is StepIntent.AppLaunch -> ctx.copy(app = intent.label)
+                                is StepIntent.Message -> if (
+                                    !intent.contact.isNullOrBlank() && !intent.text.isNullOrBlank()
+                                ) {
+                                    ctx.copy(
+                                        app = selectedMessageApp(intent.app),
+                                        contact = intent.contact,
+                                        messageText = intent.text
+                                    )
+                                } else ctx
+                                else -> ctx
+                            }
                             StepOutcome(true, reply, nextContext)
                         } catch (error: Exception) {
                             StepOutcome(false, error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName, ctx)
@@ -2411,6 +2454,11 @@ Actions remaining: ${session.remainingActions}
                             StepOutcome(true, "Searching the web for $contextualQuery", ctx)
                         } catch (error: Exception) {
                             StepOutcome(false, "Could not open web search: ${error.message ?: error.javaClass.simpleName}", ctx)
+                        }
+                        "instagram", "insta" -> try {
+                            StepOutcome(true, executeInstagramInAppSearch(contextualQuery), ctx)
+                        } catch (error: Exception) {
+                            StepOutcome(false, error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName, ctx)
                         }
                         else -> null
                     }

@@ -206,22 +206,6 @@ class JarvisAccessibilityService : AccessibilityService() {
         }
     }
 
-    /** Submit the currently focused search editor using its IME action. */
-    fun submitImeSearch(): Boolean {
-        val roots = interactionRoots()
-        for (index in roots.indices) {
-            val editor = findEditableInRoot(roots[index])
-            if (editor != null) {
-                val submitted = android.os.Build.VERSION.SDK_INT >= 30 &&
-                    editor.performAction(AccessibilityNodeInfo.ACTION_IME_ENTER)
-                editor.recycle()
-                for (remaining in index + 1 until roots.size) roots[remaining].recycle()
-                return submitted
-            }
-        }
-        return false
-    }
-
     /**
      * Match UI controls by visible text, accessibility description, hint, tooltip,
      * or Android resource id. Icon-only controls (for example WhatsApp Search)

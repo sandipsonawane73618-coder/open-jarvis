@@ -54,6 +54,9 @@ object CommandLabRouterProbe {
                     result = "open_app(Instagram) -> in_app_search($displayQuery); LLM=not-used"
                 )
             }
+            if (launch?.label?.equals("youtube", ignoreCase = true) == true && !query.isNullOrBlank()) {
+                return CommandLabRouteResult(CommandLabRoute.SEARCH, "Search(query=$query)")
+            }
             return CommandLabRouteResult(CommandLabRoute.LOOP, "StepPipeline(${pipeline.joinToString(" -> ")})")
         }
 
@@ -62,7 +65,7 @@ object CommandLabRouterProbe {
             CommandRouter.Route.SKILL_REGISTRY -> {
                 val intent = SkillRegistry.parse(text)
                 val detail = intent?.let { "${it.kind}: ${it.args}" } ?: "SkillRegistry"
-                val result = if (intent?.kind == SkillRegistry.Kind.VOLUME && intent.args["direction"] == "up") {
+                val result = if (intent?.kind == SkillRegistry.Kind.VOLUME && intent?.args?.get("direction") == "up") {
                     "Volume badha diya; torch untouched"
                 } else null
                 return CommandLabRouteResult(CommandLabRoute.SKILL, detail, result = result)
