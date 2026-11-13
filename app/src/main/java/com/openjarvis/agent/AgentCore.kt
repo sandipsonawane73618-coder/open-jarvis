@@ -605,11 +605,20 @@ Do not claim to have performed phone actions. Do not expose internal instruction
                         return@withLock
                     }
 
-                    if (UnknownCommandPolicy.shouldStopBeforePlanner(safeCommand)) {
-                        Log.i(TAG, "path=rule unknown-command fallback")
-                        _state.value = AgentState.Done(UnknownCommandPolicy.FALLBACK)
-                        return@withLock
-                    }
+                    var continueToActionPlanner = false
+                    UnknownCommandPolicy.dispatch(
+                        command = safeCommand,
+                        onStop = {
+                            Log.i(TAG, "path=rule unknown-command fallback")
+                            _state.value = AgentState.Done(UnknownCommandPolicy.FALLBACK)
+                        },
+                        onAskClarify = {
+                            Log.i(TAG, "path=rule ask_clarify vague-command")
+                            _state.value = AgentState.Done(UnknownCommandPolicy.CLARIFY_PROMPT)
+                        },
+                        onActionPlan = { continueToActionPlanner = true }
+                    )
+                    if (!continueToActionPlanner) return@withLock
 
                     _state.value = AgentState.Running("reading screen...")
                     // Keep local-model command planning lean: app ranking and graph-memory
