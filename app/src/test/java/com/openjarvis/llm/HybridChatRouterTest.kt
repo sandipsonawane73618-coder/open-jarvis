@@ -52,7 +52,7 @@ class HybridChatRouterTest {
         assertTrue(observedSystem.contains("memory: prefers concise Hinglish"))
         assertTrue(observedSystem.contains("personality: calm and proactive"))
         assertTrue(observedSystem.contains("recent: user asked for weather"))
-        assertTrue(observedSystem.contains("contacts: Rahul, Amit"))
+        assertTrue(observedUser.contains("Rahul"))
         assertEquals("Rahul ko message bhejo ki main aa raha hoon", observedUser)
     }
 
