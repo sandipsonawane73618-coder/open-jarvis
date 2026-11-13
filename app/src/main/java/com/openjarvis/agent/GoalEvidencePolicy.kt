@@ -8,7 +8,7 @@ internal object GoalEvidencePolicy {
     private val nonTargetWords = setOf(
         "open", "launch", "start", "show", "display", "go", "to", "the", "please",
         "khol", "kholo", "kholna", "dikhao", "dikhaye", "dikha", "jao", "jाओ",
-        "settings", "setting", "app", "application", "screen", "page", "and", "in",
+        "app", "application", "screen", "page", "and", "in",
         "on", "my", "for", "finish", "complete", "task", "it", "this", "that"
     )
 
