@@ -34,7 +34,7 @@ class HybridChatRouterTest {
         assertFalse(cloudCalled)
     }
 
-    @Test fun cloudReceivesOnlyCloudSafePromptAndCurrentUserTurn() = runBlocking {
+    @Test fun cloudReceivesApprovedMemoryPersonalityRecentTurnsAndContactNames() = runBlocking {
         var observedSystem = ""
         var observedUser = ""
         val router = HybridChatRouter(
@@ -48,10 +48,12 @@ class HybridChatRouterTest {
             },
             localProvider = { error("Local fallback must not run") }
         )
-        assertEquals("cloud answer", router.complete("cloud-safe-only", "contains-private-memory", "my question", 5_000).getOrThrow())
-        assertEquals("cloud-safe-only", observedSystem)
-        assertEquals("my question", observedUser)
-        assertFalse(observedSystem.contains("private-memory"))
+        assertEquals("cloud answer", router.complete("memory: prefers concise Hinglish\npersonality: calm and proactive\nrecent: user asked for weather", "local-private", "Rahul ke liye calendar reminder banao", 5_000).getOrThrow())
+        assertTrue(observedSystem.contains("memory: prefers concise Hinglish"))
+        assertTrue(observedSystem.contains("personality: calm and proactive"))
+        assertTrue(observedSystem.contains("recent: user asked for weather"))
+        assertTrue(observedUser.contains("Rahul"))
+        assertEquals("Rahul ke liye calendar reminder banao", observedUser)
     }
 
     @Test fun failedPrimaryTriesSecondaryBeforeLocal() = runBlocking {

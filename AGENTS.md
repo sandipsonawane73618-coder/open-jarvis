@@ -3,9 +3,9 @@
 These instructions apply to every change in this repository and take precedence over generic coding-agent defaults.
 
 ## Non-negotiable project constraints
-- Android app first. Keep the runtime local/offline-capable; do not add cloud AI, remote STT, API keys, paid-provider fallbacks, or telemetry uploads.
+- Android app first. Keep the runtime local/offline-capable. The user explicitly approves the existing Gemini/Groq hybrid cloud chat and clarification path; do not add cloud providers, remote STT, paid-provider fallbacks, or telemetry uploads.
 - Keep Ollama at `http://127.0.0.1:11434` and `qwen3:1.7b` as the default local model unless the user explicitly approves a change.
-- Preserve existing Android skills, command routing, saved data, reports, permissions, and safety checks unless the task explicitly targets them.
+- Preserve existing Android skills, command routing, saved data, reports, permissions, and safety checks unless the task explicitly targets them. Never modify Euronics projects or their Firebase/data/config.
 - Do not add unrelated features or modify Euronics projects in this repository.
 - Never claim a feature is complete without code and test evidence. Distinguish unit tests, CI, APK build, emulator smoke, and physical-phone verification.
 - Never merge a pull request, publish, or change production distribution without explicit user approval.
@@ -43,7 +43,9 @@ For complex changes, split evidence gathering, implementation, and review. Proje
 - Context compression must be content-aware, bounded, observable, and exactly restorable when it transforms content.
 - Validate model-produced action plans against allowlists and bounds before execution.
 - Deterministic Android skills must remain ahead of LLM fallback.
-- Do not change the local model/provider default or add remote fallback.
+- Do not change the local model/provider default: Ollama `qwen3:1.7b` remains the offline default. Cloud hybrid chat/clarification may receive user-approved saved memory notes, personality settings, recent turns, and the current command. Before every cloud call, redact passwords, OTPs, PINs, card numbers, API keys/tokens, and all content blocked by `BankingSafetyPolicy`.
+- Provider credentials may be entered and stored only through the app Settings flow; never hardcode, print, or log keys/secrets.
+- Keep the Voicute-only wake-word engine; do not add or retain alternate wake-word engines.
 
 ## Security review checklist
 - Review runtime code and the development-agent surface: `AGENTS.md`, `.agents/skills/`, `.codex/`, scripts, CI workflows, and dependency changes.

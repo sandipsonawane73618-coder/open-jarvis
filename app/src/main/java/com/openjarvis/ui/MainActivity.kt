@@ -19,6 +19,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.view.WindowCompat
 import com.openjarvis.accessibility.JarvisAccessibilityService
 import com.openjarvis.agent.AgentCore
+import com.openjarvis.agent.PersonalMemoryStore
+import com.openjarvis.agent.SessionSuggestionPolicy
 import com.openjarvis.agent.AgentState
 import com.openjarvis.graphify.GraphifyRepository
 import com.openjarvis.graphify.nodes.TaskNode
@@ -71,16 +73,54 @@ class MainActivity : ComponentActivity() {
             OpenJarvisTheme {
                 val context = LocalContext.current
                 var recentTasks by remember { mutableStateOf<List<TaskNode>>(emptyList()) }
-                
+                var proactiveSuggestion by remember { mutableStateOf<String?>(null) }
+                var suggestionFact by remember { mutableStateOf<String?>(null) }
+
                 LaunchedEffect(Unit) {
                     recentTasks = graphifyRepo.getRecentTasks(10)
+                    val prefs = context.getSharedPreferences("jarvis_suggestion_session", MODE_PRIVATE)
+                    val alreadyShown = prefs.getBoolean("shown", false)
+                    val candidate = PersonalMemoryStore(context).getAll().firstOrNull()
+                    if (!alreadyShown && candidate != null) {
+                        val suggestion = SessionSuggestionPolicy.choose(
+                            sessionId = "app-open",
+                            alreadyShown = false,
+                            memoryNotes = listOf(candidate),
+                            hourOfDay = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+                        )
+                        if (suggestion != null) {
+                            suggestionFact = candidate
+                            proactiveSuggestion = suggestion
+                            prefs.edit().putBoolean("shown", true).apply()
+                        }
+                    }
                 }
                 
                 val accessibilityEnabled = isAccessibilityServiceEnabled()
                 val overlayEnabled = Settings.canDrawOverlays(this)
                 
                 val agentState by agentCore.state.collectAsState()
-                
+
+                proactiveSuggestion?.let { suggestion ->
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { proactiveSuggestion = null },
+                        title = { androidx.compose.material3.Text("Jarvis suggestion") },
+                        text = { androidx.compose.material3.Text(suggestion) },
+                        confirmButton = {
+                            androidx.compose.material3.TextButton(onClick = {
+                                val fact = suggestionFact
+                                proactiveSuggestion = null
+                                if (!fact.isNullOrBlank()) agentCore.executeTask("Reminder lagao: $fact")
+                            }) { androidx.compose.material3.Text("Haan") }
+                        },
+                        dismissButton = {
+                            androidx.compose.material3.TextButton(onClick = {
+                                proactiveSuggestion = null
+                            }) { androidx.compose.material3.Text("Abhi nahi") }
+                        }
+                    )
+                }
+
                 if (!accessibilityEnabled || !overlayEnabled) {
                     PermissionScreen(
                         accessibilityEnabled = accessibilityEnabled,

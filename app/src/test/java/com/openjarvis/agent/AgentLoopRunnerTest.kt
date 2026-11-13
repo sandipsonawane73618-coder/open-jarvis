@@ -12,7 +12,8 @@ class AgentLoopRunnerTest {
         val result = runner.run(AgentTaskSession("open screen and tap", 0), nowMs = { 1 },
             observe = { observation },
             plan = { _, _ -> plans++; if (plans == 1) Result.success(Action(action = Action.CLICK, text = "Search")) else Result.success(Action(action = Action.COMPLETE)) },
-            execute = { actions++; observation = screen("Search results"); true }, verify = ::verifier)
+            execute = { actions++; observation = screen("Search results"); true }, verify = ::verifier,
+            verifyGoal = { _, latest -> GoalEvidencePolicy.verify("Search results", latest) })
         assertEquals(AgentLoopStatus.COMPLETED, result.status); assertEquals(2, plans); assertEquals(1, actions)
         assertEquals(1, result.session.completedActions.size)
     }
@@ -24,7 +25,8 @@ class AgentLoopRunnerTest {
         assertEquals(AgentLoopStatus.NEEDS_CONFIRMATION, initial.status); assertEquals(0, executions)
         val resumed = runner.run(initial.session, approvedConfirmation = true, nowMs = { 2 }, observe = { screen("Message sent") },
             plan = { _, _ -> Result.success(Action(action = Action.COMPLETE)) },
-            execute = { executions++; true }, verify = ::verifier)
+            execute = { executions++; true }, verify = ::verifier,
+            verifyGoal = { _, _ -> GoalVerification(true, "Message sent evidence") })
         assertEquals(1, executions); assertEquals(AgentLoopStatus.COMPLETED, resumed.status)
     }
     @Test fun declinedConfirmationNeverExecutesPendingAction() = runBlocking {
@@ -70,4 +72,40 @@ class AgentLoopRunnerTest {
             execute = { true }, verify = ::verifier)
         assertEquals(AgentLoopStatus.FAILED, result.status)
     }
+
+    @Test fun plannerCompleteRequiresIndependentGoalVerificationFromFreshScreen() = runBlocking {
+        var goalChecks = 0
+        val result = runner.run(
+            AgentTaskSession("show Display settings", 0),
+            nowMs = { 1 },
+            observe = { if (goalChecks == 0) screen("Home") else screen("Search results") },
+            plan = { _, _ -> if (goalChecks == 0) Result.success(Action(action = Action.CLICK, text = "Search")) else Result.success(Action(action = Action.COMPLETE)) },
+            execute = { goalChecks++; true },
+            verify = ::verifier,
+            verifyGoal = { goal, latest ->
+                assertEquals("show Display settings", goal)
+                GoalVerification(false, "Display settings are not visible on ${latest.visibleText}")
+            }
+        )
+        assertEquals(AgentLoopStatus.FAILED, result.status)
+        assertTrue(result.message.contains("Display settings are not visible"))
+        assertTrue(goalChecks >= 1)
+    }
+
+    @Test fun plannerCannotDeclareCompleteWhenGoalVerifierRejectsEvidence() = runBlocking {
+        var plans = 0
+        var observation = screen("Settings home")
+        val result = runner.run(
+            AgentTaskSession("open Settings", 0),
+            nowMs = { 1 },
+            observe = { observation },
+            plan = { _, _ -> plans++; Result.success(if (plans == 1) Action(action = Action.BACK) else Action(action = Action.COMPLETE)) },
+            execute = { observation = screen("Home"); true },
+            verify = ::verifier,
+            verifyGoal = { _, _ -> GoalVerification(false, "Settings screen not observed") }
+        )
+        assertEquals(AgentLoopStatus.FAILED, result.status)
+        assertTrue(result.message.contains("Settings screen not observed"))
+    }
+
 }

@@ -12,5 +12,5 @@ description: Use when changing AgentCore prompts, context compression, OCR, memo
 - Prefer content-aware, reversible compression. Retain an exact original for any transformed payload and test restoration.
 - Validate model JSON against an allowlist and bounds before execution. Reject unknown actions, unknown keys, oversized plans, and unsafe targets.
 - Keep deterministic native skills ahead of LLM fallback.
-- Keep local Ollama at 127.0.0.1:11434 and qwen3:1.7b default. No cloud fallback, credentials, telemetry upload, or proxy.
+- Keep local Ollama at 127.0.0.1:11434 and qwen3:1.7b as the offline default. The user-approved Gemini/Groq hybrid chat and clarification path may receive saved memory notes, personality settings, recent turns, and the current command. Redact passwords, OTPs, PINs, card numbers, API keys/tokens, and all content blocked by BankingSafetyPolicy before every cloud request. Keys are entered only in app Settings and must never appear in code or logs. No telemetry upload or proxy.
 - Add adversarial tests for prompt injection in OCR, memory, screen labels, and malformed model output.

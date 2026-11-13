@@ -19,4 +19,21 @@ class ActionRiskPolicyTest {
         assertEquals(false, ActionRiskPolicy.approvalDecision("नहीं"))
         assertNull(ActionRiskPolicy.approvalDecision("okay maybe"))
     }
+
+    @Test fun genericIrreversibleControlsRequireConfirmationInAnyApp() {
+        listOf("Post", "Submit", "Uninstall", "Confirm", "Send", "Delete").forEach { label ->
+            assertTrue(label, ActionRiskPolicy.requiresConfirmation(Action(action = Action.CLICK, text = label, packageName = "com.example.anyapp")))
+        }
+    }
+
+    @Test fun riskGateChecksContentDescriptionAndHintAsWellAsVisibleText() {
+        assertTrue(ActionRiskPolicy.requiresConfirmation(Action(action = Action.CLICK, hint = "Uninstall app")))
+        assertTrue(ActionRiskPolicy.requiresConfirmation(Action(action = Action.CLICK, value = "Post update")))
+    }
+
+    @Test fun riskyWordsInsideOrdinaryLongerLabelsAreNotOvermatched() {
+        listOf("Post history", "Submission details", "Confirm identity status").forEach { label ->
+            assertFalse(label, ActionRiskPolicy.requiresConfirmation(Action(action = Action.CLICK, text = label)))
+        }
+    }
 }

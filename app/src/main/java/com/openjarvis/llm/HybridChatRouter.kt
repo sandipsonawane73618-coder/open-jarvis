@@ -32,8 +32,12 @@ internal class HybridChatRouter(
                 HybridChatSettingsPolicy.normalizeModel(providerType, config.model)
             } else providerType.defaultModel
             val attempt = try {
+                // Mandatory redaction is applied at the final network boundary, after
+                // user-approved context has been assembled and before either cloud provider.
+                val safeCloudSystem = com.openjarvis.agent.CloudPromptRedactionPolicy.redact(cloudSystemPrompt)
+                val safeUserMessage = com.openjarvis.agent.CloudPromptRedactionPolicy.redact(userMessage)
                 cloudProvider(providerType, key, model).completeWithDeadline(
-                    cloudSystemPrompt, userMessage, minOf(remaining, cloudTimeoutMs), conversation = true
+                    safeCloudSystem, safeUserMessage, minOf(remaining, cloudTimeoutMs), conversation = true
                 )
             } catch (cancelled: CancellationException) {
                 throw cancelled
