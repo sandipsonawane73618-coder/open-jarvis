@@ -1,5 +1,7 @@
 package com.openjarvis.commandlab
 
+import com.openjarvis.agent.Action
+
 import org.junit.Assert.*
 import org.junit.Test
 
