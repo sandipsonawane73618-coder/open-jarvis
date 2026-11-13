@@ -33,6 +33,13 @@ class Stage3ActionSafetyPolicyTest {
         assertFalse(MessageSendApprovalPolicy.isApproved(preview, "Amita", "+919876543211", "mi yetoy", "haan"))
     }
 
+    @Test fun genericUiSendTapIsBlockedForWhatsApp() {
+        assertTrue(MessageSendApprovalPolicy.isWhatsAppSendControl("com.whatsapp", "Send"))
+        assertTrue(MessageSendApprovalPolicy.isWhatsAppSendControl("com.whatsapp", "Send message"))
+        assertFalse(MessageSendApprovalPolicy.isWhatsAppSendControl("com.whatsapp", "Search"))
+        assertFalse(MessageSendApprovalPolicy.isWhatsAppSendControl("com.google.android.youtube", "Send"))
+    }
+
     @Test fun sentEvidenceRequiresExactOutgoingContactAndMessageOnScreen() {
         assertTrue(MessageSendApprovalPolicy.isSentEvidenceVerified(
             visibleText = "Amit\nmi yetoy\nSent",
