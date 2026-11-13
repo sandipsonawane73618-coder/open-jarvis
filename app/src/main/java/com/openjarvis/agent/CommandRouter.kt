@@ -20,6 +20,8 @@ internal object CommandRouter {
     }
 
     fun classify(step: String): Route {
+        // Global BACK must win before generic step/navigation parsing can claim the utterance.
+        if (FastCommandParser.parse(step) is FastCommandParser.Command.Back) return Route.FAST
         if (SkillRegistry.parse(step) != null) return Route.SKILL_REGISTRY
         if (StepIntentParser.parse(step) != null) return Route.STEP_INTENT
         if (MessageCommandParser.parse(step) != null) return Route.MESSAGE
