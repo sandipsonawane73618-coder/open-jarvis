@@ -1,5 +1,6 @@
 package com.openjarvis.ui
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -44,6 +45,7 @@ class SettingsActivity : ComponentActivity() {
                     onSaveProvider = { name, baseUrl, apiKey, model ->
                         saveProviderSettings(name, baseUrl, apiKey, model)
                     },
+                    onOpenCommandLab = { startActivity(Intent(this@SettingsActivity, CommandLabActivity::class.java)) },
                     modifier = Modifier.fillMaxSize()
                 )
             }

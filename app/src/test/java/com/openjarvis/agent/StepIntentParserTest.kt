@@ -41,6 +41,19 @@ class StepIntentParserTest {
     }
 
     @Test
+    fun marathiSendVerbsParseMessageStepsAndRequireACompleteMessage() {
+        assertEquals(
+            StepIntent.Message("whatsapp", "amit", "mi yetoy"),
+            p("Amit la WhatsApp message dhad: mi yetoy")
+        )
+        assertEquals(
+            StepIntent.Message(null, "rahul", "ho"),
+            p("Rahul la message pathva: ho")
+        )
+        assertNull(p("dhad"))
+    }
+
+    @Test
     fun whatsappMessageUsesColonAsBodyDelimiter() {
         assertEquals(
             StepIntent.Message("whatsapp", "rahul", "main 10 minute mein pahunch raha hoon"),

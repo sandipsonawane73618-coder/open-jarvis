@@ -50,6 +50,7 @@ import kotlinx.coroutines.delay
 fun SettingsScreen(
     onNavigateBack: () -> Unit,
     onSaveProvider: (String, String, String, String) -> Unit,
+    onOpenCommandLab: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -150,6 +151,12 @@ fun SettingsScreen(
                     .verticalScroll(scrollState)
                     .padding(horizontal = 24.dp, vertical = 16.dp)
             ) {
+                SectionLabel("COMMAND LAB")
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedButton(onClick = onOpenCommandLab, modifier = Modifier.fillMaxWidth()) {
+                    Text("Open Command Lab • Logs & Self-test")
+                }
+                Spacer(modifier = Modifier.height(24.dp))
                 HybridChatSettingsSection()
                 Spacer(modifier = Modifier.height(28.dp))
 

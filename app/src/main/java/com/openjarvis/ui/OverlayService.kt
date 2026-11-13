@@ -40,6 +40,8 @@ import com.openjarvis.graphify.GraphifyRepository
 import com.openjarvis.bridge.SocketServer
 import com.openjarvis.graphify.nodes.TaskNode
 import com.openjarvis.voice.VoiceManager
+import com.openjarvis.commandlab.CommandLogStore
+import com.openjarvis.commandlab.CommandLabRouterProbe
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -69,6 +71,8 @@ class OverlayService : Service() {
     private var panel: LinearLayout? = null
     private lateinit var agentCore: AgentCore
     private lateinit var voiceManager: VoiceManager
+    private val commandLogStore by lazy { CommandLogStore(this) }
+    @Volatile private var activeCommandLogId: String? = null
     private lateinit var graphifyRepo: GraphifyRepository
     private var socketServer: SocketServer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -167,12 +171,16 @@ class OverlayService : Service() {
                     }
                     is com.openjarvis.agent.AgentState.Running -> setVisualState("THINKING", state.step)
                     is com.openjarvis.agent.AgentState.Done -> {
+                        commandLogStore.complete(activeCommandLogId, state.result, null)
+                        activeCommandLogId = null
                         setVisualState("SPEAKING", state.result)
                         voiceManager.speak(com.openjarvis.agent.AgentResultSpeech.textForDone(state.result)) {
                             voiceManager.resumeContinuousSession()
                         }
                     }
                     is com.openjarvis.agent.AgentState.Error -> {
+                        commandLogStore.complete(activeCommandLogId, null, state.message)
+                        activeCommandLogId = null
                         setVisualState("SPEAKING", "Jarvis error: ${state.message} • tap to copy debug log")
                         voiceManager.speak(if (responseLanguage == "mr") "कमांड पूर्ण झाली नाही. ${state.message}" else "कमांड पूरी नहीं हुई। ${state.message}") {
                             voiceManager.resumeContinuousSession()
@@ -448,19 +456,35 @@ class OverlayService : Service() {
             voiceManager.resumeContinuousSession()
             return
         }
+        // Command Lab records only redacted metadata; it never changes command execution.
+        val routeProbe = CommandLabRouterProbe.classify(command)
+        val logId = commandLogStore.record(
+            command = command,
+            confidence = null, // VoiceState currently exposes transcript text only; never fabricate confidence.
+            language = CommandLabRouterProbe.detectLanguage(command),
+            route = routeProbe.route.name.lowercase(),
+            source = if (voiceCommand != null) "voice" else "typed"
+        )
+        activeCommandLogId = logId
         // Typed commands use the same deterministic voice-control gate as speech transcripts.
         when (CommandListeningPolicy.classify(command, isMuted)) {
             CommandListeningPolicy.Action.MUTE -> {
+                commandLogStore.complete(logId, "Handled by voice mute control", null)
+                activeCommandLogId = null
                 enterMuteMode()
                 commandInput?.text?.clear()
                 return
             }
             CommandListeningPolicy.Action.UNMUTE -> {
+                commandLogStore.complete(logId, "Handled by voice mute control", null)
+                activeCommandLogId = null
                 enterUnmuteMode()
                 commandInput?.text?.clear()
                 return
             }
             CommandListeningPolicy.Action.IGNORE -> {
+                commandLogStore.complete(logId, null, "Command ignored while muted")
+                activeCommandLogId = null
                 statusText?.text = "COMMAND MUTED — only say Unmute / Awaaz chalu karo"
                 commandInput?.text?.clear()
                 voiceManager.resumeContinuousSession()
@@ -473,6 +497,8 @@ class OverlayService : Service() {
             responseLanguage = if (marathiMarkers.any { command.contains(it) }) "mr" else "hi"
         }
         if (com.openjarvis.accessibility.JarvisAccessibilityService.instance == null) {
+            commandLogStore.complete(logId, null, "Accessibility service is disabled")
+            activeCommandLogId = null
             statusText?.text = "Accessibility service is OFF. Enable Open Jarvis in Android Accessibility settings."
             voiceManager.resumeContinuousSession()
             return

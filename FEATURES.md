@@ -46,3 +46,9 @@ The repository does not currently have a mapped named test method proving these 
 - Torch executor
 
 Parser-level intent tests do not count as proof that Android device actions execute successfully.
+
+
+| Encrypted command log (last 100, redacted sensitive input) | `CommandLogStore` / `CommandLogPolicy` | `app/src/test/java/com/openjarvis/commandlab/CommandLogPolicyTest.kt::sensitiveCredentialsAreNeverKeptInCommandText`; `app/src/test/java/com/openjarvis/commandlab/CommandLogPolicyTest.kt::contactDetailsAreRedactedFromSharedText`; `app/src/test/java/com/openjarvis/commandlab/CommandLogPolicyTest.kt::onlyLastHundredEntriesAreRetained` |
+| Read-only Command Lab route probe | `CommandLabRouterProbe` (existing deterministic parsers, chat and unknown-command policies) | `app/src/test/java/com/openjarvis/commandlab/CommandLabSelfTestTest.kt::selfTestUsesTheRealReadOnlyRouterAndExecutesNoAndroidActions` |
+| 40 typed-command self-test across Hindi, Marathi, Hinglish and English | `CommandLabSelfTest.run` | `app/src/test/java/com/openjarvis/commandlab/CommandLabSelfTestTest.kt::selfTestContainsFortyTypedCommandsAcrossAllSupportedLanguageStyles`; `app/src/test/java/com/openjarvis/commandlab/CommandLabSelfTestTest.kt::selfTestSummaryCountsPassesAndFailuresByRoute` |
+| Command Lab history UI and redacted share report | `CommandLabActivity` / `CommandLogStore.shareReport` | `app/src/test/java/com/openjarvis/commandlab/CommandLogPolicyTest.kt::sensitiveCredentialsAreNeverKeptInCommandText`; `app/src/test/java/com/openjarvis/commandlab/CommandLogPolicyTest.kt::contactDetailsAreRedactedFromSharedText` |

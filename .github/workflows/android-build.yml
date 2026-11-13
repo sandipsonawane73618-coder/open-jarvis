@@ -2,7 +2,7 @@ name: Android Build
 
 on:
   push:
-    branches: [main, feature/euronics-webview-integration, feature/jarvis-stable-1.0, feature/jarvis-opendroid-agent-loop, feature/jarvis-slice-c-router-llm-schema, feature/jarvis-phase2-continuation, feature/jarvis-diagnostic-export, feature/jarvis-command-listener-no-wakeword, feature/jarvis-fast-response-streaming, feature/jarvis-streaming-response, feature/jarvis-contact-app-intent-priority, feature/jarvis-single-floating-overlay, feature/jarvis-multilingual-volume-routing, feature/jarvis-tts-utterance-callback-isolation, feature/jarvis-false-completion-guard, feat/jarvis-v3-agent-loop]
+    branches: [main, feature/euronics-webview-integration, feature/jarvis-stable-1.0, feature/jarvis-opendroid-agent-loop, feature/jarvis-slice-c-router-llm-schema, feature/jarvis-phase2-continuation, feature/jarvis-diagnostic-export, feature/jarvis-command-listener-no-wakeword, feature/jarvis-fast-response-streaming, feature/jarvis-streaming-response, feature/jarvis-contact-app-intent-priority, feature/jarvis-single-floating-overlay, feature/jarvis-multilingual-volume-routing, feature/jarvis-tts-utterance-callback-isolation, feature/jarvis-false-completion-guard, feat/jarvis-v3-agent-loop, feat/jarvis-command-lab]
     paths:
       - "app/**"
       - "scripts/**"
@@ -14,7 +14,7 @@ on:
       - "settings.gradle"
       - ".github/workflows/android-build.yml"
   pull_request:
-    branches: [main, feature/jarvis-full-potential-foundation, feature/jarvis-manual-mic-hud-headroom, feature/jarvis-m3-m5-proactive-hud, feature/jarvis-stable-1.0, feature/jarvis-stable-1.0-phase2-wakeword, feature/jarvis-stable-1.0-phase3-ollama, feature/jarvis-stable-1.0-phase4-command-execution, feature/jarvis-jandal-memory-recall, feature/jarvis-slice-c-router-llm-schema, feature/jarvis-phase1-p0-security, feature/jarvis-phase2-continuation, feature/jarvis-command-listener-no-wakeword, feature/jarvis-foreground-banking-guard, feature/jarvis-continuous-voice-session, feature/jarvis-self-healing-retry-gates, feature/jarvis-conversation-memory-marathi, feature/jarvis-fast-response-streaming, feature/jarvis-streaming-response, feature/jarvis-contact-app-intent-priority, feature/jarvis-single-floating-overlay, feature/jarvis-multilingual-volume-routing, integration/android-stack-v2, fix/jarvis-unknown-command-and-repeat, integration/jarvis-memory-hybrid-final, fix/jarvis-command-routing, baseline/jarvis-v3]
+    branches: [main, feature/jarvis-full-potential-foundation, feature/jarvis-manual-mic-hud-headroom, feature/jarvis-m3-m5-proactive-hud, feature/jarvis-stable-1.0, feature/jarvis-stable-1.0-phase2-wakeword, feature/jarvis-stable-1.0-phase3-ollama, feature/jarvis-stable-1.0-phase4-command-execution, feature/jarvis-jandal-memory-recall, feature/jarvis-slice-c-router-llm-schema, feature/jarvis-phase1-p0-security, feature/jarvis-phase2-continuation, feature/jarvis-command-listener-no-wakeword, feature/jarvis-foreground-banking-guard, feature/jarvis-continuous-voice-session, feature/jarvis-self-healing-retry-gates, feature/jarvis-conversation-memory-marathi, feature/jarvis-fast-response-streaming, feature/jarvis-streaming-response, feature/jarvis-contact-app-intent-priority, feature/jarvis-single-floating-overlay, feature/jarvis-multilingual-volume-routing, integration/android-stack-v2, fix/jarvis-unknown-command-and-repeat, integration/jarvis-memory-hybrid-final, fix/jarvis-command-routing, baseline/jarvis-v3, feat/jarvis-v3-agent-loop, feat/jarvis-command-lab]
     paths:
       - "app/**"
       - "scripts/**"
@@ -41,6 +41,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Report @Test count before and after this PR
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          before_count=$(git grep -h -E '^[[:space:]]*@Test([[:space:](]|$)' "$BASE_SHA" -- app/src/test app/src/androidTest | wc -l | tr -d ' ')
+          after_count=$(git grep -h -E '^[[:space:]]*@Test([[:space:](]|$)' HEAD -- app/src/test app/src/androidTest | wc -l | tr -d ' ')
+          echo "@Test count before=$before_count after=$after_count delta=$((after_count-before_count))"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4

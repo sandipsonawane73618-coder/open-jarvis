@@ -15,11 +15,12 @@ internal data class MessageRequest(
 /** Parses explicit contact + channel + message requests without involving the LLM. */
 internal object MessageCommandParser {
     private val commandPattern = Regex(
-        "^(.+?)\\s+(?:ko|को|ला)\\s+(whatsapp|wa|व्हाट्सएप|व्हॉट्सअॅप|व्हॉट्सॲप|sms|message|संदेश)\\s*(?:(?:pe|par|पर|वर)\\s*)?(.+)$",
+        "^(.+?)\\s+(?:ko|la|को|ला)\\s+(whatsapp|wa|व्हाट्सएप|व्हॉट्सअॅप|व्हॉट्सॲप|sms|message|संदेश)\\s*(?:(?:pe|par|पर|वर)\\s*)?(.+)$",
         RegexOption.IGNORE_CASE
     )
     private val sendSuffix = Regex(
-        "(?:^|\\s+)(?:bhejo|bhej do|send(?:\\s+karo)?|भेजो|भेज दो|पाठवा|पाठव)\\s*$",
+        "(?:^|\\s+)(?:bhejo|bhej do|send(?:\\s+karo)?|भेजो|भेज दो|पाठवा|पाठव|" +
+            "dhad|dhada|dhadva|pathva|pathav|pathvaa|धाड|धाडा|पाठवून\\s+दे)(?:\\s*:\\s*|\\s*$)",
         RegexOption.IGNORE_CASE
     )
     private val nonMessageSuffix = Regex(
@@ -35,8 +36,9 @@ internal object MessageCommandParser {
             .replace(Regex("(?i)\\s+(karo|kar|kro|kare|karen|kardo|karna|please|plz|na|ज़रा|जरा)$"), "")
             .trim()
         var body = match.groupValues[3].trim()
+            .replace(Regex("(?i)^message\\s+"), "")
         val sendNow = sendSuffix.containsMatchIn(body)
-        if (sendNow) body = sendSuffix.replace(body, "").trim()
+        if (sendNow) body = sendSuffix.replace(body, "").trim().removePrefix(":").trim()
         else body = nonMessageSuffix.replace(body, "").trim()
         if (name.isBlank() || body.isBlank()) return null
         val channel = when (match.groupValues[2].lowercase(Locale.ROOT)) {

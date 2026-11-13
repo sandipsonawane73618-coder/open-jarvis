@@ -37,6 +37,15 @@ class MessageCommandParserTest {
         assertTrue(request?.sendNow == true)
     }
 
+    @Test fun parsesMarathiDhadSendVerbBeforeColonWithoutAutoSendingOtherCommands() {
+        val request = MessageCommandParser.parse("Amit la WhatsApp message dhad: mi yetoy")
+        assertEquals("Amit", request?.contactName)
+        assertEquals(MessageRequest.Channel.WHATSAPP, request?.channel)
+        assertEquals("mi yetoy", request?.message)
+        assertTrue(request?.sendNow == true)
+        assertNull(MessageCommandParser.parse("dhad"))
+    }
+
     @Test fun rejectsMissingContactOrMessage() {
         assertNull(MessageCommandParser.parse("ko WhatsApp pe hello bhejo"))
         assertNull(MessageCommandParser.parse("Rahul ko WhatsApp pe bhejo"))
