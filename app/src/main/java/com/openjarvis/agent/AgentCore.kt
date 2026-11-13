@@ -619,7 +619,7 @@ ${rawResponse.take(1000)}
                                     SkillRegistry.Kind.ALARM -> "Alarm set"
                                     SkillRegistry.Kind.TIMER -> "Timer started"
                                     SkillRegistry.Kind.TORCH -> if (nativeSkill.args["enabled"] == "true") "Torch turned on" else "Torch turned off"
-                                    SkillRegistry.Kind.VOLUME -> "Volume adjusted"
+                                    SkillRegistry.Kind.VOLUME -> if (args["direction"] == "up") "Volume badha diya" else "Volume kam kar diya"
                                     SkillRegistry.Kind.MAPS -> "Opening navigation"
                                     SkillRegistry.Kind.CALL -> "Dialer opened"
                                     SkillRegistry.Kind.TIME -> SkillRegistry.timeReply(safeCommand)
@@ -1003,6 +1003,13 @@ Never invent contact names or app labels. Understand Hindi, Marathi, Hinglish an
                     }
                     val nativeIntent = nativeRaw.takeIf { it.isNotBlank() }?.let(NativeStepIntentParser::parse)
                     if (nativeIntent != null) {
+                        val guardedSkill = LlmSkillRouteSafetyPolicy.skillFor(nativeIntent)
+                        if (guardedSkill != null && LlmSkillRouteSafetyPolicy.acceptedSkill(guardedSkill, safeCommand) == null) {
+                            val question = LlmSkillRouteSafetyPolicy.clarificationQuestion(guardedSkill)
+                            pendingClarification = ClarificationWorkflowPolicy.Pending(safeCommand, question, 0)
+                            _state.value = AgentState.Done(question)
+                            return@withLock
+                        }
                         _state.value = AgentState.Running("running native ${nativeIntent.javaClass.simpleName.lowercase()} skill...")
                         try {
                             val reply = NativeIntentLearning.executeAndLearn(
@@ -1024,9 +1031,15 @@ Never invent contact names or app labels. Understand Hindi, Marathi, Hinglish an
                     val skillSystem = """
 You are Jarvis, an Android skill router. Return ONLY one JSON object with exactly "skill" and "args".
 Allowed skills: OPEN_APP, SETTINGS, CALL, SEARCH, WHATSAPP_MESSAGE, SMS_MESSAGE, ALARM, TIMER, TORCH, VOLUME, MAPS, ANDROID_UI_ACTIONS.
-Native example: {"skill":"TORCH","args":{"enabled":true}}.
-UI example: {"skill":"ANDROID_UI_ACTIONS","args":{"actions":[{"action":"open_app","label":"Chrome"}]}}.
-Use a native skill whenever it fits. Use ANDROID_UI_ACTIONS only for visible-screen tasks. Never invent app labels, contacts or controls.
+Few-shot examples:
+"flashlight on" -> {"skill":"TORCH","args":{"enabled":true}}
+"awaaz badhao" -> {"skill":"VOLUME","args":{"direction":"up"}}
+"alarm subah 6 baje" -> {"skill":"ALARM","args":{"hour":6,"minute":0}}
+"timer 2 minutes" -> {"skill":"TIMER","args":{"seconds":120}}
+"open Chrome" -> {"skill":"OPEN_APP","args":{"app":"Chrome"}}
+"kuch bhi" -> {"skill":"NONE","args":{}}
+Choose NONE whenever no explicit command evidence supports a native skill. Never infer TORCH from volume or unrelated language.
+Use ANDROID_UI_ACTIONS only for visible-screen tasks. Never invent app labels, contacts or controls.
 Never tap Send, Delete, Pay, Purchase, or other final confirmation controls. For messaging, open the composer only and never send.
 For UI actions, use only open_app, click, tap, type_text, type, scroll, back, press_back, home, press_home, press_recents, wait, wait_for, read_screen, ai_prompt, extract_text, error.
 Understand Hindi, Marathi, Hinglish and English. Do not include markdown or explanation.
@@ -1044,6 +1057,12 @@ ${fullSystem.substringAfter("MEMORY:")}
                                 return@fold
                             }
                             if (skillPlan.skill != "ANDROID_UI_ACTIONS") {
+                                if (LlmSkillRouteSafetyPolicy.acceptedSkill(skillPlan.skill, safeCommand) == null) {
+                                    val question = LlmSkillRouteSafetyPolicy.clarificationQuestion(skillPlan.skill)
+                                    pendingClarification = ClarificationWorkflowPolicy.Pending(safeCommand, question, 0)
+                                    _state.value = AgentState.Done(question)
+                                    return@fold
+                                }
                                 if (skillPlan.skill == "DATE" || skillPlan.skill == "TIME") {
                                     val reply = if (skillPlan.skill == "DATE") SkillRegistry.dateReply(safeCommand)
                                     else SkillRegistry.timeReply(safeCommand)
