@@ -15,8 +15,8 @@ internal object CloudPromptRedactionPolicy {
     private val apiToken = Regex(
         """\b(?:sk-[A-Za-z0-9_-]{12,}|AIza[0-9A-Za-z_-]{20,}|gh[pousr]_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,})\b"""
     )
-    private val labelledSecret = Regex(
-        """(?i)\b(password|passwd|passcode|api[_ -]?key|secret[_ -]?key|access[_ -]?token|bearer)\b"""
+    private val proseSecret = Regex(
+        """(?i)\b(?:my\s+)?(?:password|passwd|passcode|api[_ -]?key|secret[_ -]?key|access[_ -]?token|bearer\s+token)\s+(?:is|:|=)\s*[^\s,;]+"""
     )
 
     fun redact(value: String): String {
