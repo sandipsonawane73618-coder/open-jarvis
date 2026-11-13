@@ -6,7 +6,7 @@ package com.openjarvis.agent
  */
 internal object GoalEvidencePolicy {
     private val nonTargetWords = setOf(
-        "open", "launch", "start", "show", "display", "go", "to", "the", "please",
+        "open", "launch", "start", "show", "go", "to", "the", "please",
         "khol", "kholo", "kholna", "dikhao", "dikhaye", "dikha", "jao", "jाओ",
         "app", "application", "screen", "page", "and", "in",
         "on", "my", "for", "finish", "complete", "task", "it", "this", "that"
