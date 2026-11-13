@@ -12,11 +12,18 @@ internal object SpeechLanguage {
 
     fun languageForText(text: String): String {
         val hasDevanagari = text.any { it in '\u0900'..'\u097F' }
-        if (!hasDevanagari) return "en"
-        val marathiMarkers = listOf(
-            "आहे", "आणि", "मला", "काय", "झाले", "झालं", "नाही",
-            "दाखवा", "उघडा", "करायचे", "माझे", "तुम्ही", "सांगा", "नको"
-        )
-        return if (marathiMarkers.any { text.contains(it) }) "mr" else "hi"
+        if (!hasDevanagari) {
+            return when (MaharashtraSpeechProfile.detectDialect(text)) {
+                MaharashtraSpeechProfile.Dialect.HINGLISH -> "hi"
+                else -> "en"
+            }
+        }
+        return when (MaharashtraSpeechProfile.detectDialect(text)) {
+            MaharashtraSpeechProfile.Dialect.STANDARD_MARATHI,
+            MaharashtraSpeechProfile.Dialect.VARHADI,
+            MaharashtraSpeechProfile.Dialect.MALVANI,
+            MaharashtraSpeechProfile.Dialect.AHIRANI_KHANDESHI -> "mr"
+            else -> "hi"
+        }
     }
 }
