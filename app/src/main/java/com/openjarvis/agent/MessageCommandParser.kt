@@ -19,7 +19,8 @@ internal object MessageCommandParser {
         RegexOption.IGNORE_CASE
     )
     private val sendSuffix = Regex(
-        "(?:^|\\s+)(?:bhejo|bhej do|send(?:\\s+karo)?|भेजो|भेज दो|पाठवा|पाठव)\\s*$",
+        "(?:^|\\s+)(?:bhejo|bhej do|send(?:\\s+karo)?|भेजो|भेज दो|पाठवा|पाठव|" +
+            "dhad|dhada|dhadva|pathva|pathav|pathvaa|धाड|धाडा|पाठवून\\s+दे)(?:\\s*:\\s*|\\s*$)",
         RegexOption.IGNORE_CASE
     )
     private val nonMessageSuffix = Regex(
@@ -35,8 +36,9 @@ internal object MessageCommandParser {
             .replace(Regex("(?i)\\s+(karo|kar|kro|kare|karen|kardo|karna|please|plz|na|ज़रा|जरा)$"), "")
             .trim()
         var body = match.groupValues[3].trim()
+            .replace(Regex("(?i)^message\\s+"), "")
         val sendNow = sendSuffix.containsMatchIn(body)
-        if (sendNow) body = sendSuffix.replace(body, "").trim()
+        if (sendNow) body = sendSuffix.replace(body, "").trim().removePrefix(":").trim()
         else body = nonMessageSuffix.replace(body, "").trim()
         if (name.isBlank() || body.isBlank()) return null
         val channel = when (match.groupValues[2].lowercase(Locale.ROOT)) {
