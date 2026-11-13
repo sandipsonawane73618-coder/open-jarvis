@@ -86,7 +86,7 @@ internal object FastCommandParser {
             return Command.ShowNotifications
         }
         if (close.matches(normalized)) return Command.CloseCurrentApp
-        if (normalized.matches(Regex("^(?:back|go back|pichhe|peeche|wapas|वापस|वापस जाओ|पीछे जाओ|मागे|मागे जा|मागे चला)$", RegexOption.IGNORE_CASE))) return Command.Back
+        if (normalized.matches(Regex("^(?:back|go back|back screen per jao|back screen pe jao|pichhe|peeche|wapas|वापस|वापस जाओ|पीछे जाओ|मागे|मागे जा|मागे चला)$", RegexOption.IGNORE_CASE))) return Command.Back
         if (normalized.matches(Regex("^(?:home|go home|ghar|होम|होम पर जाओ|घर जाओ|मुख्यपृष्ठ|घरी जा)$", RegexOption.IGNORE_CASE))) return Command.Home
 
         val scroll = Regex("^(?:scroll|स्क्रॉल)\\s*(up|down|upar|neeche|ऊपर|नीचे|वर|खाली)?$", RegexOption.IGNORE_CASE).matchEntire(normalized)

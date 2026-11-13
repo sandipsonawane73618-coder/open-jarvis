@@ -31,7 +31,7 @@ object SearchCommandParser {
 
     private val CONNECTORS = words(
         "aur", "and", "phir", "fir", "then", "ani", "और", "फिर", "आणि",
-        "par", "pe", "pr", "mein", "me", "on", "in", "at", "ko", "se",
+        "par", "pe", "per", "pr", "mein", "me", "on", "in", "at", "ko", "se",
         "पर", "पे", "में", "मे", "को", "से", "वर"
     )
 
