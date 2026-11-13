@@ -5,10 +5,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class UnknownCommandPolicyTest {
-    @Test fun rejectsUnclearStatementsBeforeActionPlanner() {
-        listOf("", "blah blah", "kuch bhi", "kuch bhi karo", "mujhe samajh nahi", "plan kya hai").filterNot {
-            ConversationIntentPolicy.isChatRequest(it)
-        }.forEach { assertTrue("$it should not reach action planner", UnknownCommandPolicy.shouldStopBeforePlanner(it)) }
+    @Test fun stopsOnlyForBlankVeryShortOrPureFiller() {
+        listOf("", " ", "a", "ok", "haan", "hmm", "acha").forEach {
+            assertTrue("${it.ifBlank { "<blank>" }} should stop", UnknownCommandPolicy.shouldStopBeforePlanner(it))
+        }
+        listOf(
+            "blah blah", "kuch bhi", "kuch bhi karo", "mujhe samajh nahi", "plan kya hai",
+            "kal barish hogi?", "mera phone garam ho raha hai", "Instagram par profile dhoondo"
+        ).forEach {
+            assertFalse("${it} must reach the router", UnknownCommandPolicy.shouldStopBeforePlanner(it))
+        }
     }
 
     @Test fun allowsExplicitActionRequestsToReachExistingPlanner() {
