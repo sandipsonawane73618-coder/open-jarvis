@@ -73,7 +73,9 @@ object StepIntentParser {
     private val SMS_WORDS = words("sms", "एसएमएस")
     private val SEND_WORDS = words(
         "bhejo", "bhej", "send", "saying", "say", "likho", "likh", "bolo", "bol", "keh", "kehdo",
-        "भेजो", "भेज", "लिखो", "लिख", "बोलो", "बोल", "कहो", "पाठवा"
+        "भेजो", "भेज", "लिखो", "लिख", "बोलो", "बोल", "कहो", "पाठवा",
+        "dhad", "dhada", "dhadva", "pathva", "pathav", "pathvaa",
+        "धाड", "धाडा", "पाठवून", "दे"
     )
     private val TEXT_DELIMS = words("ki", "कि", "that", "saying", "say")
     private val KO_WORDS = words("ko", "को", "ला")
