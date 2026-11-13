@@ -48,7 +48,7 @@ class HybridChatRouterTest {
             },
             localProvider = { error("Local fallback must not run") }
         )
-        assertEquals("cloud answer", router.complete("memory: prefers concise Hinglish\npersonality: calm and proactive\nrecent: user asked for weather", "local-private", "Rahul ko message bhejo ki main aa raha hoon", 5_000).getOrThrow())
+        assertEquals("cloud answer", router.complete("memory: prefers concise Hinglish\npersonality: calm and proactive\nrecent: user asked for weather", "local-private", "Rahul ke liye calendar reminder banao", 5_000).getOrThrow())
         assertTrue(observedSystem.contains("memory: prefers concise Hinglish"))
         assertTrue(observedSystem.contains("personality: calm and proactive"))
         assertTrue(observedSystem.contains("recent: user asked for weather"))
