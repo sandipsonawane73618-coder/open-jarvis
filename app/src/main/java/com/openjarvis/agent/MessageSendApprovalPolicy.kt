@@ -30,15 +30,15 @@ internal object MessageSendApprovalPolicy {
         return exactPayload && isExplicitYes(spokenConfirmation)
     }
 
-    fun isExplicitYes(utterance: String?): Boolean =
-        utterance?.trim()?.lowercase(java.util.Locale.ROOT) in setOf(
-            "haan", "ha", "yes", "confirm", "yes confirm", "ji haan", "हाँ", "हां", "हो"
-        )
+    fun isExplicitYes(utterance: String?): Boolean {
+        val value = utterance?.trim()?.lowercase(java.util.Locale.ROOT) ?: return false
+        return value in setOf("haan", "ha", "yes", "confirm", "yes confirm", "ji haan", "हाँ", "हां", "हो")
+    }
 
-    fun isExplicitNo(utterance: String?): Boolean =
-        utterance?.trim()?.lowercase(java.util.Locale.ROOT) in setOf(
-            "nahi", "nahin", "no", "cancel", "no cancel", "नहीं", "नही"
-        )
+    fun isExplicitNo(utterance: String?): Boolean {
+        val value = utterance?.trim()?.lowercase(java.util.Locale.ROOT) ?: return false
+        return value in setOf("nahi", "nahin", "no", "cancel", "no cancel", "नहीं", "नही")
+    }
 
     fun isSentEvidenceVerified(
         visibleText: String,
