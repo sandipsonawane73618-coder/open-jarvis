@@ -108,4 +108,15 @@ class FastCommandParserTest {
         assertNull(FastCommandParser.parse(" "))
         assertNull(FastCommandParser.parse("search for weather"))
     }
+    @Test fun recognizesAllReportedBackScreenPhrasesAsGlobalBack() {
+        listOf(
+            "back screen per jao",
+            "peeche jao",
+            "wapas jao",
+            "mage ja",
+            "go back"
+        ).forEach { phrase ->
+            assertEquals("BACK for: $phrase", FastCommandParser.Command.Back, FastCommandParser.parse(phrase))
+        }
+    }
 }
