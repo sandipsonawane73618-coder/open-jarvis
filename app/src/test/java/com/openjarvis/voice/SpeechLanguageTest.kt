@@ -33,4 +33,7 @@ class SpeechLanguageTest {
         assertEquals("mr", SpeechLanguage.languageForText("माले कायले नाय"))
         assertEquals("hi", SpeechLanguage.languageForText("mala WhatsApp kholo"))
     }
+    @Test fun classifiesRomanHinglishMessageUtteranceAsHindiRecognitionLanguage() {
+        assertEquals("hi", SpeechLanguage.languageForText("WhatsApp per Rahul ko message bhejo ki hello"))
+    }
 }
