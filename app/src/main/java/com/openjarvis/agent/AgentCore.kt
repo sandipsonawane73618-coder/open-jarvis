@@ -2375,15 +2375,42 @@ Actions remaining: ${session.remainingActions}
                             StepOutcome(false, error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName, ctx)
                         }
                     }
-                    val webQuery = SearchCommandParser.parseWebQuery(step) ?: return null
-                    return try {
-                        val webIntent = Intent(Intent.ACTION_WEB_SEARCH)
-                            .putExtra(SearchManager.QUERY, webQuery)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        context.startActivity(webIntent)
-                        StepOutcome(true, "Searching the web for $webQuery", ctx)
-                    } catch (error: Exception) {
-                        StepOutcome(false, "Could not open web search: ${error.message ?: error.javaClass.simpleName}", ctx)
+                    val webQuery = SearchCommandParser.parseWebQuery(step)
+                    if (webQuery != null) {
+                        return try {
+                            val webIntent = Intent(Intent.ACTION_WEB_SEARCH)
+                                .putExtra(SearchManager.QUERY, webQuery)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(webIntent)
+                            StepOutcome(true, "Searching the web for $webQuery", ctx)
+                        } catch (error: Exception) {
+                            StepOutcome(false, "Could not open web search: ${error.message ?: error.javaClass.simpleName}", ctx)
+                        }
+                    }
+
+                    // An unqualified search inherits only a previously opened, known app.
+                    // Never guess a target app from a bare query.
+                    val contextualQuery = SearchCommandParser.parseUnqualifiedQuery(step) ?: return null
+                    return when (ctx.app?.lowercase(Locale.ROOT)) {
+                        "youtube", "you tube" -> try {
+                            StepOutcome(
+                                true,
+                                executeFastCommand(FastCommandParser.Command.YoutubeSearch(contextualQuery)),
+                                ctx
+                            )
+                        } catch (error: Exception) {
+                            StepOutcome(false, error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName, ctx)
+                        }
+                        "chrome", "google", "browser" -> try {
+                            val webIntent = Intent(Intent.ACTION_WEB_SEARCH)
+                                .putExtra(SearchManager.QUERY, contextualQuery)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(webIntent)
+                            StepOutcome(true, "Searching the web for $contextualQuery", ctx)
+                        } catch (error: Exception) {
+                            StepOutcome(false, "Could not open web search: ${error.message ?: error.javaClass.simpleName}", ctx)
+                        }
+                        else -> null
                     }
                 }
             },

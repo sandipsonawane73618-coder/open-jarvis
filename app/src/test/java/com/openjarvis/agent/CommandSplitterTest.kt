@@ -85,6 +85,16 @@ class CommandSplitterTest {
     }
 
     @Test
+    fun openedYouTubeContextAllowsUnqualifiedSearchAfterAurAndAndAndPhir() {
+        listOf("aur", "and", "phir").forEach { connector ->
+            assertEquals(
+                listOf("YouTube kholo", "Arijit Singh search karo"),
+                s("YouTube kholo $connector Arijit Singh search karo")
+            )
+        }
+    }
+
+    @Test
     fun youtubeOpenAndSearchAreSeparateVerifiedPipelineSteps() {
         assertEquals(
             listOf("YouTube kholo", "YouTube par Arijit Singh ke latest songs search karo"),

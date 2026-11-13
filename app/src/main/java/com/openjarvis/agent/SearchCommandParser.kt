@@ -59,6 +59,21 @@ object SearchCommandParser {
 
     fun parseWebQuery(text: String): String? = extractQuery(text, WEB_WORDS)
 
+    /**
+     * Parses a search query whose target app is inherited from a preceding pipeline step.
+     * The caller MUST verify ctx.app before executing it; this parser never chooses an app.
+     */
+    fun parseUnqualifiedQuery(text: String): String? {
+        val tokens = tokenize(text)
+        if (tokens.isEmpty() || tokens.any { it in YOUTUBE_WORDS || it in WEB_WORDS }) return null
+        if (tokens.none { it in SEARCH_VERBS }) return null
+        val remaining = tokens.filterNot {
+            it in SEARCH_VERBS || it in OPEN_VERBS || it in FILLERS || it in CONNECTORS
+        }
+        val query = remaining.joinToString(" ").trim()
+        return query.takeIf { it.isNotBlank() && it.length <= 240 }
+    }
+
     private fun tokenize(text: String): List<String> {
         val cleaned = norm(text)
             .replace("you tube", "youtube")

@@ -27,7 +27,8 @@ internal object CommandRouter {
         if (MessageCommandParser.parse(step) != null) return Route.MESSAGE
         if (messageContinuationContact(step) != null) return Route.MESSAGE_CONTINUATION
         if (SearchCommandParser.parseYouTubeQuery(step) != null ||
-            SearchCommandParser.parseWebQuery(step) != null
+            SearchCommandParser.parseWebQuery(step) != null ||
+            SearchCommandParser.parseUnqualifiedQuery(step) != null
         ) return Route.SEARCH
         if (ContactCommandParser.parse(step) != null) return Route.CONTACT
         if (FastCommandParser.parse(step) != null) return Route.FAST
