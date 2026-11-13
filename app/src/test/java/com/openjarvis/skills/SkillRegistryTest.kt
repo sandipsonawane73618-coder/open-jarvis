@@ -123,4 +123,27 @@ class SkillRegistryTest {
         assertEquals("down", SkillRegistry.parse("awaaz kam karo")?.args?.get("direction"))
         assertEquals(SkillRegistry.Kind.TORCH, SkillRegistry.parse("torch on")?.kind)
     }
+
+    @Test fun reportedVolumeAndTorchPhrasesRouteThroughNativeSkillRegistry() {
+        listOf(
+            "Awaaz badhao" to "up",
+            "awaaz kam karo" to "down",
+            "avaz vadhva" to "up",
+            "आवाज बढ़ाओ" to "up",
+            "volume up" to "up"
+        ).forEach { (phrase, direction) ->
+            val request = SkillRegistry.parse(phrase)
+            assertEquals("VOLUME route for: $phrase", SkillRegistry.Kind.VOLUME, request?.kind)
+            assertEquals("direction for: $phrase", direction, request?.args?.get("direction"))
+        }
+        listOf(
+            "torch on" to "true",
+            "flashlight off" to "false"
+        ).forEach { (phrase, enabled) ->
+            val request = SkillRegistry.parse(phrase)
+            assertEquals("TORCH route for: $phrase", SkillRegistry.Kind.TORCH, request?.kind)
+            assertEquals("enabled for: $phrase", enabled, request?.args?.get("enabled"))
+        }
+    }
+
 }
