@@ -28,10 +28,7 @@ internal object CloudPromptRedactionPolicy {
         safe = labelledCode.replace(safe) { "[REDACTED]" }
         safe = apiToken.replace(safe) { "[REDACTED]" }
         safe = cardNumber.replace(safe) { "[REDACTED]" }
-        // A bare labelled credential without a value is still not useful to the cloud.
-        safe = labelledSecret.replace(safe) { match ->
-            if (match.value == "[REDACTED]") match.value else match.value
-        }
+        safe = proseSecret.replace(safe) { "[REDACTED]" }
         return safe
     }
 }
