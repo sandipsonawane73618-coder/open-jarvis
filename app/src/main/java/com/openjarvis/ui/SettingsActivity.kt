@@ -44,6 +44,7 @@ class SettingsActivity : ComponentActivity() {
                     onSaveProvider = { name, baseUrl, apiKey, model ->
                         saveProviderSettings(name, baseUrl, apiKey, model)
                     },
+                    onOpenCommandLab = { startActivity(Intent(this@SettingsActivity, CommandLabActivity::class.java)) },
                     modifier = Modifier.fillMaxSize()
                 )
             }
