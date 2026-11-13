@@ -2639,7 +2639,7 @@ ${fullSystem.substringAfter("MEMORY:")}
             throw IllegalStateException("WhatsApp preview could not be verified for the exact contact and text. Nothing was sent.")
         }
         pendingMessageApproval = preview
-        "WhatsApp preview for ${preview.contactName}: ${preview.messageText}. Kya main ye exact message bheju? Haan bolo to send karunga; abhi kuch send nahi hua."
+        return "WhatsApp preview for ${preview.contactName}: ${preview.messageText}. Kya main ye exact message bheju? Haan bolo to send karunga; abhi kuch send nahi hua."
     }
 
     private suspend fun sendApprovedWhatsAppMessage(preview: MessageSendApprovalPolicy.Preview): String {
