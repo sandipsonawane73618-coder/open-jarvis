@@ -40,6 +40,10 @@ internal object MessageSendApprovalPolicy {
         return value in setOf("nahi", "nahin", "no", "cancel", "no cancel", "नहीं", "नही")
     }
 
+    fun isWhatsAppSendControl(packageName: String?, target: String?): Boolean =
+        packageName == "com.whatsapp" &&
+            target?.contains("send", ignoreCase = true) == true
+
     fun isSentEvidenceVerified(
         visibleText: String,
         expectedContact: String,
