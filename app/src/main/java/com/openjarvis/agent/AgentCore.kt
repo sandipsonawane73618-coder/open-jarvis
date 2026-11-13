@@ -1562,6 +1562,9 @@ ${snapshot.interactiveElements.take(3500)}
                 } else {
                     ActionVerifier.verify(action, before, after, accepted, action.packageName)
                 }
+            },
+            verifyGoal = { goal, latestScreen ->
+                GoalEvidencePolicy.verify(goal, latestScreen)
             }
         )
         when (result.status) {
