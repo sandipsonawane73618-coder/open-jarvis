@@ -53,7 +53,7 @@ private fun CommandLabScreen(onBack: () -> Unit) {
             TextButton(onClick = { entries = store.entries().reversed() }) { Text("Refresh") }
         }
         Text(
-            "Private on-device diagnostics • last 100 commands • sensitive text redacted",
+            "Private on-device diagnostics • last 100 commands • sensitive text redacted • STT confidence unavailable from current voice callback",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
