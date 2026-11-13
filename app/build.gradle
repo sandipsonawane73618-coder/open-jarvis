@@ -53,6 +53,19 @@ android {
     composeOptions {
         kotlinCompilerExtensionVersion '1.5.5'
     }
+
+    testOptions {
+        unitTests {
+            all {
+                testLogging {
+                    exceptionFormat = "full"
+                    showCauses = true
+                    showStackTraces = true
+                    events "failed"
+                }
+            }
+        }
+    }
 }
 
 dependencies {
