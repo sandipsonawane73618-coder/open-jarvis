@@ -8,6 +8,16 @@ class SearchCommandParserTest {
     private fun yt(text: String) = SearchCommandParser.parseYouTubeQuery(text)
     private fun web(text: String) = SearchCommandParser.parseWebQuery(text)
 
+    @Test fun unqualifiedSearchUsesPreviouslyOpenedAppContext() {
+        assertEquals("arijit singh", SearchCommandParser.parseUnqualifiedQuery("Arijit Singh search karo"))
+        assertEquals("lofi hip hop", SearchCommandParser.parseUnqualifiedQuery("lofi hip hop chalao"))
+    }
+
+    @Test fun unqualifiedSearchRequiresAnExplicitSearchVerb() {
+        assertNull(SearchCommandParser.parseUnqualifiedQuery("Arijit Singh"))
+        assertNull(SearchCommandParser.parseUnqualifiedQuery("Rahul ko message bhejo"))
+    }
+
     @Test fun youtubeOpenThenSearch() { assertEquals("lofi", yt("YouTube kholo aur lofi search karo")) }
 
     @Test fun requestedArijitLatestSongsSearchPhraseIsParsedDeterministically() {
