@@ -1056,6 +1056,12 @@ ${fullSystem.substringAfter("MEMORY:")}
                                 _state.value = AgentState.Error("Jarvis skill response invalid: $detail")
                                 return@fold
                             }
+                            if (skillPlan.skill == "NONE") {
+                                val question = ClarificationWorkflowPolicy.OFFLINE_FALLBACK
+                                pendingClarification = ClarificationWorkflowPolicy.Pending(safeCommand, question, 0)
+                                _state.value = AgentState.Done(question)
+                                return@fold
+                            }
                             if (skillPlan.skill != "ANDROID_UI_ACTIONS") {
                                 if (LlmSkillRouteSafetyPolicy.acceptedSkill(skillPlan.skill, safeCommand) == null) {
                                     val question = LlmSkillRouteSafetyPolicy.clarificationQuestion(skillPlan.skill)
