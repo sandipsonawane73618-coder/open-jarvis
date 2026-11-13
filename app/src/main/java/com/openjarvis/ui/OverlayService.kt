@@ -258,8 +258,7 @@ class OverlayService : Service() {
             overlayView = null
             windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
             val isNightMode = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
-            val panelBackground = if (isNightMode) Color.argb(238, 17, 20, 34) else Color.argb(246, 247, 251, 255)
-            val panelSurface = if (isNightMode) Color.argb(210, 37, 42, 61) else Color.argb(225, 255, 255, 255)
+            val panelSurface = if (isNightMode) Color.argb(217, 37, 42, 61) else Color.argb(217, 255, 255, 255)
             val panelText = if (isNightMode) Color.WHITE else Color.rgb(24, 29, 44)
             val panelMutedText = if (isNightMode) Color.rgb(190, 199, 218) else Color.rgb(91, 101, 122)
             val root = LinearLayout(this).apply {
@@ -333,12 +332,12 @@ class OverlayService : Service() {
                 background = android.graphics.drawable.GradientDrawable(
                     android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
                     intArrayOf(
-                        if (isNightMode) Color.argb(246, 43, 43, 67) else Color.argb(248, 255, 255, 255),
-                        if (isNightMode) Color.argb(238, 18, 22, 38) else Color.argb(244, 232, 239, 250)
+                        if (isNightMode) Color.argb(217, 43, 43, 67) else Color.argb(217, 255, 255, 255),
+                        if (isNightMode) Color.argb(208, 18, 22, 38) else Color.argb(208, 232, 239, 250)
                     )
                 ).apply {
                     cornerRadius = dp(24).toFloat()
-                    setStroke(dp(1), if (isNightMode) Color.argb(150, 145, 132, 205) else Color.argb(170, 255, 255, 255))
+                    setStroke(dp(1), if (isNightMode) Color.argb(95, 145, 132, 205) else Color.argb(95, 255, 255, 255))
                 }
                 elevation = dp(12).toFloat()
             }
@@ -480,21 +479,24 @@ class OverlayService : Service() {
             val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
+            val initialWindowSpec = OverlayWindowPolicy.create(
+                expanded = false,
+                expandedWidthPx = dp(304),
+                wrapContent = WindowManager.LayoutParams.WRAP_CONTENT,
+                notFocusableFlag = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                notTouchModalFlag = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                watchOutsideTouchFlag = WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+                layoutInScreenFlag = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+            )
             val params = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
+                initialWindowSpec.width,
+                initialWindowSpec.height,
                 type,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                    WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                initialWindowSpec.flags,
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.TOP or Gravity.END
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    flags = flags or WindowManager.LayoutParams.FLAG_BLUR_BEHIND
-                    blurBehindRadius = dp(22)
-                }
+                dimAmount = initialWindowSpec.dimAmount
                 x = 16
                 y = 220
             }
@@ -583,12 +585,19 @@ class OverlayService : Service() {
         isExpanded = !isExpanded
         panel?.visibility = if (isExpanded) android.view.View.VISIBLE else android.view.View.GONE
         windowParams?.let { params ->
-            params.width = if (isExpanded) dp(304) else WindowManager.LayoutParams.WRAP_CONTENT
-            params.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                (if (isExpanded) 0 else WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE) or
-                (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) WindowManager.LayoutParams.FLAG_BLUR_BEHIND else 0)
+            val windowSpec = OverlayWindowPolicy.create(
+                expanded = isExpanded,
+                expandedWidthPx = dp(304),
+                wrapContent = WindowManager.LayoutParams.WRAP_CONTENT,
+                notFocusableFlag = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                notTouchModalFlag = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                watchOutsideTouchFlag = WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+                layoutInScreenFlag = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+            )
+            params.width = windowSpec.width
+            params.height = windowSpec.height
+            params.flags = windowSpec.flags
+            params.dimAmount = windowSpec.dimAmount
             try { windowManager?.updateViewLayout(overlayView, params) } catch (_: Exception) { }
         }
         applyFloatingStyle()

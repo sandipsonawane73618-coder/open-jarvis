@@ -80,6 +80,6 @@ Parser-level intent tests do not count as proof that Android device actions exec
 | WhatsApp colon-delimited message prefill without send | `StepIntentParser.parse` | `app/src/test/java/com/openjarvis/agent/UntestedFeatureCoverageTest.kt::whatsappColonMessageBodyCanBePrefilledWithoutSendKeyword` |
 | WhatsApp explicit Send confirmation decision | `ActionRiskPolicy.requiresConfirmation` / `ActionRiskPolicy.approvalDecision` | `app/src/test/java/com/openjarvis/agent/UntestedFeatureCoverageTest.kt::whatsappExplicitSendTargetRequiresConfirmationAndApprovalIsSeparate`; `app/src/test/java/com/openjarvis/agent/ActionRiskPolicyTest.kt::sendDeleteAndPayButtonsRequireExplicitConfirmation`; `app/src/test/java/com/openjarvis/agent/AgentLoopRunnerTest.kt::sendAndDeletePauseWithoutExecutingUntilConfirmed` |
 
-## DEVICE-ONLY
+| Floating overlay window never blurs/dims the display; collapsed WRAP_CONTENT and expanded 304dp width | `OverlayWindowPolicy.create` | `app/src/test/java/com/openjarvis/ui/OverlayWindowPolicyTest.kt::collapsedWindowIsWrapContentAndNeverBlursOrDims`; `app/src/test/java/com/openjarvis/ui/OverlayWindowPolicyTest.kt::expandedWindowIs304DpWideAndNeverBlursOrDims` |\n\n## DEVICE-ONLY
 
 - Floating bubble drag, edge snapping, touch pass-through, outside-tap collapse, and Back-key behavior require verification on a physical Android device. JVM tests cannot prove WindowManager touch routing or OEM overlay behavior.
