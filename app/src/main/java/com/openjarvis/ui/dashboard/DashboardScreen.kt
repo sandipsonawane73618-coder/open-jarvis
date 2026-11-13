@@ -3,6 +3,7 @@ package com.openjarvis.ui.dashboard
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -46,6 +47,13 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.openjarvis.agent.JarvisPersonalityStore
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import kotlin.math.sqrt
+import kotlin.math.abs
 import com.openjarvis.graphify.GraphifyRepository
 import com.openjarvis.graphify.nodes.AppNode
 import com.openjarvis.graphify.nodes.TaskNode
@@ -91,6 +99,8 @@ fun DashboardScreen(
         appsAlpha = 1f
     }
     
+    val context = LocalContext.current
+    val preferredName = remember(context) { JarvisPersonalityStore(context).load().preferredName }
     val scrollState = rememberScrollState()
     
     Box(
@@ -108,7 +118,15 @@ fun DashboardScreen(
                 .padding(horizontal = 24.dp)
         ) {
             Spacer(modifier = Modifier.height(56.dp))
-            
+
+            Text(
+                text = if (preferredName.isBlank()) "Hello, I'm Jarvis" else "Hello, $preferredName",
+                color = VoidColor.TextPrimary,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+
             HeroSection(
                 isSystemActive = isSystemActive,
                 taskCount = recentTasks.size,
@@ -168,33 +186,68 @@ fun DashboardScreen(
 
 @Composable
 private fun OrbBackground() {
-    val infiniteTransition = rememberInfiniteTransition(label = "orb")
-    
-    val offsetY by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = -20f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(8000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "orb_y"
-    )
-    
-    Canvas(modifier = Modifier.fillMaxSize()) {
-        val center = Offset(size.width / 2, 200.dp.toPx() + offsetY.dp.toPx())
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(
-                    VoidColor.Violet.copy(alpha = 0.06f),
-                    Color.Transparent
-                ),
-                center = center,
-                radius = 200.dp.toPx()
-            ),
-            center = center,
-            radius = 200.dp.toPx()
+    var frame by remember { mutableIntStateOf(0) }
+    val activity = LocalContext.current as? ComponentActivity
+    val lifecycleOwner = activity as? LifecycleOwner
+    var resumed by remember(activity) {
+        mutableStateOf(
+            lifecycleOwner?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) ?: true
         )
     }
+    DisposableEffect(lifecycleOwner) {
+        if (lifecycleOwner == null) {
+            onDispose { }
+        } else {
+            val observer = LifecycleEventObserver { _, event ->
+                resumed = event == Lifecycle.Event.ON_RESUME
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        }
+    }
+    LaunchedEffect(resumed) {
+        if (resumed) {
+            while (true) {
+                delay(OrbParticlePolicy.FRAME_INTERVAL_MS)
+                frame = (frame + 1) % 100000
+            }
+        }
+    }
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val center = Offset(size.width / 2f, 200.dp.toPx())
+        val radius = minOf(size.width * 0.42f, 190.dp.toPx())
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(VoidColor.Violet.copy(alpha = 0.10f), Color.Transparent),
+                center = center,
+                radius = radius * 1.2f
+            ),
+            center = center,
+            radius = radius * 1.2f
+        )
+        val rotation = frame * 0.012f
+        repeat(OrbParticlePolicy.PARTICLE_COUNT) { index ->
+            val y = 1f - 2f * (index + 0.5f) / OrbParticlePolicy.PARTICLE_COUNT
+            val ring = sqrt((1f - y * y).coerceAtLeast(0f))
+            val angle = index * 2.3999632f + rotation
+            val depth = (sin(angle) * ring)
+            val x = cos(angle) * ring
+            val projectedX = center.x + x * radius
+            val projectedY = center.y + y * radius
+            val depthAlpha = (0.25f + (depth + 1f) * 0.30f).coerceIn(0.18f, 0.85f)
+            drawCircle(
+                color = if (depth > 0f) VoidColor.Cyan.copy(alpha = depthAlpha)
+                    else VoidColor.Violet.copy(alpha = depthAlpha * 0.7f),
+                radius = (1.1f + (depth + 1f) * 1.0f).dp.toPx(),
+                center = Offset(projectedX, projectedY)
+            )
+        }
+    }
+}
+
+internal object OrbParticlePolicy {
+    const val PARTICLE_COUNT = 400
+    const val FRAME_INTERVAL_MS = 33L
 }
 
 

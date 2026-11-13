@@ -6,9 +6,10 @@ package com.openjarvis.agent
  */
 internal object ConversationMemoryContext {
     const val MAX_CONTEXT_CHARS = 1200
+    const val MAX_PERSONALITY_CHARS = 600
 
     fun appendPersonality(systemPrompt: String, personalityContext: String): String {
-        val bounded = personalityContext.take(240)
+        val bounded = personalityContext.take(MAX_PERSONALITY_CHARS)
         if (bounded.isBlank()) return systemPrompt
         return systemPrompt + "\n\n" + bounded
     }
