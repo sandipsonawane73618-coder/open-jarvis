@@ -41,4 +41,17 @@ class ScrollUntilTargetPolicyTest {
             ScrollUntilTargetPolicy.decide("  ", screen("Settings"), 0)
         )
     }
+    @Test fun extractsEnglishTargetFromScrollUntilCommand() {
+        assertEquals("Privacy", ScrollUntilTargetPolicy.targetFromCommand("scroll down until Privacy appears"))
+    }
+
+    @Test fun extractsHindiTargetFromScrollUntilCommand() {
+        assertEquals("Privacy", ScrollUntilTargetPolicy.targetFromCommand("Privacy dikhne tak neeche scroll karo"))
+    }
+
+    @Test fun doesNotTreatOrdinaryScrollAsTargetSearch() {
+        assertEquals(null, ScrollUntilTargetPolicy.targetFromCommand("scroll down"))
+        assertEquals(null, ScrollUntilTargetPolicy.targetFromCommand("Open Settings"))
+    }
+
 }
