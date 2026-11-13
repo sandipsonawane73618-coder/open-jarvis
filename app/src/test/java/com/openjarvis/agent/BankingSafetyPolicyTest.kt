@@ -161,4 +161,11 @@ class BankingSafetyPolicyTest {
             assertTrue("Real-money intent must remain blocked: $command", BankingSafetyPolicy.isBlockedCommand(command))
         }
     }
+    @Test fun WhatsAppMessageIntentIsAllowedButExplicitMoneyTransfersRemainBlocked() {
+        assertFalse(BankingSafetyPolicy.isBlockedCommand("WhatsApp per Rahul ko message bhejo ki hello"))
+        listOf("Rahul ko 500 rupaye bhejo", "paise bhejo", "send money to Rahul").forEach {
+            assertTrue("Must remain blocked: $it", BankingSafetyPolicy.isBlockedCommand(it))
+        }
+    }
 }
+

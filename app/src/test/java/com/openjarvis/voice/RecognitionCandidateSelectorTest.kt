@@ -119,4 +119,14 @@ class RecognitionCandidateSelectorTest {
         assertNull(partial)
         assertNull(final)
     }
+    @Test fun prefersParserParsableHypothesisOverHigherConfidenceNoise() {
+        assertEquals(
+            "Awaaz badhao",
+            RecognitionCandidateSelector.select(
+                listOf("Awaaz badhao", "unrecognized background noise"),
+                floatArrayOf(0.55f, 0.96f)
+            )
+        )
+    }
 }
+

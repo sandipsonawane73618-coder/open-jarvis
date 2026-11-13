@@ -3,13 +3,15 @@ package com.openjarvis.commandlab
 data class CommandLabTestCase(
     val name: String,
     val command: String,
-    val expectedRoute: CommandLabRoute
+    val expectedRoute: CommandLabRoute,
+    val expectedResult: String? = null
 )
 
 data class CommandLabTestResult(
     val case: CommandLabTestCase,
     val actualRoute: CommandLabRoute,
     val parsedIntent: String,
+    val actualResult: String,
     val passed: Boolean,
     val failReason: String?
 )
@@ -58,15 +60,35 @@ object CommandLabSelfTest {
         CommandLabTestCase("Mute", "mute", CommandLabRoute.SKILL)
     )
 
-    fun run(): List<CommandLabTestResult> = cases.map { test ->
+    // EXTRA phone-report cases; the original 40 above remain unchanged.
+    val extraCases: List<CommandLabTestCase> = listOf(
+        CommandLabTestCase("Extra 1 volume up without torch", "Awaaz badhao", CommandLabRoute.SKILL, "Volume badha diya; torch untouched"),
+        CommandLabTestCase("Extra 2 WhatsApp message without banking block", "WhatsApp per Rahul ko message bhejo ki hello", CommandLabRoute.STEP, "Message(whatsapp, Rahul, hello); banking=allowed; send=approval-only"),
+        CommandLabTestCase("Extra 3 YouTube play Arijeet", "YouTube per arijeet Singh play karo", CommandLabRoute.SEARCH, "query=arijeet singh; first-result-tap=required; player-verification=required"),
+        CommandLabTestCase("Extra 4 play without query clarifies", "play karo", CommandLabRoute.CLARIFY, "Kya play karun?"),
+        CommandLabTestCase("Extra 5 global back before navigation", "back screen per jao", CommandLabRoute.STEP, "BACK global action; navigation=not-invoked"),
+        CommandLabTestCase("Extra 6 Instagram open then in-app search", "Instagram kholo aur Shahrukh Khan search karo", CommandLabRoute.PIPELINE, "open_app(Instagram) -> in_app_search(Shahrukh Khan); LLM=not-used"),
+        CommandLabTestCase("Extra 7 India capital is chat", "India ki capital kya hai", CommandLabRoute.CHAT, "chat; action-loop=not-used"),
+        CommandLabTestCase("Extra 8 vague command clarifies safely", "kuch bhi", CommandLabRoute.CLARIFY, "clarify; no-action; torch=untouched")
+    )
+
+    fun run(): List<CommandLabTestResult> = (cases + extraCases).map { test ->
         val actual = CommandLabRouterProbe.classify(test.command)
-        val passed = actual.route == test.expectedRoute
+        val safeResult = CommandLogPolicy.redact(actual.result) ?: ""
+        val routeMatches = actual.route == test.expectedRoute
+        val resultMatches = test.expectedResult == null || safeResult == test.expectedResult
+        val passed = routeMatches && resultMatches
         CommandLabTestResult(
             case = test,
             actualRoute = actual.route,
             parsedIntent = CommandLogPolicy.redact(actual.parsedIntent) ?: "",
+            actualResult = safeResult,
             passed = passed,
-            failReason = if (passed) null else "Expected ${test.expectedRoute.name.lowercase()}, got ${actual.route.name.lowercase()}"
+            failReason = when {
+                !routeMatches -> "Expected route ${test.expectedRoute.name.lowercase()}, got ${actual.route.name.lowercase()}"
+                !resultMatches -> "Expected result '${test.expectedResult}', got '${safeResult}'"
+                else -> null
+            }
         )
     }
 }

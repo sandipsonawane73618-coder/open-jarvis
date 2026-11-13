@@ -67,7 +67,7 @@ private fun CommandLabScreen(onBack: () -> Unit) {
                 context.startActivity(Intent.createChooser(send, "Share redacted command report"))
             }, modifier = Modifier.weight(1f)) { Text("Share report") }
             OutlinedButton(onClick = { testResults = CommandLabSelfTest.run() }, modifier = Modifier.weight(1f)) {
-                Text("Run 40 tests")
+                Text("Run 48 tests")
             }
         }
 
@@ -97,6 +97,7 @@ private fun CommandLabScreen(onBack: () -> Unit) {
                             )
                             Text(result.case.command, style = MaterialTheme.typography.bodyMedium)
                             Text("Route: ${result.actualRoute.name.lowercase()} • Intent: ${result.parsedIntent}", style = MaterialTheme.typography.bodySmall)
+                            if (result.actualResult.isNotBlank()) Text("Result: ${result.actualResult}", style = MaterialTheme.typography.bodySmall)
                             result.failReason?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                         }
                     }

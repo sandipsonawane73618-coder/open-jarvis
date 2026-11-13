@@ -36,4 +36,10 @@ class SpeechLanguageTest {
     @Test fun classifiesRomanHinglishMessageUtteranceAsHindiRecognitionLanguage() {
         assertEquals("hi", SpeechLanguage.languageForText("WhatsApp per Rahul ko message bhejo ki hello"))
     }
+    @Test fun HindiIsAlwaysPrimaryWithEnglishAndMarathiAlternatives() {
+        assertEquals(listOf("hi-IN", "en-IN", "mr-IN"), SpeechLanguage.recognitionLocales)
+        assertEquals("hi-IN", SpeechLanguage.preferredRecognitionLocale("en"))
+        assertEquals("hi-IN", SpeechLanguage.preferredRecognitionLocale("mr"))
+    }
 }
+

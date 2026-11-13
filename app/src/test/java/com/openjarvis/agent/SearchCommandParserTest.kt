@@ -65,6 +65,7 @@ class SearchCommandParserTest {
     }
     @Test fun youtubePlayQueryStripsPerAndOtherHindiLocationFillers() {
         assertEquals("arijeet singh", yt("YouTube per arijeet Singh play karo"))
+        assertNull(SearchCommandParser.parseUnqualifiedQuery("ek joke sunao"))
         assertEquals("arijit singh", yt("YouTube par arijit Singh play karo"))
     }
 }

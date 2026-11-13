@@ -95,6 +95,14 @@ class CommandSplitterTest {
     }
 
     @Test
+    fun instagramOpenAndSearchSplitIntoDeterministicSteps() {
+        assertEquals(
+            listOf("Instagram kholo", "Shahrukh Khan search karo"),
+            s("Instagram kholo aur Shahrukh Khan search karo")
+        )
+    }
+
+    @Test
     fun youtubeOpenAndSearchAreSeparateVerifiedPipelineSteps() {
         assertEquals(
             listOf("YouTube kholo", "YouTube par Arijit Singh ke latest songs search karo"),

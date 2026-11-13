@@ -10,12 +10,13 @@ import com.openjarvis.agent.UnknownCommandPolicy
 import com.openjarvis.intelligence.FastCommandParser
 import com.openjarvis.skills.SkillRegistry
 
-enum class CommandLabRoute { SKILL, STEP, SEARCH, CHAT, LOOP, UNKNOWN }
+enum class CommandLabRoute { SKILL, STEP, SEARCH, CHAT, LOOP, PIPELINE, CLARIFY, UNKNOWN }
 
 data class CommandLabRouteResult(
     val route: CommandLabRoute,
     val parsedIntent: String,
-    val reason: String? = null
+    val reason: String? = null,
+    val result: String? = null
 )
 
 /** Read-only probe over the same deterministic parsers and chat/unknown gates used by AgentCore. */
