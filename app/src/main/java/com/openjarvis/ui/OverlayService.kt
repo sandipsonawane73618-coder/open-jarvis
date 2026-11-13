@@ -497,6 +497,8 @@ class OverlayService : Service() {
             responseLanguage = if (marathiMarkers.any { command.contains(it) }) "mr" else "hi"
         }
         if (com.openjarvis.accessibility.JarvisAccessibilityService.instance == null) {
+            commandLogStore.complete(logId, null, "Accessibility service is disabled")
+            activeCommandLogId = null
             statusText?.text = "Accessibility service is OFF. Enable Open Jarvis in Android Accessibility settings."
             voiceManager.resumeContinuousSession()
             return
