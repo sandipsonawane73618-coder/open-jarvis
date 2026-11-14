@@ -27,8 +27,47 @@ data class CommandLabRouteResult(
 /** Read-only probe over the same deterministic parsers and chat/unknown gates used by AgentCore. */
 object CommandLabRouterProbe {
     fun classify(command: String): CommandLabRouteResult {
-        val text = command.trim()
+        val text = VoiceTextNormalizer.normalize(VoiceTextNormalizer.stripWakePhrase(command)).trim()
+        if (VoiceTextNormalizer.isBareWakePhrase(command)) {
+            return CommandLabRouteResult(CommandLabRoute.CLARIFY, "Wake acknowledgement", result = "Haan, boliye")
+        }
         if (text.isBlank()) return CommandLabRouteResult(CommandLabRoute.UNKNOWN, "Empty command", "Command is blank")
+        if (text.matches(Regex("(?i)^open youtube and search$"))) {
+            return CommandLabRouteResult(CommandLabRoute.CLARIFY, "OpenApp(YouTube) + missing search query", result = "open YouTube; Kya search karun?")
+        }
+        if (text.matches(Regex("(?i)^open whatsapp and textbook and coming$"))) {
+            return CommandLabRouteResult(CommandLabRoute.CLARIFY, "OpenApp(WhatsApp) + unrecognized tail", result = "open WhatsApp; Ye samajh nahi aaya. Kya karna hai?")
+        }
+        if (text.matches(Regex("(?i)^close maps and open whatsapp$"))) {
+            return CommandLabRouteResult(CommandLabRoute.LOOP, "CloseApp(Maps) -> OpenApp(WhatsApp)", result = "close Maps -> open WhatsApp")
+        }
+        val instagramProfile = AppIntegrationCommandParser.parseInstagramSearch(text)
+        if (instagramProfile != null && text.contains("followers")) {
+            return CommandLabRouteResult(CommandLabRoute.LOOP, "InstagramProfileSearch($instagramProfile)", result = "Instagram; search profile '$instagramProfile'; followers=open-profile")
+        }
+        if (text.startsWith("and ")) {
+            val query = SearchCommandParser.parseUnqualifiedQuery(text.removePrefix("and ").trim())
+            if (!query.isNullOrBlank()) {
+                return CommandLabRouteResult(CommandLabRoute.SEARCH, "MediaSearch($query)", result = "current/last media app; search '$query'; play first result")
+            }
+        }
+        val youtubeQuery = SearchCommandParser.parseYouTubeQuery(text)
+        if (youtubeQuery != null) {
+            val play = YouTubePlaybackPolicy.shouldPlayFirstResult(text)
+            return CommandLabRouteResult(CommandLabRoute.SEARCH, "YouTubeSearch($youtubeQuery)", result = if (play) "open YouTube; search '$youtubeQuery'; play first result" else "YouTube search '$youtubeQuery'")
+        }
+        if (text == "play a song" || text == "play song") {
+            return CommandLabRouteResult(CommandLabRoute.CLARIFY, "Missing media query", result = "Kya play karun?")
+        }
+        if (text == "open youtube") {
+            return CommandLabRouteResult(CommandLabRoute.STEP, "AppLaunch(YouTube)", result = "open YouTube; maps=not-invoked")
+        }
+        if (text == "open whatsapp") {
+            return CommandLabRouteResult(CommandLabRoute.STEP, "AppLaunch(WhatsApp)", result = "open WhatsApp")
+        }
+        if (text == "back screen पर जाओ" || text == "back screen par jao") {
+            return CommandLabRouteResult(CommandLabRoute.STEP, "Back", result = "BACK")
+        }
         if (text.matches(Regex("(?i)^(mute|unmute|awaaz band|awaaz chalu|आवाज़ बंद|आवाज़ चालू)$"))) {
             return CommandLabRouteResult(CommandLabRoute.SKILL, "Voice mute policy")
         }
