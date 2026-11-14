@@ -65,6 +65,14 @@ class ConnectedAppsPolicyTest {
         assertEquals(60L, kept.last())
     }
 
+
+    @Test fun notificationBufferDeduplicatesActiveAndPostedNotificationsNewestFirst() {
+        @Suppress("UNCHECKED_CAST")
+        val kept = invoke("com.openjarvis.intelligence.NotificationBufferPolicy", "keepLatestKeys",
+            listOf("whatsapp:7", "telegram:4", "whatsapp:7", "sms:2")) as List<String>
+        assertEquals(listOf("whatsapp:7", "telegram:4", "sms:2"), kept)
+    }
+
     @Test fun notificationReadUtteranceRoutesToNotificationReaderNotChat() {
         assertEquals("NOTIFICATION_READ", invoke("com.openjarvis.intelligence.ConnectedAppCommandParser",
             "route", "koi naya message aaya?"))
