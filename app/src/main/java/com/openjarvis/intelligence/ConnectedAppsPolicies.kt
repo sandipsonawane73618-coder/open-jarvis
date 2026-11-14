@@ -54,7 +54,7 @@ internal object ConnectedAppCommandParser {
         val normalized = Normalizer.normalize(command, Normalizer.Form.NFKC)
             .lowercase(Locale.ROOT).replace(Regex("\\s+"), " ").trim()
         return when {
-            notificationIntent.containsMatchIn(normalized) -> "NOTIFICATION_READ"
+            notificationIntent.containsMatchIn(normalized) || senderFilter(command) != null -> "NOTIFICATION_READ"
             Regex("(?i)\\b(last\\s+sms|sms\\s+kisne|last\\s+message)\\b").containsMatchIn(normalized) -> "SMS_READ"
             Regex("(?i)\\b(aaj|kal|today|tomorrow|आज|कल)\\b.*\\b(events?|meeting|calendar|schedule)\\b|\\b(events?|meeting)\\b.*\\b(aaj|kal|today|tomorrow|आज|कल)\\b").containsMatchIn(normalized) -> "CALENDAR_READ"
             Regex("(?i)^.+\\s+(?:ka|ki)\\s+number[?!.।॥]*$").matches(normalized) -> "CONTACT_READ"
