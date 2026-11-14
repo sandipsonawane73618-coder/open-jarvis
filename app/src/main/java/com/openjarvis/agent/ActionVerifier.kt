@@ -55,6 +55,14 @@ internal object ActionVerifier {
                     Verification(true, "Typed text is visible")
                 } else Verification(false, "Typed text could not be verified on screen")
             }
+            Action.SCROLL_UNTIL_TARGET -> {
+                val target = action.text.orEmpty()
+                if (target.isNotBlank() &&
+                    (after.visibleText.contains(target, ignoreCase = true) ||
+                        after.interactiveElements.contains(target, ignoreCase = true))) {
+                    Verification(true, "Scroll target is visible in the fresh screen observation")
+                } else Verification(false, "Target '$target' was not visible after scrolling")
+            }
             Action.WAIT, Action.WAIT_FOR -> {
                 val expected = action.text.orEmpty()
                 if (expected.isNotBlank() && after.visibleText.contains(expected, ignoreCase = true)) {

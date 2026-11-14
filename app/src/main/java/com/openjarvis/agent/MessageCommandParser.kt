@@ -30,6 +30,14 @@ internal object MessageCommandParser {
 
     fun parse(command: String): MessageRequest? {
         val cleaned = Normalizer.normalize(command, Normalizer.Form.NFKC).trim()
+        val replyMatch = Regex("^(.+?)\\s+(?:ko|को|ला)\\s+reply(?:\\s+karo)?\\s*:\\s*(.+)$", RegexOption.IGNORE_CASE).matchEntire(cleaned)
+        if (replyMatch != null) {
+            val name = replyMatch.groupValues[1].trim()
+            val body = replyMatch.groupValues[2].trim()
+            if (name.isNotBlank() && body.isNotBlank()) {
+                return MessageRequest(name, MessageRequest.Channel.WHATSAPP, body, true)
+            }
+        }
         val match = commandPattern.matchEntire(cleaned) ?: return null
         val name = match.groupValues[1].trim()
             .replace(Regex("(?i)^(please|plz|zara|jara|mujhe|mera|meri|मुझे|मेरा|मेरी|मला|ज़रा|जरा)\\s+"), "")

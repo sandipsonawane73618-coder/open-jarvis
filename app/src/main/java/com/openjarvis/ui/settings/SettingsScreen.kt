@@ -173,6 +173,8 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(24.dp))
                 HybridChatSettingsSection()
                 Spacer(modifier = Modifier.height(28.dp))
+                ConnectedAppsSettingsSection()
+                Spacer(modifier = Modifier.height(28.dp))
 
                 SectionLabel("AI PROVIDER")
                 

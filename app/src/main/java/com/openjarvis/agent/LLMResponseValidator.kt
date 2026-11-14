@@ -7,7 +7,7 @@ import org.json.JSONObject
 object LLMResponseValidator {
     private val knownActions = setOf(
         Action.OPEN_APP, Action.CLICK, Action.TAP, Action.TYPE_TEXT, Action.TYPE,
-        Action.SCROLL, Action.BACK, Action.PRESS_BACK, Action.HOME, Action.PRESS_HOME,
+        Action.SCROLL, Action.SCROLL_UNTIL_TARGET, Action.BACK, Action.PRESS_BACK, Action.HOME, Action.PRESS_HOME,
         Action.PRESS_RECENTS, Action.WAIT, Action.WAIT_FOR, Action.READ_SCREEN,
         Action.AI_PROMPT, Action.EXTRACT_TEXT, Action.ERROR, Action.COMPLETE
     )
@@ -58,6 +58,7 @@ object LLMResponseValidator {
                 Action.CLICK, Action.TAP -> if (action.text.isNullOrBlank()) "target" else null
                 Action.TYPE_TEXT, Action.TYPE -> if (action.value.isNullOrBlank()) "value" else null
                 Action.SCROLL -> if (action.direction.isNullOrBlank()) "direction" else null
+                Action.SCROLL_UNTIL_TARGET -> if (action.text.isNullOrBlank()) "target text" else null
                 Action.WAIT, Action.WAIT_FOR -> if (action.text.isNullOrBlank()) "visible text" else null
                 Action.AI_PROMPT -> if (action.packageName.isNullOrBlank()) "package" else if (action.prompt.isNullOrBlank()) "prompt" else null
                 else -> null
