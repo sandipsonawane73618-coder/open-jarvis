@@ -7,6 +7,12 @@ import java.util.Locale
  * Privacy boundary for notification content. This is applied before a notification
  * enters the in-memory buffer and again before any text is spoken.
  */
+/** Shared package gate applied before parsing in both bootstrap and live notification paths. */
+internal object NotificationIngestionPolicy {
+    fun accepts(packageName: String): Boolean =
+        JarvisNotificationListener.shouldProcessNotification(packageName)
+}
+
 internal object NotificationPrivacyPolicy {
     private val otp = Regex(
         "(?i)\\b(?:otp|one[- ]time password|verification code|security code)\\b\\s*(?:is|:|=|-)?\\s*\\d{4,8}\\b"
@@ -44,7 +50,7 @@ internal object NotificationPrivacyPolicy {
     }
 
     fun shouldStore(packageName: String): Boolean =
-        JarvisNotificationListener.shouldProcessNotification(packageName)
+        NotificationIngestionPolicy.accepts(packageName)
 }
 
 /** A pure bounded-history policy. New entries are appended newest-last. */
