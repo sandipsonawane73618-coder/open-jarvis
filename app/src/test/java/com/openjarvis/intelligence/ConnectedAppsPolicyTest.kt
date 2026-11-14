@@ -127,4 +127,15 @@ class ConnectedAppsPolicyTest {
         assertEquals(false, invoke("com.openjarvis.intelligence.NotificationReplyPolicy", "maySend",
             "Amit", "ok", "Amit", "not ok", true))
     }
+
+    @Test fun notificationBootstrapRejectsFinancialAppsBeforeParsing() {
+        assertEquals(false, invoke("com.openjarvis.intelligence.NotificationIngestionPolicy",
+            "accepts", "com.phonepe.app"))
+        assertEquals(false, invoke("com.openjarvis.intelligence.NotificationIngestionPolicy",
+            "accepts", "com.example.newbank.mobile"))
+        assertEquals(true, invoke("com.openjarvis.intelligence.NotificationIngestionPolicy",
+            "accepts", "com.whatsapp"))
+        assertEquals(false, invoke("com.openjarvis.intelligence.NotificationIngestionPolicy",
+            "accepts", " "))
+    }
 }
