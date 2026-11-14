@@ -31,6 +31,8 @@ object VoiceTextNormalizer {
         "सेटिंग" to "settings", "सेटिंग्स" to "settings",
         "गैलरी" to "gallery", "स्पॉटिफाई" to "spotify", "जीमेल" to "gmail",
         "जार्विस" to "jarvis", "जारविस" to "jarvis", "जर्विस" to "jarvis",
+        "शाहरुख" to "shahrukh", "खन" to "khan", "अरीजित" to "arijit", "सिंह" to "singh", "रोमांटिक" to "romantic",
+        "पर" to "par", "जाओ" to "jao",
         "जरवेस" to "jarvis", "एचआरवी" to "jarvis", "हे" to "hey"
     )
     private val wakeAliases = setOf(
