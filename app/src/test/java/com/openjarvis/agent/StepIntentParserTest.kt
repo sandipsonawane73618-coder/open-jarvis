@@ -173,6 +173,8 @@ class StepIntentParserTest {
         assertEquals(StepIntent.AppLaunch("whatsapp"), p("open wa"))
         assertEquals(StepIntent.AppLaunch("whatsapp"), p("open व्हाट्सएप"))
         assertEquals(StepIntent.AppLaunch("youtube"), p("open yt"))
+        assertEquals(StepIntent.AppLaunch("telegram"), p("open telegram"))
+        assertEquals(StepIntent.AppLaunch("calendar"), p("open calendar"))
         assertEquals(StepIntent.AppLaunch("facebook"), p("open fb"))
         assertEquals(StepIntent.AppLaunch("google pay"), p("open gpay"))
         assertEquals(StepIntent.AppLaunch("google pay"), p("open google pay"))
