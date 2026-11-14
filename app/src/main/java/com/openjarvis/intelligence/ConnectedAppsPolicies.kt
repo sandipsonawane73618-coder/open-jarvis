@@ -52,9 +52,16 @@ internal object NotificationBufferPolicy {
     const val MAX_ITEMS = 50
     fun keepLatest(items: List<Long>): List<Long> = items.takeLast(MAX_ITEMS)
 
-    /** Deduplicate active + newly posted notification keys while preserving arrival order. */
+    /** Deduplicate notification keys; a repeated key moves to its latest update position. */
     fun keepLatestKeys(keys: List<String>): List<String> =
-        keys.asSequence().filter { it.isNotBlank() }.distinct().toList().takeLast(MAX_ITEMS)
+        keys.asSequence()
+            .filter { it.isNotBlank() }
+            .fold(mutableListOf<String>()) { latest, key ->
+                latest.remove(key)
+                latest.add(key)
+                latest
+            }
+            .takeLast(MAX_ITEMS)
 }
 
 /** Deterministic route detector; must run before generic chat/search routing. */
