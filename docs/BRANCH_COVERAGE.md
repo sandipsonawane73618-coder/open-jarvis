@@ -2,7 +2,7 @@
 
 Final audit base: `origin/feat/jarvis-all-in-one` at `b4e0a6b87ce8b1e1289af02123ee0ca856c68b7a` (2026-11-14; post PR #96 and CI guard commits).
 Scope: all 67 remote branches matching `feat/*` or `feature/*`.
-Method: `git cherry -v origin/feat/jarvis-all-in-one origin/<branch>` for every remote branch. In the count column, first number is `+` (commits not patch-equivalent in all-in-one); second is `-` (patch-equivalent commits). `already contained` means exactly zero `+` commits. The full per-commit output is in the CI artifact [branch-cherry-counts](https://github.com/sandipsonawane73618-coder/open-jarvis/actions/runs/43569969445).
+Method: `git cherry -v origin/feat/jarvis-all-in-one origin/<branch>` for every remote branch. In the count column, first number is `+` (commits not patch-equivalent in all-in-one); second is `-` (patch-equivalent commits). `already contained` means exactly zero `+` commits. The full per-commit output is uploaded as the `branch-cherry-counts` artifact by the [Android Build workflow](https://github.com/sandipsonawane73618-coder/open-jarvis/actions/workflows/android-build.yml); its header records the exact base SHA.
 
 Summary: **67 branches audited; 44 already contained; 10 selectively ported; 13 skipped.** `git cherry` totals: **583 commits not patch-equivalent; 20 patch-equivalent; 603 total branch-side commits inspected**.
 
