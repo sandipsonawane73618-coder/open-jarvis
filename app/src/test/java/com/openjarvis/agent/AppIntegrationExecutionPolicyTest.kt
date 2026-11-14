@@ -60,6 +60,7 @@ class AppIntegrationExecutionPolicyTest {
         assertEquals("com.instagram.android", AppIntegrationExecutionPolicy.appPackage("instagram"))
         assertEquals("com.google.android.youtube", AppIntegrationExecutionPolicy.appPackage("youtube"))
         assertEquals("org.telegram.messenger", AppIntegrationExecutionPolicy.appPackage("telegram"))
+        assertEquals("com.google.android.calendar", AppIntegrationExecutionPolicy.appPackage("calendar"))
         assertNull(AppIntegrationExecutionPolicy.appPackage("unknown app"))
     }
 
