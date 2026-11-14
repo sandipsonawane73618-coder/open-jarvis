@@ -336,7 +336,13 @@ ${rawResponse.take(1000)}
                 workingMemory = TaskWorkingMemory()
                 try {
                     // Normalize the spoken wake word before any command parser or router sees the utterance.
-                    val commandWithoutWakeWord = JarvisCommandNormalizer.stripWakeWord(cleanCommand)
+                    if (VoiceTextNormalizer.isBareWakePhrase(cleanCommand)) {
+                        _state.value = AgentState.Done("Haan, boliye")
+                        return@withLock
+                    }
+                    val commandWithoutWakeWord = VoiceTextNormalizer.normalize(
+                        JarvisCommandNormalizer.stripWakeWord(cleanCommand)
+                    )
                     val sanitized = PromptSanitizer.sanitize(commandWithoutWakeWord)
 
                     when (sanitized) {
