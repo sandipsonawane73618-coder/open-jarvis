@@ -11,8 +11,15 @@ internal object NotificationPrivacyPolicy {
     private val otp = Regex(
         "(?i)\\b(?:otp|one[- ]time password|verification code|security code)\\b\\s*(?:is|:|=|-)?\\s*\\d{4,8}\\b"
     )
+    // Notifications commonly place the secret before its label: "482913 is your OTP".
+    private val otpBeforeLabel = Regex(
+        "(?i)\\b\\d{4,8}\\s+(?:is\\s+)?(?:your\\s+)?(?:otp|one[- ]time password|verification code|security code)\\b"
+    )
     private val pin = Regex(
         "(?i)\\b(?:upi\\s*)?pin\\b\\s*(?:is|:|=|-)?\\s*\\d{4,8}\\b"
+    )
+    private val pinBeforeLabel = Regex(
+        "(?i)\\b\\d{4,8}\\s+(?:is\\s+)?(?:your\\s+)?(?:upi\\s*)?pin\\b"
     )
     private val card = Regex("(?<!\\d)(?:\\d[ -]?){13,19}(?!\\d)")
     private val cvv = Regex(
@@ -25,7 +32,9 @@ internal object NotificationPrivacyPolicy {
     fun redact(value: String): String {
         var safe = Normalizer.normalize(value, Normalizer.Form.NFC)
         safe = otp.replace(safe, "[REDACTED]")
+        safe = otpBeforeLabel.replace(safe, "[REDACTED]")
         safe = pin.replace(safe, "[REDACTED]")
+        safe = pinBeforeLabel.replace(safe, "[REDACTED]")
         safe = cvv.replace(safe, "[REDACTED]")
         safe = password.replace(safe, "[REDACTED]")
         safe = card.replace(safe) { match ->
