@@ -38,7 +38,7 @@ Policy: do not force-merge diverged branches. Preserve all existing tests; total
 | `feature/jarvis-phase3-memory` | Graphify episodic memory and Headroom Hybrid | `graphify/GraphifyRepository.kt`, `agent/AgentCore.kt` | `graphify/MemoryContextBuilder.kt`, `headroom/HeadroomCompressor.kt` | **integrate both test-first**; memory builder must remain category-only and privacy-filtered. |
 | `feature/jarvis-report-doctor-safe-recovery` | Safe recovery and Report Doctor | `agent/SelfHealingExecutor.kt`, `agent/SelfHealingSafetyPolicy.kt`, `diagnostics/ReportDoctor.kt` | No new isolated path identified; branch changes existing safety files | **skip for now**; preserve current retry gates and report overlapping deltas instead of overwriting. |
 | `feature/jarvis-sanna-memory-learning-audit` | App-task hints, diagnostics and memory learning | `agent/AppTaskHintPolicy.kt`, `agent/AppTaskHintStore.kt`, `agent/AgentDiagnostics.kt` | `agent/HeadroomLiteContext.kt`; diagnostic logger absent | **integrate HeadroomLiteContext test-first**; skip bundled wakeword diagnostics. |
-| `feature/jarvis-screenshot-capture-reliability` | Screenshot capture reliability | `ui/ScreenCapturePermissionActivity.kt`, `vision/ScreenshotCapture.kt`, `agent/AgentCore.kt` | No new isolated file; branch changes existing capture flow | **skip for now**; review the branch-specific changes against current permission and capture lifecycle; no forced merge. |
+| `feature/jarvis-screenshot-capture-reliability` | Screenshot capture reliability | `ui/ScreenCapturePermissionActivity.kt` (denial tracking), `vision/ScreenshotCapture.kt` (permissionDenied state), `agent/AgentCore.kt` (45s permission wait and bounded frame retries) | None: all three source hunks are already present identically in All-in-One at `3ff7e627`; the two smaller files have matching blob SHAs and AgentCore's `captureBitmapOrThrow` contains the same wait/error/retry block | **already present; no port needed**. Workflow-only change not imported. Preserve current permission lifecycle. |
 | `feature/jarvis-self-healing-retry-gates` | Bounded self-healing retry gates | `agent/SelfHealingExecutor.kt`, `agent/SelfHealingSafetyPolicy.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
 | `feature/jarvis-single-floating-overlay` | Single floating overlay attachment | `ui/OverlayService.kt`, `ui/OverlayAttachmentGate.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
 | `feature/jarvis-slice-c-router-llm-schema` | Router and LLM schema | `agent/CommandRouter.kt`, `llm/providers/OllamaSkillPlanParser.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
@@ -69,3 +69,18 @@ The old `feature/self-healing-command-dictionary` branch adds command dictionary
 3. Add RED tests, then integrate `HeadroomCompressor` into the shared LLM system-prompt path without rewriting the user request, action JSON or safety instructions.
 4. Add RED privacy tests, then integrate `MemoryContextBuilder` using only allow-listed task/pattern categories; never pass raw command, contact, message, OCR or provider details into memory recall.
 5. Re-run unit tests, ECC, APK build and smoke per SHA. Never delete or loosen a test; `@Test` count must not decrease.
+
+
+## Selective port audit — ordered Tier 2 batches
+
+### 1. `feature/jarvis-screenshot-capture-reliability` — completed audit
+
+Merge base: `88676a1926ba9bc8ad5f9934487445a754f66f21`; branch head file set compared to All-in-One `3ff7e627b28fb1321f61501919099b0e5693880d`.
+
+| Source file | Branch hunks | Classification | Action |
+|---|---|---|---|
+| `app/src/main/java/com/openjarvis/agent/AgentCore.kt` | `captureBitmapOrThrow`: keep the original command alive while MediaProjection consent is open; wait up to 45s for readiness or denial; return an honest denial/timeout error; retry frame acquisition 20 times with 100ms delay | New behaviour relative to merge base, but the exact block already exists in current All-in-One | No code change; current implementation retained |
+| `app/src/main/java/com/openjarvis/ui/ScreenCapturePermissionActivity.kt` | Import ScreenshotCapture and call `markPermissionDenied()` when the consent result is not OK | New behaviour relative to merge base, but current file blob is identical to branch | No code change |
+| `app/src/main/java/com/openjarvis/vision/ScreenshotCapture.kt` | Add volatile permissionDenied state, reset it on start/initialize, expose mark/wasPermissionDenied | New behaviour relative to merge base, but current file blob is identical to branch | No code change |
+
+The only other changed file is `.github/workflows/android-build.yml`; its workflow-only hunk is not an app feature and is not copied. No screenshot source hunk is missing from All-in-One, so no new test/code port is necessary. Existing permission lifecycle remains untouched.
