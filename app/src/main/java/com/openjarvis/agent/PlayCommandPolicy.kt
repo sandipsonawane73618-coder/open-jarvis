@@ -5,7 +5,7 @@ import java.util.Locale
 /** Deterministic clarification for an unqualified play command when YouTube is not foreground. */
 internal object PlayCommandPolicy {
     private val missingQuery = Regex(
-        "^(?:please\\s+)?(?:play(?:\\s+karo)?|chalao|चलाओ)(?:\\s+please)?$",
+        "^(?:please\\s+)?(?:play(?:\\s+(?:karo|a|the))?(?:\\s+song)?|chalao|चलाओ)(?:\\s+please)?$",
         RegexOption.IGNORE_CASE
     )
 
