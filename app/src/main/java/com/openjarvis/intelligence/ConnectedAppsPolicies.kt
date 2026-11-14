@@ -53,8 +53,18 @@ internal object ConnectedAppCommandParser {
     fun route(command: String): String? {
         val normalized = Normalizer.normalize(command, Normalizer.Form.NFKC)
             .lowercase(Locale.ROOT).replace(Regex("\\s+"), " ").trim()
-        return if (notificationIntent.containsMatchIn(normalized)) "NOTIFICATION_READ" else null
+        return when {
+            notificationIntent.containsMatchIn(normalized) -> "NOTIFICATION_READ"
+            Regex("(?i)\\b(last\\s+sms|sms\\s+kisne|last\\s+message)\\b").containsMatchIn(normalized) -> "SMS_READ"
+            Regex("(?i)\\b(aaj|kal|today|tomorrow|आज|कल)\\b.*\\b(events?|meeting|calendar|schedule)\\b|\\b(events?|meeting)\\b.*\\b(aaj|kal|today|tomorrow|आज|कल)\\b").containsMatchIn(normalized) -> "CALENDAR_READ"
+            Regex("(?i)^.+\\s+(?:ka|ki)\\s+number[?!.।॥]*$").matches(normalized) -> "CONTACT_READ"
+            else -> null
+        }
     }
+
+    fun contactName(command: String): String? =
+        Regex("(?i)^(.+?)\\s+(?:ka|ki)\\s+number[?!.।॥]*$").matchEntire(command.trim())
+            ?.groupValues?.get(1)?.trim()?.takeIf { it.isNotBlank() && it.length <= 80 }
 
     fun senderFilter(command: String): String? {
         val cleaned = Normalizer.normalize(command, Normalizer.Form.NFKC).trim()
