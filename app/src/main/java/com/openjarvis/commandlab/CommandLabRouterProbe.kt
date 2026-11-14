@@ -56,7 +56,7 @@ object CommandLabRouterProbe {
         val youtubeQuery = SearchCommandParser.parseYouTubeQuery(text)
         if (youtubeQuery != null) {
             val play = YouTubePlaybackPolicy.shouldPlayFirstResult(text)
-            return CommandLabRouteResult(CommandLabRoute.SEARCH, "YouTubeSearch($youtubeQuery)", result = if (play) "open YouTube; search '$youtubeQuery'; play first result" else "YouTube search '$youtubeQuery'")
+            return CommandLabRouteResult(CommandLabRoute.SEARCH, "YouTubeSearch($youtubeQuery)", result = if (!play) "YouTube search '$youtubeQuery'" else if (text.startsWith("open youtube")) "open YouTube; search '$youtubeQuery'; play first result" else "query=$youtubeQuery; first-result-tap=required; player-verification=required")
         }
         if (text == "play a song" || text == "play song") {
             return CommandLabRouteResult(CommandLabRoute.CLARIFY, "Missing media query", result = "Kya play karun?")
