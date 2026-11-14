@@ -93,4 +93,49 @@ class CommandBrainTest {
         assertEquals(null, LlmSkillRouteSafetyPolicy.acceptedSkill("CALL", "WhatsApp per Rahul ko message bhejo hello"))
         assertEquals(null, LlmSkillRouteSafetyPolicy.acceptedSkill("SEARCH", "ओपन यूट्यूब"))
     }
+
+    @Test fun validatedPlansDispatchEveryExactStepInOrder() = runBlocking {
+        val responses = mapOf(
+            "ओपन यूट्यूब" to """{"steps":[{"tool":"open_app","args":{"label":"YouTube"}}]}""",
+            "ओपन यूट्यूब एंड सर्च" to """{"steps":[{"tool":"open_app","args":{"label":"YouTube"}},{"tool":"clarify","args":{"question":"Kya search karun?"}}]}""",
+            "एंड प्ले रोमांटिक सोंग" to """{"steps":[{"tool":"play_media","args":{"query":"romantic song","app":null}}]}""",
+            "ओपन यूट्यूब एंड प्ले अरीजित सिंह सोंग" to """{"steps":[{"tool":"open_app","args":{"label":"YouTube"}},{"tool":"play_media","args":{"query":"arijit singh song","app":"YouTube"}}]}""",
+            "बैक स्क्रीन पर जाओ" to """{"steps":[{"tool":"back","args":{}}]}""",
+            "व्हाट्सएप खोलो" to """{"steps":[{"tool":"open_app","args":{"label":"WhatsApp"}}]}""",
+            "WhatsApp per Rahul ko message bhejo hello" to """{"steps":[{"tool":"message_draft","args":{"app":"WhatsApp","contact":"Rahul","text":"hello"}}]}""",
+            "Awaaz badhao" to """{"steps":[{"tool":"volume","args":{"direction":"up"}}]}""",
+            "इंडिया का कैपिटल" to """{"steps":[{"tool":"answer","args":{"text":"भारत की राजधानी नई दिल्ली है।"}}]}""",
+            "मद्राचोद" to """{"steps":[{"tool":"none","args":{}}]}"""
+        )
+        val expected = mapOf(
+            "ओपन यूट्यूब" to listOf(CommandBrainStep.OpenApp("YouTube")),
+            "ओपन यूट्यूब एंड सर्च" to listOf(
+                CommandBrainStep.OpenApp("YouTube"), CommandBrainStep.Clarify("Kya search karun?")
+            ),
+            "एंड प्ले रोमांटिक सोंग" to listOf(CommandBrainStep.PlayMedia("romantic song", null)),
+            "हे जरवेस ओपन यूट्यूब एंड प्ले अरीजित सिंह सोंग" to listOf(
+                CommandBrainStep.OpenApp("YouTube"), CommandBrainStep.PlayMedia("arijit singh song", "YouTube")
+            ),
+            "बैक स्क्रीन पर जाओ" to listOf(CommandBrainStep.Back),
+            "व्हाट्सएप खोलो" to listOf(CommandBrainStep.OpenApp("WhatsApp")),
+            "WhatsApp per Rahul ko message bhejo hello" to listOf(
+                CommandBrainStep.MessageDraft("WhatsApp", "Rahul", "hello")
+            ),
+            "Awaaz badhao" to listOf(CommandBrainStep.Volume("up")),
+            "इंडिया का कैपिटल" to listOf(CommandBrainStep.Answer("भारत की राजधानी नई दिल्ली है।")),
+            "मद्राचोद" to listOf(CommandBrainStep.None)
+        )
+        expected.forEach { (utterance, expectedSteps) ->
+            val provider = FakeProvider { input -> responses.getValue(input) }
+            val validated = brain(provider).plan(utterance, 1_500L).getOrThrow()
+            assertEquals("$utterance validated steps", expectedSteps, validated.steps)
+
+            val executed = mutableListOf<CommandBrainStep>()
+            CommandBrainExecution.execute(validated) { step ->
+                executed += step
+                Result.success("executed")
+            }.getOrThrow()
+            assertEquals("$utterance executed steps", expectedSteps, executed)
+        }
+    }
 }
