@@ -30,7 +30,7 @@ internal object FastCommandParser {
     private val youtubeSearch = Regex("^youtube\\s+(?:par\\s+)?(.+?)\\s+(?:search|dhundo|khojo)(?:\\s+karo)?$", RegexOption.IGNORE_CASE)
     private val youtubeSearchWithOpen = Regex("^youtube\\s+kholo\\s+(?:aur|then)\\s+(.+?)\\s+(?:search|dhundo|khojo)(?:\\s+karo)?$", RegexOption.IGNORE_CASE)
     private val timer = Regex("^(?:(?:please )?set )?(?:a )?timer(?: for)? (\\d{1,4}) (seconds?|secs?|minutes?|mins?|hours?|hrs?)$|^(\\d{1,4}) (seconds?|secs?|minutes?|mins?|hours?|hrs?) timer$", RegexOption.IGNORE_CASE)
-    private val contactCall = Regex("^(?:please\\s+)?(?:call|dial|phone)\\s+([\\p{L}][\\p{L}\\p{M} .'-]{1,59})$|^([\\p{L}][\\p{L}\\p{M} .'-]{1,59})\\s+(?:ko\\s+call\\s+karo|ko\\s+phone\\s+karo|ला\\s+कॉल\\s+करा|को\\s+कॉल\\s+करो)$", RegexOption.IGNORE_CASE)
+    private val contactCall = Regex("^(?:please\\s+)?(?:call|dial|phone)\\s+([\\p{L}][\\p{L}\\p{M} .'-]{1,59})$|^([\\p{L}][\\p{L}\\p{M} .'-]{1,59})\\s+(?:ko\\s+call\\s+karo|ko\\s+phone\\s+karo|को\\s+call\\s+करो|ला\\s+call\\s+करा|ला\\s+phone\\s+करा|ला\\s+कॉल\\s+करा|को\\s+कॉल\\s+करो)$", RegexOption.IGNORE_CASE)
     private val BACK_COMMANDS = setOf(
         "back", "go back", "back screen per jao", "back screen pe jao",
         "pichhe", "pichhe ja", "pichhe jao",
