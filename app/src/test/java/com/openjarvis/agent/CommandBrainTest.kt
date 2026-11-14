@@ -26,7 +26,7 @@ class CommandBrainTest {
     private fun brain(provider: FakeProvider) = CommandBrain { system, user, timeout ->
         assertTrue(system.contains("NOISY speech-to-text"))
         assertTrue(timeout > 0L)
-        provider.completeJson(system, user, timeout)
+        provider.completeJson(system, user)
     }
 
     @Test fun exactHindiHinglishUtterancesProduceExpectedPlans() = runBlocking {
