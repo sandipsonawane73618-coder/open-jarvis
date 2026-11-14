@@ -34,7 +34,7 @@ class CommandBrainTest {
             "ओपन यूट्यूब" to """{"steps":[{"tool":"open_app","args":{"label":"YouTube"}}]}""",
             "ओपन यूट्यूब एंड सर्च" to """{"steps":[{"tool":"open_app","args":{"label":"YouTube"}},{"tool":"clarify","args":{"question":"Kya search karun?"}}]}""",
             "एंड प्ले रोमांटिक सोंग" to """{"steps":[{"tool":"play_media","args":{"query":"romantic song","app":null}}]}""",
-            "हे जरवेस ओपन यूट्यूब एंड प्ले अरीजित सिंह सोंग" to """{"steps":[{"tool":"open_app","args":{"label":"YouTube"}},{"tool":"play_media","args":{"query":"arijit singh song","app":"YouTube"}}]}""",
+            "ओपन यूट्यूब एंड प्ले अरीजित सिंह सोंग" to """{"steps":[{"tool":"open_app","args":{"label":"YouTube"}},{"tool":"play_media","args":{"query":"arijit singh song","app":"YouTube"}}]}""",
             "बैक स्क्रीन पर जाओ" to """{"steps":[{"tool":"back","args":{}}]}""",
             "व्हाट्सएप खोलो" to """{"steps":[{"tool":"open_app","args":{"label":"WhatsApp"}}]}""",
             "WhatsApp per Rahul ko message bhejo hello" to """{"steps":[{"tool":"message_draft","args":{"app":"WhatsApp","contact":"Rahul","text":"hello"}}]}""",
@@ -42,12 +42,29 @@ class CommandBrainTest {
             "इंडिया का कैपिटल" to """{"steps":[{"tool":"answer","args":{"text":"भारत की राजधानी नई दिल्ली है।"}}]}""",
             "मद्राचोद" to """{"steps":[{"tool":"none","args":{}}]}"""
         )
+        val expected = mapOf(
+            "ओपन यूट्यूब" to CommandBrainPlan(listOf(CommandBrainStep.OpenApp("YouTube"))),
+            "ओपन यूट्यूब एंड सर्च" to CommandBrainPlan(listOf(
+                CommandBrainStep.OpenApp("YouTube"), CommandBrainStep.Clarify("Kya search karun?")
+            )),
+            "एंड प्ले रोमांटिक सोंग" to CommandBrainPlan(listOf(CommandBrainStep.PlayMedia("romantic song", null))),
+            "हे जरवेस ओपन यूट्यूब एंड प्ले अरीजित सिंह सोंग" to CommandBrainPlan(listOf(
+                CommandBrainStep.OpenApp("YouTube"), CommandBrainStep.PlayMedia("arijit singh song", "YouTube")
+            )),
+            "बैक स्क्रीन पर जाओ" to CommandBrainPlan(listOf(CommandBrainStep.Back)),
+            "व्हाट्सएप खोलो" to CommandBrainPlan(listOf(CommandBrainStep.OpenApp("WhatsApp"))),
+            "WhatsApp per Rahul ko message bhejo hello" to CommandBrainPlan(listOf(
+                CommandBrainStep.MessageDraft("WhatsApp", "Rahul", "hello")
+            )),
+            "Awaaz badhao" to CommandBrainPlan(listOf(CommandBrainStep.Volume("up"))),
+            "इंडिया का कैपिटल" to CommandBrainPlan(listOf(CommandBrainStep.Answer("भारत की राजधानी नई दिल्ली है।"))),
+            "मद्राचोद" to CommandBrainPlan(listOf(CommandBrainStep.None))
+        )
         val provider = FakeProvider { responses.getValue(it) }
         val commandBrain = brain(provider)
 
-        responses.keys.forEach { utterance ->
-            val plan = commandBrain.plan(utterance, 1_500L).getOrThrow()
-            assertFalse("Plan must not be empty for $utterance", plan.steps.isEmpty())
+        expected.forEach { (utterance, expectedPlan) ->
+            assertEquals(utterance, expectedPlan, commandBrain.plan(utterance, 1_500L).getOrThrow())
         }
         assertEquals(10, provider.calls.size)
     }
@@ -64,13 +81,16 @@ class CommandBrainTest {
         assertTrue(CommandBrainPlanParser.parse("""{"steps":[{"tool":"maps","args":{"destination":"Pune"}}]}""").isFailure)
         assertTrue(CommandBrainPlanParser.parse("""{"steps":[{"tool":"open_app","args":{"label":""}}]}""").isFailure)
         assertTrue(CommandBrainPlanParser.parse("""{"steps":[{"tool":"volume","args":{"direction":"sideways"}}]}""").isFailure)
+        assertTrue(CommandBrainPlanParser.parse("""{"steps":[{"tool":"timer","args":{"seconds":"30"}}]}""").isFailure)
     }
 
     @Test fun mapsOnlyProviderCannotCreateNavigationPlanWithoutExplicitIntent() {
         val alwaysMaps = """{"steps":[{"tool":"maps","args":{"destination":"Pune"}}]}"""
         assertTrue(CommandBrainPlanParser.parse(alwaysMaps).isFailure)
-        assertFalse(LlmSkillRouteSafetyPolicy.acceptedSkill("MAPS", "ओपन यूट्यूब") != null)
-        assertFalse(LlmSkillRouteSafetyPolicy.acceptedSkill("MAPS", "जरवेस") != null)
-        assertFalse(LlmSkillRouteSafetyPolicy.acceptedSkill("MAPS", "प्ले ए सोंग") != null)
+        assertEquals(null, LlmSkillRouteSafetyPolicy.acceptedSkill("MAPS", "ओपन यूट्यूब"))
+        assertEquals(null, LlmSkillRouteSafetyPolicy.acceptedSkill("MAPS", "जरवेस"))
+        assertEquals(null, LlmSkillRouteSafetyPolicy.acceptedSkill("MAPS", "प्ले ए सोंग"))
+        assertEquals(null, LlmSkillRouteSafetyPolicy.acceptedSkill("CALL", "WhatsApp per Rahul ko message bhejo hello"))
+        assertEquals(null, LlmSkillRouteSafetyPolicy.acceptedSkill("SEARCH", "ओपन यूट्यूब"))
     }
 }
