@@ -205,7 +205,9 @@ class JarvisNotificationListener : NotificationListenerService() {
             contentResolver,
             "enabled_notification_listeners"
         ).orEmpty()
-        return enabled.split(':').any { it.equals(componentName.flattenToString(), ignoreCase = true) }
+        return enabled.split(':').any {
+            it.equals(android.content.ComponentName(this, JarvisNotificationListener::class.java).flattenToString(), ignoreCase = true)
+        }
     }
 
     fun getSummary(): String {
