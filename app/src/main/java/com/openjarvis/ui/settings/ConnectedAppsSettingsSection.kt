@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.weight
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
@@ -86,11 +85,9 @@ internal fun ConnectedAppsSettingsSection() {
 @Composable
 private fun ConnectedAppRow(name: String, state: String, onEnable: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(name, style = MaterialTheme.typography.bodyLarge)
-                Text(state, style = MaterialTheme.typography.bodySmall)
-            }
+        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(name, style = MaterialTheme.typography.bodyLarge)
+            Text(state, style = MaterialTheme.typography.bodySmall)
             Button(onClick = onEnable) { Text(if (state == "Enabled" || state == "Installed") "Open" else "Enable") }
         }
     }
@@ -101,7 +98,7 @@ private fun status(granted: Boolean?): String = if (granted == true) "Enabled" e
 private fun isNotificationListenerEnabled(context: android.content.Context): Boolean {
     val enabled = Settings.Secure.getString(
         context.contentResolver,
-        Settings.Secure.ENABLED_NOTIFICATION_LISTENERS
+        "enabled_notification_listeners"
     ).orEmpty()
     val expected = android.content.ComponentName(context, com.openjarvis.intelligence.JarvisNotificationListener::class.java)
         .flattenToString()
