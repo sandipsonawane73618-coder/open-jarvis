@@ -24,17 +24,17 @@ object AppIntegrationCommandParser {
 
     private val instagramSearchPatterns = listOf(
         Regex(
-            """^\\s*(?:instagram|insta)(?:\\s+(?:kholo|open))?(?:\\s+(?:par|pe))?\\s+(?:aur\\s+)?(.+?)\\s+search\\s+(?:karo|kro|kar)\\s*$""",
+            """^\s*(?:instagram|insta)(?:\s+(?:kholo|open))?(?:\s+(?:par|pe))?\s+(?:aur\s+)?(.+?)\s+search\s+(?:karo|kro|kar)\s*$""",
             RegexOption.IGNORE_CASE
         ),
         Regex(
-            """^\\s*(?:instagram|insta)\\s+search\\s+(?:for\\s+)?(.+?)\\s*$""",
+            """^\s*(?:instagram|insta)\s+search\s+(?:for\s+)?(.+?)\s*$""",
             RegexOption.IGNORE_CASE
         )
     )
 
     fun parseInstagramSearch(command: String): String? {
-        val normalized = command.trim().replace(Regex("""\\s+"""), " ")
+        val normalized = command.trim().replace(Regex("""\s+"""), " ")
         val match = instagramSearchPatterns.firstNotNullOfOrNull { it.matchEntire(normalized) }
             ?: return null
         return match.groupValues[1].trim()
@@ -44,7 +44,7 @@ object AppIntegrationCommandParser {
     }
 
     private val telegramPattern = Regex(
-        """^\\s*telegram\\s+(?:(?:par|pe|on)\\s+)?(.+?)\\s+(?:ko|la)\\s+message\\s+(?:bhejo|bhej|send|pathav|pathva)\\s*:\\s*(.*?)\\s*$""",
+        """^\s*telegram\s+(?:(?:par|pe|on)\s+)?(.+?)\s+(?:ko|la)\s+message\s+(?:bhejo|bhej|send|pathav|pathva)\s*:\s*(.*?)\s*$""",
         setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
     )
 
@@ -61,7 +61,7 @@ object AppIntegrationCommandParser {
     }
 
     private val calendarPattern = Regex(
-        """^\\s*calendar\\s+event\\s+(.+?)\\s+on\\s+(\\d{4}-\\d{2}-\\d{2})\\s+at\\s+(\\d{2}:\\d{2})(?:\\s+for\\s+(\\d{1,3})\\s+minutes?)?\\s*$""",
+        """^\s*calendar\s+event\s+(.+?)\s+on\s+(\d{4}-\d{2}-\d{2})\s+at\s+(\d{2}:\d{2})(?:\s+for\s+(\d{1,3})\s+minutes?)?\s*$""",
         RegexOption.IGNORE_CASE
     )
 
