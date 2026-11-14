@@ -11,7 +11,7 @@ internal object PlayCommandPolicy {
 
     fun shouldAskForQuery(command: String, youtubeForeground: Boolean): Boolean {
         if (youtubeForeground) return false
-        val normalized = command.trim().lowercase(Locale.ROOT)
+        val normalized = VoiceTextNormalizer.normalize(command).trim().lowercase(Locale.ROOT)
             .replace(Regex("\\s+"), " ")
         return missingQuery.matches(normalized)
     }
