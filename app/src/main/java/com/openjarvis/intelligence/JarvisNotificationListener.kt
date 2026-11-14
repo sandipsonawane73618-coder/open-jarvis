@@ -20,6 +20,8 @@ class JarvisNotificationListener : NotificationListenerService() {
     override fun onListenerConnected() {
         super.onListenerConnected()
         instance = this
+        // Seed the in-memory view with notifications already active when access is enabled.
+        runCatching { activeNotifications?.forEach(::upsertNotification) }
     }
 
     override fun onDestroy() {
@@ -131,10 +133,17 @@ class JarvisNotificationListener : NotificationListenerService() {
             return
         }
 
+        upsertNotification(sbn)
+    }
+
+    private fun upsertNotification(sbn: StatusBarNotification) {
         val parsed = parseNotification(sbn)
         synchronized(notificationsLock) {
+            // Notification IDs are scoped to a package; replace an updated active item.
+            notifications.removeAll { it.id == parsed.id && it.packageName == parsed.packageName }
             notifications.add(parsed)
-            val newestFirst = notifications.sortedByDescending { it.timestamp }.take(NotificationBufferPolicy.MAX_ITEMS)
+            val newestFirst = notifications.sortedByDescending { it.timestamp }
+                .take(NotificationBufferPolicy.MAX_ITEMS)
             notifications.clear()
             notifications.addAll(newestFirst)
         }
