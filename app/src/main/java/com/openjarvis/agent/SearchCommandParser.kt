@@ -12,7 +12,7 @@ import java.util.Locale
 object SearchCommandParser {
 
     private fun norm(s: String): String =
-        Normalizer.normalize(s, Normalizer.Form.NFC).lowercase(Locale.ROOT)
+        VoiceTextNormalizer.normalize(s).lowercase(Locale.ROOT)
 
     private fun words(vararg w: String): Set<String> = w.map { norm(it) }.toSet()
 
