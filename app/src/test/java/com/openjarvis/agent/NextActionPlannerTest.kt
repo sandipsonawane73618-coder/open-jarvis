@@ -48,12 +48,19 @@ class NextActionPlannerTest {
             val action = planned.getOrThrow()
             assertTrue(AgentPlanPolicy.hasMessageSendTap(listOf(action)))
             assertFalse(AgentPlanPolicy.isExecutablePlan(listOf(action), "send message"))
+            val payload = SendConfirmationPayload("contact-1", "Dad", "3210", "Hello Dad")
+            val whatsapp = screen.copy(
+                packageName = "com.whatsapp",
+                visibleText = "Dad",
+                interactiveElements = "[#1 editable] text=Hello Dad hint=Message class=EditText bounds=0,0,1,1"
+            )
             val result = runner.run(
-                AgentTaskSession("send message", 0),
+                AgentTaskSession("send to Dad", 0),
                 nowMs = { 1 },
-                observe = { screen.copy(visibleText = "Message composer") },
+                observe = { whatsapp },
                 plan = { _, _ -> Result.success(action) },
                 execute = { executions++; true },
+                resolveSendPayload = { _, _ -> payload },
                 verify = { a, before, after, accepted -> ActionVerifier.verify(a, before, after, accepted, a.packageName) }
             )
             assertEquals(AgentLoopStatus.NEEDS_CONFIRMATION, result.status)

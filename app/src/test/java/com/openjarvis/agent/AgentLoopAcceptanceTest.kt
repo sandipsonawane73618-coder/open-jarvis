@@ -47,6 +47,20 @@ class AgentLoopAcceptanceTest {
         assertTrue(AgentLoopCommandPolicy.shouldUseLoop("Chrome kholo, Search par tap karo aur Pune type karo"))
     }
 
+    @Test fun explicitCrossAppCreationAndSendWordsTriggerGeneralLoop() {
+        assertTrue(AgentLoopCommandPolicy.shouldUseLoop("Gemini me anime image banao phir WhatsApp me Dad ko bhejo"))
+        assertTrue(AgentLoopCommandPolicy.shouldUseLoop("YouTube kholo phir WhatsApp me message send karo"))
+        assertTrue(AgentLoopCommandPolicy.shouldUseLoop("Instagram me photo banao phir WhatsApp par attach karo"))
+    }
+
+    @Test fun deterministicSingleAppAndNativeCommandsStayOnExistingPath() {
+        assertFalse(AgentLoopCommandPolicy.shouldUseLoop("time kya hua"))
+        assertFalse(AgentLoopCommandPolicy.shouldUseLoop("volume badhao"))
+        assertFalse(AgentLoopCommandPolicy.shouldUseLoop("Instagram kholo"))
+        assertFalse(AgentLoopCommandPolicy.shouldUseLoop("volume badhao phir Instagram kholo"))
+        assertEquals(CommandRouter.Route.SKILL_REGISTRY, CommandRouter.classify("volume badhao"))
+    }
+
     @Test fun deterministicVolumeAndAppSequenceStillSplitsForStepPipeline() {
         val steps = CommandSplitter.split("volume badhao phir Instagram kholo") {
             CommandRouter.classify(it) != CommandRouter.Route.NONE

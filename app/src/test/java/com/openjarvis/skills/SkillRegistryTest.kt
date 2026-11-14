@@ -116,4 +116,56 @@ class SkillRegistryTest {
         assertNull(SkillRegistry.parse("open insta and tell me what to do dear"))
     }
 
+    @Test fun exactHinglishVolumeCommandsNeverBecomeTorchCommands() {
+        assertEquals(SkillRegistry.Kind.VOLUME, SkillRegistry.parse("awaaz badhao")?.kind)
+        assertEquals("up", SkillRegistry.parse("awaaz badhao")?.args?.get("direction"))
+        assertEquals(SkillRegistry.Kind.VOLUME, SkillRegistry.parse("awaaz kam karo")?.kind)
+        assertEquals("down", SkillRegistry.parse("awaaz kam karo")?.args?.get("direction"))
+        assertEquals(SkillRegistry.Kind.TORCH, SkillRegistry.parse("torch on")?.kind)
+    }
+
+    @Test fun reportedVolumeAndTorchPhrasesRouteThroughNativeSkillRegistry() {
+        val failures = mutableListOf<String>()
+        val volumeCases = listOf(
+            "Awaaz badhao" to "up",
+            "awaaz kam karo" to "down",
+            "avaz vadhva" to "up",
+            "आवाज बढ़ाओ" to "up",
+            "volume up" to "up",
+            "awaaz vadhav" to "up",
+            "avaj vadhva" to "up",
+            "आवाज़ बढ़ाओ" to "up",
+            "sound up" to "up",
+            "awaaz ghatao" to "down",
+            "awaaz kami kara" to "down"
+        )
+        volumeCases.forEach { (phrase, direction) ->
+            val request = SkillRegistry.parse(phrase)
+            if (request?.kind != SkillRegistry.Kind.VOLUME) {
+                failures += "VOLUME route: '$phrase' expected VOLUME, got ${request?.kind} args=${request?.args}"
+            } else if (request.args["direction"] != direction) {
+                failures += "VOLUME direction: '$phrase' expected '$direction', got '${request.args["direction"]}'"
+            }
+        }
+        val torchCases = listOf(
+            "torch on" to "true",
+            "flashlight off" to "false",
+            "turn on torch" to "true",
+            "flash on" to "true",
+            "टॉर्च चालू" to "true"
+        )
+        torchCases.forEach { (phrase, enabled) ->
+            val request = SkillRegistry.parse(phrase)
+            if (request?.kind != SkillRegistry.Kind.TORCH) {
+                failures += "TORCH route: '$phrase' expected TORCH, got ${request?.kind} args=${request?.args}"
+            } else if (request.args["enabled"] != enabled) {
+                failures += "TORCH state: '$phrase' expected '$enabled', got '${request.args["enabled"]}'"
+            }
+        }
+        assertTrue(
+            "Native SkillRegistry phrase failures (${failures.size}):\\n" + failures.joinToString("\\n"),
+            failures.isEmpty()
+        )
+    }
+
 }

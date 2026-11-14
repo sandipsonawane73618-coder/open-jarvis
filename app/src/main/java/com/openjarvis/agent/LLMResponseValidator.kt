@@ -7,7 +7,7 @@ import org.json.JSONObject
 object LLMResponseValidator {
     private val knownActions = setOf(
         Action.OPEN_APP, Action.CLICK, Action.TAP, Action.TYPE_TEXT, Action.TYPE,
-        Action.SCROLL, Action.BACK, Action.PRESS_BACK, Action.HOME, Action.PRESS_HOME,
+        Action.SCROLL, Action.SCROLL_UNTIL_TARGET, Action.BACK, Action.PRESS_BACK, Action.HOME, Action.PRESS_HOME,
         Action.PRESS_RECENTS, Action.WAIT, Action.WAIT_FOR, Action.READ_SCREEN,
         Action.AI_PROMPT, Action.EXTRACT_TEXT, Action.ERROR, Action.COMPLETE
     )
@@ -58,6 +58,7 @@ object LLMResponseValidator {
                 Action.CLICK, Action.TAP -> if (action.text.isNullOrBlank()) "target" else null
                 Action.TYPE_TEXT, Action.TYPE -> if (action.value.isNullOrBlank()) "value" else null
                 Action.SCROLL -> if (action.direction.isNullOrBlank()) "direction" else null
+                Action.SCROLL_UNTIL_TARGET -> if (action.text.isNullOrBlank()) "target text" else null
                 Action.WAIT, Action.WAIT_FOR -> if (action.text.isNullOrBlank()) "visible text" else null
                 Action.AI_PROMPT -> if (action.packageName.isNullOrBlank()) "package" else if (action.prompt.isNullOrBlank()) "prompt" else null
                 else -> null
@@ -230,6 +231,15 @@ object LLMResponseValidator {
     private fun parseAction(obj: JSONObject, type: String): Action {
         val target = firstString(obj, "text", "target", "element", "label").takeIf { it.isNotBlank() }
         val value = firstString(obj, "value", "text", "input").takeIf { it.isNotBlank() }
+        // The legacy phase-4 {steps:[{action,target,value}]} schema stores scroll direction
+        // in target and an error's user-facing explanation in value. Keep the current
+        // canonical direction/message fields authoritative whenever supplied.
+        val direction = firstString(obj, "direction", "scroll_direction").ifBlank {
+            if (type == Action.SCROLL) target.orEmpty() else ""
+        }.takeIf { it.isNotBlank() }
+        val message = firstString(obj, "message", "reason").ifBlank {
+            if (type == Action.ERROR) value.orEmpty() else ""
+        }.takeIf { it.isNotBlank() }
         return Action(
             action = type,
             packageName = firstString(obj, "package", "packageName", "package_name").takeIf { it.isNotBlank() },
@@ -237,10 +247,10 @@ object LLMResponseValidator {
             text = target,
             value = value,
             hint = firstString(obj, "hint").takeIf { it.isNotBlank() },
-            direction = firstString(obj, "direction", "scroll_direction").takeIf { it.isNotBlank() },
+            direction = direction,
             distance = firstString(obj, "distance").takeIf { it.isNotBlank() },
             timeoutMs = firstLong(obj, 3000L, "timeout_ms", "timeoutMs", "duration_ms"),
-            message = firstString(obj, "message", "reason").takeIf { it.isNotBlank() },
+            message = message,
             prompt = firstString(obj, "prompt").takeIf { it.isNotBlank() },
             outputKey = firstString(obj, "outputKey", "output_key").takeIf { it.isNotBlank() }
         )

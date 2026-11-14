@@ -30,7 +30,7 @@ class ConversationMemoryContextTest {
     fun appendsBoundedTrustedPersonalitySettings() {
         val result = ConversationMemoryContext.appendPersonality("Base persona", "Tone: friendly".repeat(100))
         assertTrue(result.startsWith("Base persona"))
-        assertTrue(result.length <= "Base persona".length + 2 + 240)
+        assertTrue(result.length <= "Base persona".length + 2 + ConversationMemoryContext.MAX_PERSONALITY_CHARS)
     }
 
     @Test

@@ -32,7 +32,7 @@ internal object MessageSendApprovalPolicy {
 
     fun isExplicitYes(utterance: String?): Boolean {
         val value = utterance?.trim()?.lowercase(java.util.Locale.ROOT) ?: return false
-        return value in setOf("haan", "ha", "yes", "confirm", "yes confirm", "ji haan", "हाँ", "हां", "हो")
+        return value in setOf("haan", "हाँ", "हां")
     }
 
     fun isExplicitNo(utterance: String?): Boolean {

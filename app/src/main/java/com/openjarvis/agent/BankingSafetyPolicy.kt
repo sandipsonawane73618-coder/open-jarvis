@@ -125,7 +125,8 @@ internal object BankingSafetyPolicy {
         val s = normalize(command)
         if (s.isBlank() || informationalPrefixes.any(s::startsWith)) return false
         if (explicitTransactionIntent.containsMatchIn(s)) return true
-        if (transactionVerb.containsMatchIn(s) && amountOrRecipient.containsMatchIn(s)) return true
+        val messageIntent = s.contains("whatsapp") || s.contains("sms") || s.contains("message") || s.contains("msg")
+        if (!messageIntent && transactionVerb.containsMatchIn(s) && amountOrRecipient.containsMatchIn(s)) return true
         return credentialTerms.containsMatchIn(s) && credentialSubmission.containsMatchIn(s)
     }
 

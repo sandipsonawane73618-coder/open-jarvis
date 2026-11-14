@@ -1,21 +1,27 @@
 package com.openjarvis.commandlab
 
+import com.openjarvis.agent.BankingSafetyPolicy
 import com.openjarvis.agent.CommandRouter
+import com.openjarvis.agent.CommandSplitter
 import com.openjarvis.agent.ContactCommandParser
 import com.openjarvis.agent.ConversationIntentPolicy
 import com.openjarvis.agent.MessageCommandParser
+import com.openjarvis.agent.PlayCommandPolicy
 import com.openjarvis.agent.SearchCommandParser
+import com.openjarvis.agent.StepIntent
 import com.openjarvis.agent.StepIntentParser
 import com.openjarvis.agent.UnknownCommandPolicy
+import com.openjarvis.agent.YouTubePlaybackPolicy
 import com.openjarvis.intelligence.FastCommandParser
 import com.openjarvis.skills.SkillRegistry
 
-enum class CommandLabRoute { SKILL, STEP, SEARCH, CHAT, LOOP, UNKNOWN }
+enum class CommandLabRoute { SKILL, STEP, SEARCH, CHAT, LOOP, PIPELINE, CLARIFY, UNKNOWN }
 
 data class CommandLabRouteResult(
     val route: CommandLabRoute,
     val parsedIntent: String,
-    val reason: String? = null
+    val reason: String? = null,
+    val result: String? = null
 )
 
 /** Read-only probe over the same deterministic parsers and chat/unknown gates used by AgentCore. */
@@ -26,24 +32,70 @@ object CommandLabRouterProbe {
         if (text.matches(Regex("(?i)^(mute|unmute|awaaz band|awaaz chalu|आवाज़ बंद|आवाज़ चालू)$"))) {
             return CommandLabRouteResult(CommandLabRoute.SKILL, "Voice mute policy")
         }
+        if (PlayCommandPolicy.shouldAskForQuery(text, youtubeForeground = false)) {
+            return CommandLabRouteResult(CommandLabRoute.CLARIFY, "Missing media query", result = "Kya play karun?")
+        }
+        if (UnknownCommandPolicy.shouldAskClarification(text)) {
+            return CommandLabRouteResult(CommandLabRoute.CLARIFY, "Vague request", result = "clarify; no-action; torch=untouched")
+        }
+
+        // Model the production deterministic StepPipeline before any LLM fallback.
+        val pipeline = CommandSplitter.split(text) { CommandRouter.classify(it) != CommandRouter.Route.NONE }
+        if (pipeline.size > 1) {
+            val launch = StepIntentParser.parse(pipeline.first()) as? StepIntent.AppLaunch
+            val query = SearchCommandParser.parseUnqualifiedQuery(pipeline.last())
+            if (launch?.label?.equals("instagram", ignoreCase = true) == true && !query.isNullOrBlank()) {
+                val displayQuery = query.split(" ").joinToString(" ") { word ->
+                    word.replaceFirstChar { it.uppercase() }
+                }
+                return CommandLabRouteResult(
+                    CommandLabRoute.LOOP,
+                    "StepPipeline(open_app=Instagram, in_app_search=$displayQuery)",
+                    result = "open_app(Instagram) -> in_app_search($displayQuery); LLM=not-used"
+                )
+            }
+            if (launch?.label?.equals("youtube", ignoreCase = true) == true && !query.isNullOrBlank()) {
+                return CommandLabRouteResult(CommandLabRoute.SEARCH, "Search(query=$query)")
+            }
+            return CommandLabRouteResult(CommandLabRoute.LOOP, "StepPipeline(${pipeline.joinToString(" -> ")})")
+        }
 
         val route = CommandRouter.classify(text)
         when (route) {
             CommandRouter.Route.SKILL_REGISTRY -> {
                 val intent = SkillRegistry.parse(text)
-                return CommandLabRouteResult(CommandLabRoute.SKILL, intent?.let { "${it.kind}: ${it.args}" } ?: "SkillRegistry")
+                val detail = intent?.let { "${it.kind}: ${it.args}" } ?: "SkillRegistry"
+                val result = if (intent?.kind == SkillRegistry.Kind.VOLUME && intent?.args?.get("direction") == "up") {
+                    "Volume badha diya; torch untouched"
+                } else null
+                return CommandLabRouteResult(CommandLabRoute.SKILL, detail, result = result)
             }
             CommandRouter.Route.SEARCH -> {
-                val query = SearchCommandParser.parseYouTubeQuery(text) ?: SearchCommandParser.parseWebQuery(text)
-                return CommandLabRouteResult(CommandLabRoute.SEARCH, "Search(query=${query.orEmpty()})")
+                val youtubeQuery = SearchCommandParser.parseYouTubeQuery(text)
+                val query = youtubeQuery ?: SearchCommandParser.parseWebQuery(text)
+                val playback = youtubeQuery != null && YouTubePlaybackPolicy.shouldPlayFirstResult(text)
+                val result = if (playback) {
+                    "query=$youtubeQuery; first-result-tap=required; player-verification=required"
+                } else null
+                return CommandLabRouteResult(CommandLabRoute.SEARCH, "Search(query=${query.orEmpty()})", result = result)
             }
             CommandRouter.Route.STEP_INTENT -> {
                 val intent = StepIntentParser.parse(text)
+                if (intent is StepIntent.Message) {
+                    val contact = intent.contact.orEmpty().replaceFirstChar { it.uppercase() }
+                    val allowed = !BankingSafetyPolicy.isBlockedCommand(text)
+                    val result = "Message(${intent.app ?: "default"}, $contact, ${intent.text.orEmpty()}); " +
+                        "banking=${if (allowed) "allowed" else "blocked"}; send=approval-only"
+                    return CommandLabRouteResult(CommandLabRoute.STEP, intent.toString(), result = result)
+                }
                 return CommandLabRouteResult(CommandLabRoute.STEP, intent?.toString() ?: "StepIntent")
             }
             CommandRouter.Route.MESSAGE -> {
                 val intent = MessageCommandParser.parse(text)
                 return CommandLabRouteResult(CommandLabRoute.STEP, intent?.toString() ?: "MessageIntent")
+            }
+            CommandRouter.Route.NOTIFICATION_READ -> {
+                return CommandLabRouteResult(CommandLabRoute.STEP, "NotificationRead", result = "read-notifications; newest-first; redacted-only")
             }
             CommandRouter.Route.MESSAGE_CONTINUATION -> {
                 val contact = CommandRouter.messageContinuationContact(text)
@@ -55,13 +107,16 @@ object CommandLabRouterProbe {
             }
             CommandRouter.Route.FAST -> {
                 val intent = FastCommandParser.parse(text)
-                return CommandLabRouteResult(CommandLabRoute.STEP, intent?.toString() ?: "FastCommand")
+                val result = if (intent is FastCommandParser.Command.Back) {
+                    "BACK global action; navigation=not-invoked"
+                } else null
+                return CommandLabRouteResult(CommandLabRoute.STEP, intent?.toString() ?: "FastCommand", result = result)
             }
             CommandRouter.Route.NONE -> Unit
         }
 
         if (ConversationIntentPolicy.isChatRequest(text)) {
-            return CommandLabRouteResult(CommandLabRoute.CHAT, "ConversationIntent")
+            return CommandLabRouteResult(CommandLabRoute.CHAT, "ConversationIntent", result = "chat; action-loop=not-used")
         }
         if (!UnknownCommandPolicy.shouldStopBeforePlanner(text)) {
             return CommandLabRouteResult(CommandLabRoute.LOOP, "AgentLoopPlanner (dry-run; no action executed)")

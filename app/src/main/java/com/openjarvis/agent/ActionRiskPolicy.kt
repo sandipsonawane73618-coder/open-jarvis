@@ -21,7 +21,16 @@ internal object ActionRiskPolicy {
 
     fun requiresConfirmation(action: Action): Boolean {
         if (action.action !in setOf(Action.CLICK, Action.TAP)) return false
-        return listOfNotNull(action.text, action.hint, action.value).any(::targetIsIrreversible)
+        // Preserve the exact-label cross-app gate; explicit send controls also use
+        // the payload-bound WhatsApp approval path.
+        return listOfNotNull(action.text, action.hint, action.value).any(::targetIsIrreversible) ||
+            isSendAction(action)
+    }
+
+    fun isSendAction(action: Action): Boolean {
+        if (action.action !in setOf(Action.CLICK, Action.TAP)) return false
+        return Regex("(?<![\\p{L}\\p{N}])(send|send message|send now)(?![\\p{L}\\p{N}])", RegexOption.IGNORE_CASE)
+            .containsMatchIn(listOfNotNull(action.text, action.hint, action.value).joinToString(" "))
     }
 
     fun isPaymentAction(action: Action): Boolean {

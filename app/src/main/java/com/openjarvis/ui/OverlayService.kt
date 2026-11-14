@@ -13,6 +13,11 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.graphics.Color
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.LinearGradient
+import android.graphics.Shader
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
@@ -21,12 +26,15 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.WindowManager
+import android.view.View
 import android.view.inputmethod.EditorInfo
-import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
 import android.text.TextUtils
@@ -42,6 +50,12 @@ import com.openjarvis.graphify.nodes.TaskNode
 import com.openjarvis.voice.VoiceManager
 import com.openjarvis.commandlab.CommandLogStore
 import com.openjarvis.commandlab.CommandLabRouterProbe
+import com.openjarvis.voice.VoiceSessionState
+import com.openjarvis.ui.home.VoiceUiBridge
+import com.openjarvis.ui.overlay.FloatingPanelMode
+import com.openjarvis.ui.overlay.FloatingVoiceState
+import com.openjarvis.ui.overlay.mapFloatingViewStyle
+import com.openjarvis.ui.overlay.snapFloatingBubblePosition
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -49,6 +63,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlin.math.sin
+import kotlin.math.cos
+import android.view.animation.OvershootInterpolator
 
 class OverlayService : Service() {
     private var windowManager: WindowManager? = null
@@ -56,23 +73,26 @@ class OverlayService : Service() {
     private var windowParams: WindowManager.LayoutParams? = null
     private var commandInput: EditText? = null
     private var statusText: TextView? = null
-    private var waveformText: TextView? = null
+    private var waveformText: View? = null
+    private var orbView: TextView? = null
+    private var voiceStateLabelText: TextView? = null
+    private var micActionButton: TextView? = null
     private var visualState: String = "IDLE"
     private var waveformFrame: Int = 0
     private val waveformRunnable = object : Runnable {
         override fun run() {
             val view = waveformText ?: return
             if (visualState == "IDLE") return
-            val frames = arrayOf("▁ ▃ ▆ ▄ ▂", "▃ ▆ ▄ ▂ ▅", "▆ ▄ ▂ ▅ ▃", "▄ ▂ ▅ ▃ ▆")
-            view.text = frames[waveformFrame++ % frames.size]
-            mainHandler.postDelayed(this, if (visualState == "THINKING") 420L else 150L)
+            view.invalidate()
+            waveformFrame++
+            mainHandler.postDelayed(this, 33L)
         }
     }
     private var panel: LinearLayout? = null
     private lateinit var agentCore: AgentCore
     private lateinit var voiceManager: VoiceManager
     private val commandLogStore by lazy { CommandLogStore(this) }
-    @Volatile private var activeCommandLogId: String? = null
+
     private lateinit var graphifyRepo: GraphifyRepository
     private var socketServer: SocketServer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -94,6 +114,7 @@ class OverlayService : Service() {
         activeInstance = this
         agentCore = AgentCore(this)
         voiceManager = VoiceManager(this)
+        VoiceUiBridge.registerStopCallback { voiceManager.stopSpeaking() }
         graphifyRepo = GraphifyRepository(this)
         socketServer = SocketServer(this, agentCore, graphifyRepo).also { it.start() }
         val microphoneGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -171,16 +192,14 @@ class OverlayService : Service() {
                     }
                     is com.openjarvis.agent.AgentState.Running -> setVisualState("THINKING", state.step)
                     is com.openjarvis.agent.AgentState.Done -> {
-                        commandLogStore.complete(activeCommandLogId, state.result, null)
-                        activeCommandLogId = null
+
                         setVisualState("SPEAKING", state.result)
                         voiceManager.speak(com.openjarvis.agent.AgentResultSpeech.textForDone(state.result)) {
                             voiceManager.resumeContinuousSession()
                         }
                     }
                     is com.openjarvis.agent.AgentState.Error -> {
-                        commandLogStore.complete(activeCommandLogId, null, state.message)
-                        activeCommandLogId = null
+
                         setVisualState("SPEAKING", "Jarvis error: ${state.message} • tap to copy debug log")
                         voiceManager.speak(if (responseLanguage == "mr") "कमांड पूर्ण झाली नाही. ${state.message}" else "कमांड पूरी नहीं हुई। ${state.message}") {
                             voiceManager.resumeContinuousSession()
@@ -203,13 +222,20 @@ class OverlayService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        commandLogStore.completeAllPending("Overlay service stopped before command completion")
         mainHandler.removeCallbacks(overlayWatchdog)
         try { overlayView?.let { windowManager?.removeView(it) } } catch (_: Exception) { }
         overlayView = null
         visualState = "IDLE"
         mainHandler.removeCallbacks(waveformRunnable)
+        mainHandler.removeCallbacks(orbPulseRunnable)
+        orbView = null
+        voiceStateLabelText = null
+        micActionButton = null
         waveformText = null
         voiceManager.stopListening()
+        VoiceUiBridge.registerStopCallback(null)
+        VoiceUiBridge.publish(VoiceSessionState.Idle)
         if (activeInstance === this) activeInstance = null
         socketServer?.stop()
         socketServer = null
@@ -231,22 +257,22 @@ class OverlayService : Service() {
             // A stale detached View must not block recreation of the floating overlay.
             overlayView = null
             windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+            val isNightMode = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+            val panelSurface = if (isNightMode) Color.argb(217, 37, 42, 61) else Color.argb(217, 255, 255, 255)
+            val panelText = if (isNightMode) Color.WHITE else Color.rgb(24, 29, 44)
+            val panelMutedText = if (isNightMode) Color.rgb(190, 199, 218) else Color.rgb(91, 101, 122)
             val root = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(dp(8), dp(8), dp(8), dp(8))
-                minimumWidth = dp(64)
-                minimumHeight = dp(48)
-                background = rounded(Color.rgb(20, 18, 35), 24)
-                elevation = 18f
+                setPadding(0, 0, 0, 0)
+                background = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+                elevation = dp(16).toFloat()
+                isFocusableInTouchMode = true
             }
-            val pill = TextView(this).apply {
-                text = "● JARVIS"
-                textSize = 14f
-                setTextColor(Color.WHITE)
-                gravity = Gravity.CENTER
-                setPadding(dp(22), dp(14), dp(22), dp(14))
-                background = rounded(Color.rgb(55, 35, 95), 40)
+            val pill = ArcReactorOrbView(this).apply {
+                elevation = dp(14).toFloat()
+                contentDescription = "JARVIS floating assistant. Tap to expand, drag to move."
             }
+            orbView = pill
             var downRawX = 0f
             var downRawY = 0f
             var downWindowX = 0
@@ -275,71 +301,140 @@ class OverlayService : Service() {
                         true
                     }
                     MotionEvent.ACTION_UP -> {
-                        if (!dragged) togglePanel()
+                        if (dragged && params != null) {
+                            val snapped = snapFloatingBubblePosition(
+                                screenWidthPx = resources.displayMetrics.widthPixels,
+                                screenHeightPx = resources.displayMetrics.heightPixels,
+                                bubbleWidthPx = dp(64),
+                                bubbleHeightPx = dp(64),
+                                marginPx = dp(12),
+                                currentXFromEndPx = params.x,
+                                currentTopPx = params.y
+                            )
+                            params.x = snapped.xFromEndPx
+                            params.y = snapped.topPx
+                            runCatching { windowManager?.updateViewLayout(overlayView, params) }
+                            pill.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        } else if (!dragged) {
+                            togglePanel()
+                        }
                         true
                     }
                     else -> true
                 }
             }
-            root.addView(pill, LinearLayout.LayoutParams(-2, -2))
+            root.addView(pill, LinearLayout.LayoutParams(dp(64), dp(64)))
 
             val commandPanel = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 visibility = android.view.View.GONE
-                setPadding(dp(4), dp(8), dp(4), dp(4))
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                background = android.graphics.drawable.GradientDrawable(
+                    android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+                    intArrayOf(
+                        if (isNightMode) Color.argb(217, 43, 43, 67) else Color.argb(217, 255, 255, 255),
+                        if (isNightMode) Color.argb(208, 18, 22, 38) else Color.argb(208, 232, 239, 250)
+                    )
+                ).apply {
+                    cornerRadius = dp(24).toFloat()
+                    setStroke(dp(1), if (isNightMode) Color.argb(95, 145, 132, 205) else Color.argb(95, 255, 255, 255))
+                }
+                elevation = dp(12).toFloat()
             }
+            val header = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            val stateLabel = TextView(this).apply {
+                text = "●  J A R V I S   O F F"
+                textSize = 10f
+                letterSpacing = 0.10f
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                setTextColor(mapFloatingViewStyle(FloatingPanelMode.EXPANDED, FloatingVoiceState.OFF).colorArgb)
+                setPadding(dp(4), dp(8), dp(4), dp(8))
+            }
+            voiceStateLabelText = stateLabel
+            header.addView(stateLabel, LinearLayout.LayoutParams(0, -2, 1f))
+            val menuButton = TextView(this).apply {
+                text = "⋮"
+                textSize = 24f
+                gravity = Gravity.CENTER
+                setTextColor(panelMutedText)
+                contentDescription = "More assistant options"
+                setPadding(dp(12), dp(2), dp(8), dp(2))
+                setOnClickListener { anchor ->
+                    PopupMenu(this@OverlayService, anchor).apply {
+                        menu.add("Share Diagnostic Report").setOnMenuItemClickListener {
+                            shareLatestDiagnostic()
+                            true
+                        }
+                    }.show()
+                }
+            }
+            header.addView(menuButton, LinearLayout.LayoutParams(dp(44), dp(40)))
+            commandPanel.addView(header)
+
             val status = TextView(this).apply {
                 text = "Ready — type a command or use mic"
                 textSize = 12f
-                setTextColor(Color.LTGRAY)
-                setPadding(dp(8), dp(4), dp(8), dp(4))
+                setTextColor(panelMutedText)
+                setPadding(dp(4), dp(2), dp(4), dp(6))
                 maxLines = 2
                 ellipsize = TextUtils.TruncateAt.END
             }
             statusText = status
             status.setOnClickListener { copyLatestDebugLog() }
             commandPanel.addView(status)
-            val waveform = TextView(this).apply {
-                text = "▁ ▃ ▆ ▄ ▂"
-                textSize = 19f
-                letterSpacing = 0.16f
-                gravity = Gravity.CENTER
-                setTextColor(Color.rgb(70, 220, 255))
-                setPadding(dp(8), 0, dp(8), dp(2))
-                visibility = android.view.View.GONE
-                contentDescription = "JARVIS voice activity waveform"
+            val waveform = VoiceWaveformView(this).apply {
+                visibility = View.GONE
+                contentDescription = "JARVIS animated voice activity waveform"
             }
             waveformText = waveform
-            commandPanel.addView(waveform, LinearLayout.LayoutParams(-1, dp(30)))
+            commandPanel.addView(waveform, LinearLayout.LayoutParams(-1, dp(28)))
 
             val input = EditText(this).apply {
                 hint = "Ask Jarvis to do something…"
                 textSize = 14f
-                setTextColor(Color.WHITE)
-                setHintTextColor(Color.GRAY)
+                setTextColor(panelText)
+                setHintTextColor(panelMutedText)
                 setSingleLine(false)
                 minLines = 1
                 maxLines = 2
                 inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
                 imeOptions = EditorInfo.IME_ACTION_SEND
-                setPadding(dp(10), dp(8), dp(10), dp(8))
-                background = rounded(Color.rgb(42, 38, 58), 12)
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(panelSurface)
+                    cornerRadius = dp(20).toFloat()
+                    setStroke(dp(1), if (isNightMode) Color.argb(145, 134, 137, 176) else Color.argb(170, 190, 202, 225))
+                }
             }
             commandInput = input
+            input.setOnKeyListener { _, keyCode, event ->
+                if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP && isExpanded) {
+                    togglePanel()
+                    true
+                } else false
+            }
 
-            // Keep the text field and both actions in one weighted row. Fixed action
-            // widths prevent clipping on compact (~360dp) displays.
             val actions = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 minimumHeight = dp(52)
             }
             actions.addView(input, LinearLayout.LayoutParams(0, dp(52), 1f))
-            val mic = Button(this).apply {
-                text = "Mic"
-                isAllCaps = false
-                minWidth = 0
-                setPadding(0, 0, 0, 0)
+            val mic = TextView(this).apply {
+                text = "🎙"
+                textSize = 21f
+                gravity = Gravity.CENTER
+                setTextColor(Color.WHITE)
+                contentDescription = "Mic"
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(mapFloatingViewStyle(FloatingPanelMode.EXPANDED, FloatingVoiceState.OFF).colorArgb)
+                    setStroke(dp(1), Color.argb(150, 255, 255, 255))
+                }
+                elevation = dp(5).toFloat()
                 setOnClickListener {
                     if (ContextCompat.checkSelfPermission(this@OverlayService, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                         status.text = "Allow microphone permission in Android app settings"
@@ -358,44 +453,71 @@ class OverlayService : Service() {
                     }
                 }
             }
-            val send = Button(this).apply {
-                text = "Send"
-                isAllCaps = false
-                minWidth = 0
-                setPadding(0, 0, 0, 0)
+            micActionButton = mic
+            val send = TextView(this).apply {
+                text = "↑"
+                textSize = 27f
+                gravity = Gravity.CENTER
+                setTextColor(Color.WHITE)
+                contentDescription = "Send command"
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(Color.rgb(91, 103, 224))
+                    setStroke(dp(1), Color.argb(160, 255, 255, 255))
+                }
+                elevation = dp(5).toFloat()
                 setOnClickListener { submitCommand() }
             }
             val actionWidth = dp(48)
-            actions.addView(mic, LinearLayout.LayoutParams(actionWidth, dp(48)))
-            actions.addView(send, LinearLayout.LayoutParams(actionWidth, dp(48)))
+            actions.addView(mic, LinearLayout.LayoutParams(actionWidth, dp(48)).apply { leftMargin = dp(6); rightMargin = dp(4) })
+            actions.addView(send, LinearLayout.LayoutParams(actionWidth, dp(48)).apply { leftMargin = dp(4) })
             commandPanel.addView(actions, LinearLayout.LayoutParams(-1, -2))
-            val shareReport = Button(this).apply {
-                text = "Share Diagnostic Report"
-                isAllCaps = false
-                setOnClickListener { shareLatestDiagnostic() }
-            }
-            commandPanel.addView(shareReport, LinearLayout.LayoutParams(-1, dp(42)))
-            root.addView(commandPanel)
+            root.addView(commandPanel, LinearLayout.LayoutParams(-1, -2))
             panel = commandPanel
             isExpanded = false
 
             val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
+            val initialWindowSpec = OverlayWindowPolicy.create(
+                expanded = false,
+                expandedWidthPx = dp(304),
+                wrapContent = WindowManager.LayoutParams.WRAP_CONTENT,
+                notFocusableFlag = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                notTouchModalFlag = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                watchOutsideTouchFlag = WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+                layoutInScreenFlag = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+            )
             val params = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
+                initialWindowSpec.width,
+                initialWindowSpec.height,
                 type,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                initialWindowSpec.flags,
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.TOP or Gravity.END
+                dimAmount = initialWindowSpec.dimAmount
                 x = 16
                 y = 220
             }
             windowParams = params
             windowManager?.addView(root, params)
             overlayView = root
+            root.setOnTouchListener { _, event ->
+                if (event.action == MotionEvent.ACTION_OUTSIDE && isExpanded) {
+                    togglePanel()
+                    true
+                } else false
+            }
+            root.setOnKeyListener { _, keyCode, event ->
+                if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP && isExpanded) {
+                    togglePanel()
+                    true
+                } else false
+            }
+            applyFloatingStyle()
+            mainHandler.removeCallbacks(orbPulseRunnable)
+            mainHandler.post(orbPulseRunnable)
         } catch (e: Exception) {
             android.util.Log.e("OpenJarvis", "Unable to attach assistant overlay", e)
         } finally {
@@ -403,10 +525,55 @@ class OverlayService : Service() {
         }
     }
 
+    private val orbPulseRunnable = object : Runnable {
+        private var phase = 0f
+        override fun run() {
+            val orb = orbView ?: return
+            if (isExpanded || !orb.isAttachedToWindow) return
+            phase += 0.20f
+            (orb as? ArcReactorOrbView)?.setPulse(phase)
+            val scale = 1f + (0.018f * (0.5f + 0.5f * sin(phase)))
+            orb.scaleX = scale
+            orb.scaleY = scale
+            mainHandler.postDelayed(this, 33L)
+        }
+    }
+
+    private fun currentFloatingVoiceState(): FloatingVoiceState = when (visualState) {
+        "LISTENING" -> FloatingVoiceState.LISTENING
+        "THINKING" -> FloatingVoiceState.THINKING
+        "SPEAKING" -> FloatingVoiceState.SPEAKING
+        else -> FloatingVoiceState.OFF
+    }
+
+    private fun applyFloatingStyle() {
+        val mode = if (isExpanded) FloatingPanelMode.EXPANDED else FloatingPanelMode.COLLAPSED
+        val style = mapFloatingViewStyle(mode, currentFloatingVoiceState())
+        (orbView as? ArcReactorOrbView)?.setStateColor(style.colorArgb)
+        orbView?.contentDescription = "${style.label}. Tap to expand, drag to move."
+        voiceStateLabelText?.apply {
+            text = style.label
+            setTextColor(style.colorArgb)
+        }
+        micActionButton?.background = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.OVAL
+            setColor(style.colorArgb)
+            setStroke(dp(1), Color.argb(160, 255, 255, 255))
+        }
+    }
+
     private fun setVisualState(state: String, label: String) {
         visualState = state
+        VoiceUiBridge.publish(when (state) {
+            "LISTENING" -> VoiceSessionState.Listening
+            "THINKING" -> VoiceSessionState.Thinking
+            "SPEAKING" -> VoiceSessionState.Speaking
+            else -> VoiceSessionState.Idle
+        })
         statusText?.text = label
-        waveformText?.visibility = if (state == "IDLE") android.view.View.GONE else android.view.View.VISIBLE
+        applyFloatingStyle()
+        waveformText?.visibility = if (state == "IDLE") View.GONE else View.VISIBLE
+        (waveformText as? VoiceWaveformView)?.setVoiceColor(mapFloatingViewStyle(FloatingPanelMode.EXPANDED, currentFloatingVoiceState()).colorArgb)
         mainHandler.removeCallbacks(waveformRunnable)
         if (state != "IDLE") {
             waveformFrame = 0
@@ -418,16 +585,41 @@ class OverlayService : Service() {
         isExpanded = !isExpanded
         panel?.visibility = if (isExpanded) android.view.View.VISIBLE else android.view.View.GONE
         windowParams?.let { params ->
-            params.width = if (isExpanded) dp(304) else WindowManager.LayoutParams.WRAP_CONTENT
-            // The overlay must never be touch-modal: taps outside the floating panel
-            // must continue to reach the app underneath, even while the input panel is open.
-            // Keep the expanded panel focusable so its EditText can receive keyboard input.
-            params.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                (if (isExpanded) 0 else WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+            val windowSpec = OverlayWindowPolicy.create(
+                expanded = isExpanded,
+                expandedWidthPx = dp(304),
+                wrapContent = WindowManager.LayoutParams.WRAP_CONTENT,
+                notFocusableFlag = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                notTouchModalFlag = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                watchOutsideTouchFlag = WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+                layoutInScreenFlag = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+            )
+            params.width = windowSpec.width
+            params.height = windowSpec.height
+            params.flags = windowSpec.flags
+            params.dimAmount = windowSpec.dimAmount
             try { windowManager?.updateViewLayout(overlayView, params) } catch (_: Exception) { }
         }
-        if (isExpanded) commandInput?.requestFocus()
+        applyFloatingStyle()
+        mainHandler.removeCallbacks(orbPulseRunnable)
+        val animatedRoot = overlayView
+        if (isExpanded) {
+            animatedRoot?.animate()?.cancel()
+            animatedRoot?.scaleX = 0.90f
+            animatedRoot?.scaleY = 0.90f
+            animatedRoot?.alpha = 0.72f
+            animatedRoot?.animate()?.scaleX(1f)?.scaleY(1f)?.alpha(1f)
+                ?.setDuration(260L)?.setInterpolator(OvershootInterpolator(0.72f))?.start()
+            commandInput?.requestFocus()
+        } else {
+            animatedRoot?.animate()?.cancel()
+            animatedRoot?.scaleX = 0.94f
+            animatedRoot?.scaleY = 0.94f
+            animatedRoot?.alpha = 0.82f
+            animatedRoot?.animate()?.scaleX(1f)?.scaleY(1f)?.alpha(1f)
+                ?.setDuration(210L)?.setInterpolator(OvershootInterpolator(0.55f))?.start()
+            mainHandler.post(orbPulseRunnable)
+        }
     }
 
     private fun enterMuteMode() {
@@ -465,26 +657,26 @@ class OverlayService : Service() {
             route = routeProbe.route.name.lowercase(),
             source = if (voiceCommand != null) "voice" else "typed"
         )
-        activeCommandLogId = logId
+
         // Typed commands use the same deterministic voice-control gate as speech transcripts.
         when (CommandListeningPolicy.classify(command, isMuted)) {
             CommandListeningPolicy.Action.MUTE -> {
                 commandLogStore.complete(logId, "Handled by voice mute control", null)
-                activeCommandLogId = null
+
                 enterMuteMode()
                 commandInput?.text?.clear()
                 return
             }
             CommandListeningPolicy.Action.UNMUTE -> {
                 commandLogStore.complete(logId, "Handled by voice mute control", null)
-                activeCommandLogId = null
+
                 enterUnmuteMode()
                 commandInput?.text?.clear()
                 return
             }
             CommandListeningPolicy.Action.IGNORE -> {
                 commandLogStore.complete(logId, null, "Command ignored while muted")
-                activeCommandLogId = null
+
                 statusText?.text = "COMMAND MUTED — only say Unmute / Awaaz chalu karo"
                 commandInput?.text?.clear()
                 voiceManager.resumeContinuousSession()
@@ -498,7 +690,7 @@ class OverlayService : Service() {
         }
         if (com.openjarvis.accessibility.JarvisAccessibilityService.instance == null) {
             commandLogStore.complete(logId, null, "Accessibility service is disabled")
-            activeCommandLogId = null
+
             statusText?.text = "Accessibility service is OFF. Enable Open Jarvis in Android Accessibility settings."
             voiceManager.resumeContinuousSession()
             return
@@ -510,7 +702,16 @@ class OverlayService : Service() {
             voiceManager.speak(com.openjarvis.agent.AgentResultSpeech.acknowledgement(responseLanguage))
         }
         voiceManager.markThinking()
-        agentCore.executeTask(command)
+        agentCore.executeTask(command) { finalState ->
+            when (finalState) {
+                is com.openjarvis.agent.AgentState.Done ->
+                    commandLogStore.complete(logId, finalState.result, null)
+                is com.openjarvis.agent.AgentState.Error ->
+                    commandLogStore.complete(logId, null, finalState.message)
+                else ->
+                    commandLogStore.complete(logId, null, "Task ended without a terminal result")
+            }
+        }
         commandInput?.text?.clear()
     }
 
@@ -534,6 +735,83 @@ class OverlayService : Service() {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("JARVIS Debug Log", report))
         Toast.makeText(this, "Debug log copied. Paste it here in ChatGPT.", Toast.LENGTH_LONG).show()
+    }
+
+    private inner class ArcReactorOrbView(context: Context) : TextView(context) {
+        private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
+        private val corePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+        private var stateColor: Int = 0xFF87909F.toInt()
+        private var pulse = 0f
+
+        init {
+            setText("J")
+            textSize = 17f
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+            background = null
+        }
+
+        fun setStateColor(color: Int) {
+            stateColor = color
+            invalidate()
+        }
+
+        fun setPulse(value: Float) {
+            pulse = value
+            invalidate()
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            val cx = width / 2f
+            val cy = height / 2f
+            val radius = minOf(width, height) * 0.46f
+            val disk = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                shader = LinearGradient(0f, 0f, width.toFloat(), height.toFloat(),
+                    intArrayOf(0xEE252B3C.toInt(), 0xF20D1220.toInt(), 0xE91B2032.toInt()),
+                    null, Shader.TileMode.CLAMP)
+            }
+            canvas.drawCircle(cx, cy, radius, disk)
+            ringPaint.color = Color.argb(45, 255, 255, 255)
+            ringPaint.strokeWidth = dp(1).toFloat()
+            canvas.drawCircle(cx, cy, radius * 0.84f, ringPaint)
+            ringPaint.color = Color.argb(55, Color.red(stateColor), Color.green(stateColor), Color.blue(stateColor))
+            ringPaint.strokeWidth = dp(5).toFloat()
+            canvas.drawCircle(cx, cy, radius * (0.64f + pulse * 0.015f), ringPaint)
+            ringPaint.color = stateColor
+            ringPaint.strokeWidth = dp(2).toFloat()
+            val arc = RectF(cx - radius * 0.66f, cy - radius * 0.66f, cx + radius * 0.66f, cy + radius * 0.66f)
+            canvas.drawArc(arc, -88f + pulse * 12f, 108f, false, ringPaint)
+            canvas.drawArc(arc, 62f + pulse * 12f, 76f, false, ringPaint)
+            canvas.drawArc(arc, 188f + pulse * 12f, 54f, false, ringPaint)
+            corePaint.color = Color.argb(190, Color.red(stateColor), Color.green(stateColor), Color.blue(stateColor))
+            canvas.drawCircle(cx, cy, radius * 0.12f, corePaint)
+            super.onDraw(canvas)
+        }
+    }
+
+    private inner class VoiceWaveformView(context: Context) : View(context) {
+        private val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; strokeCap = Paint.Cap.ROUND }
+        private var voiceColor = 0xFF31D8E8.toInt()
+        fun setVoiceColor(color: Int) { voiceColor = color; invalidate() }
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val count = 27
+            val gap = dp(4).toFloat()
+            val barWidth = dp(2).toFloat()
+            val total = count * barWidth + (count - 1) * gap
+            val startX = (width - total) / 2f
+            val centerY = height / 2f
+            val t = System.nanoTime() / 1_000_000_000.0
+            barPaint.color = voiceColor
+            for (i in 0 until count) {
+                val wave = 0.18 + 0.82 * (0.5 + 0.5 * sin(t * 3.0 + i * 0.47))
+                val h = (dp(4) + dp(18) * wave).toFloat()
+                val x = startX + i * (barWidth + gap)
+                canvas.drawRoundRect(x, centerY - h / 2f, x + barWidth, centerY + h / 2f, barWidth, barWidth, barPaint)
+            }
+        }
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
@@ -571,7 +849,7 @@ class OverlayService : Service() {
     fun getVoiceManager() = voiceManager
     fun getRecentTasks() = recentTasks
 
-    fun executeCommand(command: String) = agentCore.executeTask(command)
+    fun executeCommand(command: String) = submitCommand(command)
 
     private fun applyVoiceAssistantEnabled(enabled: Boolean) {
         voiceManager.setVoiceEnabled(enabled)

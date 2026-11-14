@@ -53,6 +53,8 @@ class HybridChatRouterTest {
         assertTrue(observedSystem.contains("personality: calm and proactive"))
         assertTrue(observedSystem.contains("recent: user asked for weather"))
         assertTrue(observedUser.contains("Rahul"))
+        assertFalse(observedSystem.contains("local-private"))
+        assertFalse(observedUser.contains("local-private"))
         assertEquals("Rahul ke liye calendar reminder banao", observedUser)
     }
 

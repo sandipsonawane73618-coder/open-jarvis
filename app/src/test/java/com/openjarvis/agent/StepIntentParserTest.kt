@@ -9,6 +9,14 @@ class StepIntentParserTest {
     private fun p(text: String) = StepIntentParser.parse(text)
 
     @Test
+    fun channelFirstWhatsAppPerMessageExtractsOnlyRahulAsRecipient() {
+        assertEquals(
+            StepIntent.Message("whatsapp", "rahul", "hello"),
+            p("WhatsApp per Rahul ko message bhejo ki hello")
+        )
+    }
+
+    @Test
     fun messages() {
         assertEquals(
             StepIntent.Message(null, "rahul", "kal milte hain"),
@@ -59,6 +67,26 @@ class StepIntentParserTest {
             StepIntent.Message("whatsapp", "rahul", "main 10 minute mein pahunch raha hoon"),
             p("WhatsApp Rahul ko message bhejo: main 10 minute mein pahunch raha hoon")
         )
+    }
+
+    @Test
+    fun recognizesRegionalMarathiWhatsAppMessageCommands() {
+        assertEquals(
+            StepIntent.Message("whatsapp", "राहुल", "मी येतोय"),
+            p("राहुल ला व्हॉट्सॲप मेसेज धाड: मी येतोय")
+        )
+        assertEquals(
+            StepIntent.Message("whatsapp", "amit", "mi yetoy"),
+            p("Amit la WhatsApp message dhad: mi yetoy")
+        )
+    }
+
+    @Test
+    fun recognizesMaharashtraDialectAppLaunchPhrases() {
+        assertEquals(StepIntent.AppLaunch("whatsapp"), p("व्हॉट्सॲप उघडून दे"))
+        assertEquals(StepIntent.AppLaunch("whatsapp"), p("माका व्हॉट्सॲप उघडून दे"))
+        assertEquals(StepIntent.AppLaunch("whatsapp"), p("मले व्हॉट्सऍप उघड"))
+        assertEquals(StepIntent.AppLaunch("whatsapp"), p("WhatsApp ugadun de"))
     }
 
     @Test
@@ -153,6 +181,8 @@ class StepIntentParserTest {
         assertEquals(StepIntent.AppLaunch("whatsapp"), p("open wa"))
         assertEquals(StepIntent.AppLaunch("whatsapp"), p("open व्हाट्सएप"))
         assertEquals(StepIntent.AppLaunch("youtube"), p("open yt"))
+        assertEquals(StepIntent.AppLaunch("telegram"), p("open telegram"))
+        assertEquals(StepIntent.AppLaunch("calendar"), p("open calendar"))
         assertEquals(StepIntent.AppLaunch("facebook"), p("open fb"))
         assertEquals(StepIntent.AppLaunch("google pay"), p("open gpay"))
         assertEquals(StepIntent.AppLaunch("google pay"), p("open google pay"))

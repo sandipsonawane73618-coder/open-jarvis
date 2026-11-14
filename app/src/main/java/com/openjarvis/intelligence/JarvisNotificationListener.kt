@@ -17,7 +17,22 @@ class JarvisNotificationListener : NotificationListenerService() {
     private val notificationsLock = Any()
     private val notifications = mutableListOf<JarvisNotification>()
 
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        instance = this
+        // Seed the in-memory view with notifications already active when access is enabled.
+        runCatching { activeNotifications?.forEach(::upsertNotification) }
+    }
+
+    override fun onDestroy() {
+        if (instance === this) instance = null
+        super.onDestroy()
+    }
+
     companion object {
+        @Volatile var instance: JarvisNotificationListener? = null
+            private set
+
         private val PRIVACY_PROTECTED_APPS = setOf(
             // India: bank, UPI, wallet and payment apps.
             "com.google.android.apps.nbu.paisa.user",
@@ -118,8 +133,24 @@ class JarvisNotificationListener : NotificationListenerService() {
             return
         }
 
+        upsertNotification(sbn)
+    }
+
+    private fun upsertNotification(sbn: StatusBarNotification) {
+        // Enforce the same financial-app privacy gate before any notification fields
+        // are parsed, regardless of whether this is bootstrap or a live update.
+        if (!NotificationIngestionPolicy.accepts(sbn.packageName)) return
+
         val parsed = parseNotification(sbn)
-        synchronized(notificationsLock) { notifications.add(parsed) }
+        synchronized(notificationsLock) {
+            // Notification IDs are scoped to a package; replace an updated active item.
+            notifications.removeAll { it.id == parsed.id && it.packageName == parsed.packageName }
+            notifications.add(parsed)
+            val newestFirst = notifications.sortedByDescending { it.timestamp }
+                .take(NotificationBufferPolicy.MAX_ITEMS)
+            notifications.clear()
+            notifications.addAll(newestFirst)
+        }
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
@@ -132,8 +163,8 @@ class JarvisNotificationListener : NotificationListenerService() {
 
     private fun parseNotification(sbn: StatusBarNotification): JarvisNotification {
         val extras = sbn.notification.extras
-        val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: ""
-        val body = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
+        val title = NotificationPrivacyPolicy.redact(extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: "")
+        val body = NotificationPrivacyPolicy.redact(extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: "")
 
         val appLabel = try {
             packageManager.getApplicationLabel(
@@ -146,7 +177,7 @@ class JarvisNotificationListener : NotificationListenerService() {
         val isMessaging = sbn.packageName in messagingApps
 
         val sender = if (isMessaging) {
-            extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()
+            NotificationPrivacyPolicy.redact(extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty())
         } else null
 
         return JarvisNotification(
@@ -161,29 +192,35 @@ class JarvisNotificationListener : NotificationListenerService() {
         )
     }
 
-    suspend fun replyToNotification(sender: String, packageName: String, reply: String): Boolean {
-        return try {
-            val notification = synchronized(notificationsLock) {
-                notifications.find {
-                    it.packageName == packageName && it.sender?.contains(sender, ignoreCase = true) == true
-                }
-            } ?: return false
+    /**
+     * Legacy entry point intentionally refuses to send. Replies must be routed through
+     * AgentCore's exact-recipient/message preview and explicit spoken "haan" approval.
+     */
+    @Deprecated("Use the AgentCore send-safety preview and exact-payload approval flow")
+    suspend fun replyToNotification(sender: String, packageName: String, reply: String): Boolean = false
 
-            val service = JarvisAccessibilityService.instance
-
-            service?.tapByText("Reply")
-            service?.typeText(reply)
-            service?.tapByText("Send")
-
-            true
-        } catch (e: Exception) {
-            false
-        }
+    fun getUnread(packageName: String? = null, maxItems: Int = 5): List<JarvisNotification> = synchronized(notificationsLock) {
+        val safeLimit = maxItems.coerceIn(1, NotificationBufferPolicy.MAX_ITEMS)
+        (if (packageName != null) notifications.filter { it.packageName == packageName } else notifications)
+            .sortedByDescending { it.timestamp }
+            .take(safeLimit)
+            .map { item ->
+                item.copy(
+                    title = NotificationPrivacyPolicy.redact(item.title),
+                    body = NotificationPrivacyPolicy.redact(item.body),
+                    sender = item.sender?.let(NotificationPrivacyPolicy::redact)
+                )
+            }
     }
 
-    fun getUnread(packageName: String? = null): List<JarvisNotification> = synchronized(notificationsLock) {
-        if (packageName != null) notifications.filter { it.packageName == packageName }
-        else notifications.toList()
+    fun notificationAccessEnabled(): Boolean {
+        val enabled = android.provider.Settings.Secure.getString(
+            contentResolver,
+            "enabled_notification_listeners"
+        ).orEmpty()
+        return enabled.split(':').any {
+            it.equals(android.content.ComponentName(this, JarvisNotificationListener::class.java).flattenToString(), ignoreCase = true)
+        }
     }
 
     fun getSummary(): String {

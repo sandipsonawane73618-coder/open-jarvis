@@ -59,4 +59,8 @@ class ConversationIntentPolicyTest {
         assertFalse(ConversationIntentPolicy.isChatRequest(" "))
         assertFalse(ConversationIntentPolicy.isChatRequest("x".repeat(1201)))
     }
+    @Test fun factualIndiaCapitalQuestionIsConversationNotAction() {
+        assertTrue(ConversationIntentPolicy.isChatRequest("India ki capital kya hai"))
+    }
 }
+

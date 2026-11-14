@@ -11,6 +11,7 @@ import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import com.openjarvis.commandlab.CommandLogPolicy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,6 +40,9 @@ class AndroidSTTEngine(private val context: Context) : STTEngine {
     private var sessionActive = false
     private var silenceStartTime = -1L
     private var recordingStartTime = -1L
+    private var localeAttempts: List<String> = emptyList()
+    private var localeAttemptIndex = 0
+    private var activeLocale = "hi-IN"
 
     init {
         mainHandler.post { createRecognizer() }
@@ -72,15 +76,38 @@ class AndroidSTTEngine(private val context: Context) : STTEngine {
                 override fun onEndOfSpeech() { _isListening.value = false }
                 override fun onError(error: Int) {
                     _isListening.value = false
+                    if (RecognitionLocaleRetryPolicy.shouldRetry(error)) {
+                        val failedLocale = activeLocale
+                        if (android.os.Build.VERSION.SDK_INT >= 33) {
+                            SpeechLocaleSupportManager(context).checkRecognitionSupport(failedLocale) { }
+                        }
+                        val nextIndex = localeAttemptIndex + 1
+                        if (nextIndex < localeAttempts.size) {
+                            localeAttemptIndex = nextIndex
+                            mainHandler.post {
+                                if (sessionActive) {
+                                    createRecognizer()
+                                    startListeningInternal()
+                                }
+                            }
+                            return
+                        }
+                        sessionActive = false
+                        latestPartialTranscript = null
+                        currentErrorCallback?.invoke(
+                            "Offline speech language packs are unavailable for Hindi, English, Marathi, and the device language. Open Settings > Voice > Offline speech languages to check or download a pack. No network speech fallback is used."
+                        )
+                        return
+                    }
                     val message = when (error) {
                         SpeechRecognizer.ERROR_AUDIO -> "Audio recording error"
                         SpeechRecognizer.ERROR_CLIENT -> "Client error"
                         SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Missing permissions"
-                        SpeechRecognizer.ERROR_NETWORK -> "Network error"
-                        SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network timeout"
+                        SpeechRecognizer.ERROR_NETWORK -> "Network speech is disabled; check the offline speech service."
+                        SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network speech is disabled; check the offline speech service."
                         SpeechRecognizer.ERROR_NO_MATCH -> "No speech detected"
                         SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Recognizer busy"
-                        SpeechRecognizer.ERROR_SERVER -> "Server error"
+                        SpeechRecognizer.ERROR_SERVER -> "On-device speech service error"
                         SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Speech timeout"
                         else -> "Speech recognition error ($error)"
                     }
@@ -98,9 +125,14 @@ class AndroidSTTEngine(private val context: Context) : STTEngine {
                     val bestPositiveScore = confidenceScores
                         ?.filter { it.isFinite() && it > 0f }
                         ?.maxOrNull()
-                    val scoreSummary = confidenceScores?.joinToString(
+                    val scoreSummary = confidenceScores?.take(RecognitionCandidateSelector.MAX_CANDIDATES)?.joinToString(
                         prefix = "[", postfix = "]"
                     ) { score -> if (score.isFinite()) score.toString() else "non_finite" } ?: "unavailable"
+                    val redactedCandidates = matches.orEmpty()
+                        .take(RecognitionCandidateSelector.MAX_CANDIDATES)
+                        .mapIndexed { index, candidate ->
+                            "${index + 1}:${CommandLogPolicy.redact(candidate) ?: "[empty]"}"
+                        }
                     val rejectReason = when {
                         text != null -> "none"
                         nonBlankCandidateCount == 0 -> "no_nonblank_candidate"
@@ -112,7 +144,7 @@ class AndroidSTTEngine(private val context: Context) : STTEngine {
                     android.util.Log.i(
                         TAG,
                         "stt_result candidate_count=$candidateCount nonblank_count=$nonBlankCandidateCount " +
-                            "scores=$scoreSummary best_positive_score=$bestPositiveScore " +
+                            "scores=$scoreSummary candidates=$redactedCandidates best_positive_score=$bestPositiveScore " +
                             "threshold=${RecognitionCandidateSelector.MIN_CONFIDENCE} reject_reason=$rejectReason"
                     )
                     val hadPartialHypothesis = !latestPartialTranscript.isNullOrBlank()
@@ -150,6 +182,8 @@ class AndroidSTTEngine(private val context: Context) : STTEngine {
         pendingResult = null
         latestPartialTranscript = null
         sessionActive = true
+        localeAttempts = RecognitionLocaleRetryPolicy.localeAttempts(Locale.getDefault().toLanguageTag())
+        localeAttemptIndex = 0
         mainHandler.post {
             if (recognizer == null) createRecognizer()
             if (recognizer == null) {
@@ -167,12 +201,11 @@ class AndroidSTTEngine(private val context: Context) : STTEngine {
     private fun startListeningInternal() {
         if (!sessionActive || recognizer == null) return
         silenceStartTime = -1L
-        val deviceLanguage = Locale.getDefault().language
-        val preferredLanguage = SpeechLanguage.preferredRecognitionLocale(deviceLanguage)
+        activeLocale = localeAttempts.getOrNull(localeAttemptIndex) ?: "hi-IN"
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, preferredLanguage)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, preferredLanguage)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, activeLocale)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, activeLocale)
             if (android.os.Build.VERSION.SDK_INT >= 34) {
                 putExtra("android.speech.extra.ENABLE_LANGUAGE_DETECTION", true)
                 putStringArrayListExtra("android.speech.extra.LANGUAGE_DETECTION_ALLOWED_LANGUAGES",
@@ -191,7 +224,10 @@ class AndroidSTTEngine(private val context: Context) : STTEngine {
                     "screen ka photo lo", "screen photo lo", "screen shot lo", "take screenshot",
                     "capture screen", "स्क्रीन का फोटो लो", "स्क्रीनशॉट लो", "स्क्रीनचा फोटो काढ",
                     "पडद्याचा फोटो काढा", "read screen", "screen par kya hai"
-                ).apply { addAll(VoiceControlVocabulary.recognitionPhrases) }
+                ).apply {
+                    addAll(VoiceControlVocabulary.recognitionPhrases)
+                    addAll(MaharashtraSpeechProfile.recognitionHints)
+                }
             )
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)

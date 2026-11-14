@@ -35,6 +35,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.openjarvis.agent.ExperimentalSelfHealingSettings
 import com.openjarvis.agent.PersonalMemoryStore
 import com.openjarvis.agent.JarvisPersonality
 import com.openjarvis.agent.JarvisPersonalityStore
@@ -78,6 +79,15 @@ fun SettingsScreen(
             androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
     }
+    val speechLocaleManager = remember { com.openjarvis.voice.SpeechLocaleSupportManager(context) }
+    val speechLocaleLabels = listOf("hi-IN" to "Hindi", "en-IN" to "English (India)", "mr-IN" to "Marathi")
+    val speechLocaleStatuses = remember {
+        androidx.compose.runtime.mutableStateMapOf<String, String>().apply {
+            speechLocaleLabels.forEach { (locale, _) -> put(locale, speechLocaleManager.savedStatus(locale)) }
+        }
+    }
+    var localeAwaitingDownloadConsent by remember { mutableStateOf<String?>(null) }
+
     val savedProvider = "Ollama (Local)"
     val savedModel = providerPrefs.getString("provider_model", OllamaProvider.DEFAULT_MODEL)
         .orEmpty().let { OllamaProvider.supportedChatModel(it) }
@@ -99,7 +109,11 @@ fun SettingsScreen(
     var lastSaved by remember { mutableStateOf(0L) }
     var savedVisible by remember { mutableStateOf(false) }
     var voiceEnabled by remember { mutableStateOf(voicePrefs.getBoolean("voice_enabled", false)) }
+    var experimentalSelfHealingEnabled by remember { mutableStateOf(ExperimentalSelfHealingSettings.isEnabled(context)) }
     var speakResults by remember { mutableStateOf(voicePrefs.getBoolean("speak_results", true)) }
+    var hindiVoiceGender by remember { mutableStateOf(voicePrefs.getString("tts_voice_gender_hi", "Female") ?: "Female") }
+    var marathiVoiceGender by remember { mutableStateOf(voicePrefs.getString("tts_voice_gender_mr", "Female") ?: "Female") }
+    var englishVoiceGender by remember { mutableStateOf(voicePrefs.getString("tts_voice_gender_en", "Female") ?: "Female") }
     val personalMemoryStore = remember { PersonalMemoryStore(context) }
     val personalityStore = remember { JarvisPersonalityStore(context) }
     var memoryFacts by remember { mutableStateOf(personalMemoryStore.getAll()) }
@@ -158,6 +172,8 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(24.dp))
                 HybridChatSettingsSection()
+                Spacer(modifier = Modifier.height(28.dp))
+                ConnectedAppsSettingsSection()
                 Spacer(modifier = Modifier.height(28.dp))
 
                 SectionLabel("AI PROVIDER")
@@ -372,6 +388,19 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(24.dp))
 
+                SectionLabel("EXPERIMENTAL FEATURES")
+                Spacer(modifier = Modifier.height(10.dp))
+                SettingsToggleRow(
+                    title = "Experimental self-healing helpers",
+                    subtitle = "Optional Hindi/Marathi command aliases and verified local repair memory. Default OFF; no automatic device-action replay.",
+                    enabled = experimentalSelfHealingEnabled,
+                    onToggle = {
+                        experimentalSelfHealingEnabled = !experimentalSelfHealingEnabled
+                        ExperimentalSelfHealingSettings.setEnabled(context, experimentalSelfHealingEnabled)
+                    }
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+
                 SectionLabel("VOICE")
                 Spacer(modifier = Modifier.height(10.dp))
                 SettingsToggleRow(
@@ -399,6 +428,43 @@ fun SettingsScreen(
                     
                     Spacer(modifier = Modifier.height(8.dp))
                     
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        color = VoidColor.Void900,
+                        border = BorderStroke(1.dp, VoidColor.BorderSubtle)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("Jarvis voice", color = VoidColor.TextPrimary, fontSize = 14.sp, fontWeight = FontWeight(600))
+                            Text("Choose Male or Female separately for each language. Voice gender matching depends on installed engine voice names.", color = VoidColor.TextDisabled, fontSize = 11.sp)
+                            @Composable
+                            fun VoiceLanguagePicker(label: String, locale: String, gender: String, onGender: (String) -> Unit, sample: String) {
+                                Text(label, color = VoidColor.TextPrimary, fontSize = 13.sp, fontWeight = FontWeight(600))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    TextButton(onClick = {
+                                        onGender("Female")
+                                        voicePrefs.edit().putString("tts_voice_gender_${locale.substringBefore('-')}", "Female").apply()
+                                    }) { Text(if (gender == "Female") "✓ Female" else "Female") }
+                                    TextButton(onClick = {
+                                        onGender("Male")
+                                        voicePrefs.edit().putString("tts_voice_gender_${locale.substringBefore('-')}", "Male").apply()
+                                    }) { Text(if (gender == "Male") "✓ Male" else "Male") }
+                                    Spacer(modifier = Modifier.weight(1f))
+                                    TextButton(onClick = {
+                                        com.openjarvis.voice.AndroidTTSEngine.preview(context, gender, locale, sample) {
+                                            Toast.makeText(context, "$label voice preview unavailable. Check installed TTS voice data.", Toast.LENGTH_LONG).show()
+                                        }
+                                    }) { Text("Preview") }
+                                }
+                            }
+                            VoiceLanguagePicker("Hindi", "hi-IN", hindiVoiceGender, { hindiVoiceGender = it }, "नमस्ते! मैं आपकी Jarvis हूँ। कैसे मदद करूँ?")
+                            VoiceLanguagePicker("Marathi", "mr-IN", marathiVoiceGender, { marathiVoiceGender = it }, "नमस्कार! मी तुमची Jarvis आहे. मी कशी मदत करू?")
+                            VoiceLanguagePicker("English (India)", "en-IN", englishVoiceGender, { englishVoiceGender = it }, "Hello! I am your Jarvis. How can I help you?")
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
                     // STT Mode selector
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
@@ -500,6 +566,72 @@ fun SettingsScreen(
                                 )
                             )
                         }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        color = VoidColor.Void900,
+                        border = BorderStroke(1.dp, VoidColor.BorderSubtle)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("Offline speech languages", color = VoidColor.TextPrimary, fontSize = 14.sp, fontWeight = FontWeight(600))
+                            Text(
+                                "Check installed on-device packs. Downloads are requested only after your approval; speech recognition never falls back to network speech.",
+                                color = VoidColor.TextDisabled, fontSize = 11.sp
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    speechLocaleLabels.forEach { (locale, _) ->
+                                        speechLocaleStatuses[locale] = "Checking…"
+                                        speechLocaleManager.checkRecognitionSupport(locale) { status ->
+                                            speechLocaleStatuses[locale] = status
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("Check language support") }
+                            speechLocaleLabels.forEach { (locale, label) ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("$label ($locale)", color = VoidColor.TextPrimary, fontSize = 12.sp)
+                                        Text(speechLocaleStatuses[locale] ?: "Not checked", color = VoidColor.TextDisabled, fontSize = 11.sp)
+                                    }
+                                    if (speechLocaleStatuses[locale] in setOf("Available", "Download pending")) {
+                                        TextButton(onClick = { localeAwaitingDownloadConsent = locale }) {
+                                            Text("Download")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    localeAwaitingDownloadConsent?.let { locale ->
+                        val label = speechLocaleLabels.firstOrNull { it.first == locale }?.second ?: locale
+                        AlertDialog(
+                            onDismissRequest = { localeAwaitingDownloadConsent = null },
+                            title = { Text("Download $label offline speech pack?") },
+                            text = {
+                                Text("Jarvis will request the Android on-device language model. This may use your network only to download the language pack. Speech recognition itself remains on-device. Android may show its own approval prompt.")
+                            },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    localeAwaitingDownloadConsent = null
+                                    speechLocaleStatuses[locale] = "Download requested"
+                                    speechLocaleManager.requestDownload(locale) { status ->
+                                        speechLocaleStatuses[locale] = status
+                                    }
+                                }) { Text("Allow download") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { localeAwaitingDownloadConsent = null }) { Text("Cancel") }
+                            }
+                        )
                     }
                 }
                 

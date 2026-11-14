@@ -31,6 +31,14 @@ internal object FastCommandParser {
     private val youtubeSearchWithOpen = Regex("^youtube\\s+kholo\\s+(?:aur|then)\\s+(.+?)\\s+(?:search|dhundo|khojo)(?:\\s+karo)?$", RegexOption.IGNORE_CASE)
     private val timer = Regex("^(?:(?:please )?set )?(?:a )?timer(?: for)? (\\d{1,4}) (seconds?|secs?|minutes?|mins?|hours?|hrs?)$|^(\\d{1,4}) (seconds?|secs?|minutes?|mins?|hours?|hrs?) timer$", RegexOption.IGNORE_CASE)
     private val contactCall = Regex("^(?:please\\s+)?(?:call|dial|phone)\\s+([\\p{L}][\\p{L}\\p{M} .'-]{1,59})$|^([\\p{L}][\\p{L}\\p{M} .'-]{1,59})\\s+(?:ko\\s+call\\s+karo|ko\\s+phone\\s+karo|ला\\s+कॉल\\s+करा|को\\s+कॉल\\s+करो)$", RegexOption.IGNORE_CASE)
+    private val BACK_COMMANDS = setOf(
+        "back", "go back", "back screen per jao", "back screen pe jao",
+        "pichhe", "pichhe ja", "pichhe jao",
+        "peeche", "peeche ja", "peeche jao", "piche jao",
+        "wapas", "wapas ja", "wapas jao",
+        "mage", "mage ja", "mage jaa",
+        "वापस", "वापस जाओ", "पीछे जाओ", "मागे", "मागे जा", "मागे चला"
+    )
 
     fun parseSequence(command: String): List<Command>? {
         val normalized = normalize(command)
@@ -86,7 +94,7 @@ internal object FastCommandParser {
             return Command.ShowNotifications
         }
         if (close.matches(normalized)) return Command.CloseCurrentApp
-        if (normalized.matches(Regex("^(?:back|go back|pichhe|peeche|wapas|वापस|वापस जाओ|पीछे जाओ|मागे|मागे जा|मागे चला)$", RegexOption.IGNORE_CASE))) return Command.Back
+        if (normalized in BACK_COMMANDS) return Command.Back
         if (normalized.matches(Regex("^(?:home|go home|ghar|होम|होम पर जाओ|घर जाओ|मुख्यपृष्ठ|घरी जा)$", RegexOption.IGNORE_CASE))) return Command.Home
 
         val scroll = Regex("^(?:scroll|स्क्रॉल)\\s*(up|down|upar|neeche|ऊपर|नीचे|वर|खाली)?$", RegexOption.IGNORE_CASE).matchEntire(normalized)

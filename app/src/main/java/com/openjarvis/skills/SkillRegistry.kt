@@ -35,15 +35,15 @@ object SkillRegistry {
             val factor = if (it.groupValues[2].startsWith("s")) 1 else 60
             return Request(Kind.TIMER, mapOf("seconds" to (seconds * factor).toString()))
         }
-        if (Regex("^(?:torch|flashlight|फ्लैशलाइट|टॉर्च)\\s+(?:on|चालू|जला दो|चालू करो)$").matches(s) ||
+        if (Regex("^(?:torch|flashlight|flash|फ्लैशलाइट|टॉर्च|टार्च)\\s+(?:on|चालू|जला दो|चालू करो)$").matches(s) ||
             Regex("^(?:turn on|switch on) (?:the )?(?:torch|flashlight)$").matches(s))
             return Request(Kind.TORCH, mapOf("enabled" to "true"))
-        if (Regex("^(?:torch|flashlight|टॉर्च)\\s+(?:off|बंद|बुझा दो|बंद करो)$").matches(s) ||
+        if (Regex("^(?:torch|flashlight|flash|टॉर्च|टार्च)\\s+(?:off|बंद|बुझा दो|बंद करो)$").matches(s) ||
             Regex("^(?:turn off|switch off) (?:the )?(?:torch|flashlight)$").matches(s))
             return Request(Kind.TORCH, mapOf("enabled" to "false"))
-        if (Regex("^(?:(?:volume|आवाज़|आवाज|aawaz|awaaz|aawaj|awaz)(?:\\s+(?:thoda|thodi))?\\s*(?:up|बढ़ाओ|बढ़ाओ|बढ़ा दो|बढ़ा दो|badha do|bada do|badhao|vadhav|vadhva|वाढवा|वाढव)|(?:increase|raise) volume)$").matches(s))
+        if (Regex("^(?:(?:volume|sound|आवाज़|आवाज|aawaz|awaaz|aawaj|awaz|avaz|avaj)(?:\\s+(?:thoda|thodi))?\\s*(?:up|बढ़ाओ|बढ़ाओ|बढ़ा दो|बढ़ा दो|badha do|bada do|badhao|vadhav|vadhva|वाढवा|वाढव)|(?:increase|raise) volume)$").matches(s))
             return Request(Kind.VOLUME, mapOf("direction" to "up"))
-        if (Regex("^(?:(?:volume|आवाज़|आवाज|aawaz|awaaz|aawaj|awaz)(?:\\s+(?:thoda|thodi))?\\s*(?:down|कम करो|कम कर दो|kam karo|kam kar do|kami karo|kami kara|kami kar|कमी करा|कमी कर)|(?:decrease|lower) volume)$").matches(s))
+        if (Regex("^(?:(?:volume|sound|आवाज़|आवाज|aawaz|awaaz|aawaj|awaz|avaz|avaj)(?:\\s+(?:thoda|thodi))?\\s*(?:down|कम करो|कम कर दो|kam karo|kam kar do|kami karo|kami kara|kami kar|ghatao|कमी करा|कमी कर)|(?:decrease|lower) volume)$").matches(s))
             return Request(Kind.VOLUME, mapOf("direction" to "down"))
 
         val setting = mapOf(

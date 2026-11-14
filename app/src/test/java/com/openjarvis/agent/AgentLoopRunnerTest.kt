@@ -5,6 +5,12 @@ import org.junit.Test
 class AgentLoopRunnerTest {
     private val runner = AgentLoopRunner()
     private fun screen(text: String) = ScreenObservation("com.example.app", text, text, 1)
+    private val sendPayload = SendConfirmationPayload("contact-1", "Dad", "3210", "Hello Dad", null)
+    private fun whatsappScreen(text: String) = ScreenObservation(
+        "com.whatsapp", text,
+        "[#1 editable] hint=Message class=EditText bounds=0,0,1,1",
+        2
+    )
     private fun verifier(a: Action, b: ScreenObservation, c: ScreenObservation, ok: Boolean) = ActionVerifier.verify(a, b, c, ok, a.packageName)
 
     @Test fun observesVerifiesAndReplansOneActionAtATime() = runBlocking {
@@ -13,22 +19,85 @@ class AgentLoopRunnerTest {
             observe = { observation },
             plan = { _, _ -> plans++; if (plans == 1) Result.success(Action(action = Action.CLICK, text = "Search")) else Result.success(Action(action = Action.COMPLETE)) },
             execute = { actions++; observation = screen("Search results"); true }, verify = ::verifier,
-            verifyGoal = { _, latest -> GoalEvidencePolicy.verify("Search results", latest) })
+            verifyGoal = { _, latest -> GoalVerification(latest.visibleText.contains("Search results"), "Search results not visible") })
         assertEquals(AgentLoopStatus.COMPLETED, result.status); assertEquals(2, plans); assertEquals(1, actions)
         assertEquals(1, result.session.completedActions.size)
     }
     @Test fun sendAndDeletePauseWithoutExecutingUntilConfirmed() = runBlocking {
         var executions = 0
-        val initial = runner.run(AgentTaskSession("send this", 0), nowMs = { 1 }, observe = { screen("Message") },
+        val initial = runner.run(AgentTaskSession("send this", 0), nowMs = { 1 }, observe = { whatsappScreen("Composer: Hello Dad") },
             plan = { _, _ -> Result.success(Action(action = Action.CLICK, text = "Send")) },
-            execute = { executions++; true }, verify = ::verifier)
+            execute = { executions++; true },
+            resolveSendPayload = { _, _ -> sendPayload }, verify = ::verifier)
         assertEquals(AgentLoopStatus.NEEDS_CONFIRMATION, initial.status); assertEquals(0, executions)
-        val resumed = runner.run(initial.session, approvedConfirmation = true, nowMs = { 2 }, observe = { screen("Message sent") },
+        assertEquals(sendPayload, initial.session.awaitingConfirmationPayload)
+        val resumed = runner.run(initial.session, approvedConfirmation = true, nowMs = { 2 }, observe = { whatsappScreen("Dad\nHello Dad") },
             plan = { _, _ -> Result.success(Action(action = Action.COMPLETE)) },
-            execute = { executions++; true }, verify = ::verifier,
-            verifyGoal = { _, _ -> GoalVerification(true, "Message sent evidence") })
+            execute = { executions++; true },
+            resolveSendPayload = { _, _ -> sendPayload }, verify = ::verifier,
+            verifyGoal = { _, _ -> GoalVerification(true, "Verified sent-message evidence") })
         assertEquals(1, executions); assertEquals(AgentLoopStatus.COMPLETED, resumed.status)
     }
+    @Test fun sendIsBlockedWhenRecipientPayloadCannotBeResolved() = runBlocking {
+        var executions = 0
+        val result = runner.run(
+            AgentTaskSession("send to Dad", 0), nowMs = { 1 }, observe = { whatsappScreen("Dad") },
+            plan = { _, _ -> Result.success(Action(action = Action.CLICK, text = "Send")) },
+            execute = { executions++; true }, verify = ::verifier
+        )
+        assertEquals(AgentLoopStatus.FAILED, result.status)
+        assertTrue(result.message.contains("exact recipient"))
+        assertEquals(0, executions)
+    }
+
+    @Test fun changedContactInvalidatesApprovalAndRequiresFreshConfirmation() = runBlocking {
+        var executions = 0
+        val pending = AgentTaskSession("send to Dad", 0).requireConfirmation(
+            Action(action = Action.CLICK, text = "Send"), sendPayload
+        )
+        val changed = sendPayload.copy(recipientContactId = "contact-2", recipientName = "Dad Work", phoneLastFour = "9999")
+        val result = runner.run(
+            pending, approvedConfirmation = true, nowMs = { 1 }, observe = { whatsappScreen("Dad Work") },
+            plan = { _, _ -> Result.success(Action(action = Action.COMPLETE)) },
+            execute = { executions++; true }, resolveSendPayload = { _, _ -> changed }, verify = ::verifier
+        )
+        assertEquals(AgentLoopStatus.NEEDS_CONFIRMATION, result.status)
+        assertEquals(changed, result.session.awaitingConfirmationPayload)
+        assertEquals(0, executions)
+    }
+
+    @Test fun changedMessageOrAttachmentInvalidatesApproval() = runBlocking {
+        val pending = AgentTaskSession("send to Dad", 0).requireConfirmation(
+            Action(action = Action.CLICK, text = "Send"), sendPayload
+        )
+        val changed = sendPayload.copy(message = "Different text", attachmentName = "other.png")
+        var executions = 0
+        val result = runner.run(
+            pending, approvedConfirmation = true, nowMs = { 1 }, observe = { whatsappScreen("Dad") },
+            plan = { _, _ -> Result.success(Action(action = Action.COMPLETE)) },
+            execute = { executions++; true }, resolveSendPayload = { _, _ -> changed }, verify = ::verifier
+        )
+        assertEquals(AgentLoopStatus.NEEDS_CONFIRMATION, result.status)
+        assertEquals(0, executions)
+    }
+
+    @Test fun sentIsNotReportedWithoutMessageAndClearedComposerEvidence() = runBlocking {
+        val pending = AgentTaskSession("send to Dad", 0).requireConfirmation(
+            Action(action = Action.CLICK, text = "Send"), sendPayload
+        )
+        val result = runner.run(
+            pending, approvedConfirmation = true, nowMs = { 1 },
+            observe = { ScreenObservation(
+                "com.whatsapp", "Hello Dad",
+                "[#1 editable] text=Hello Dad hint=Message class=EditText bounds=0,0,1,1", 3
+            ) },
+            plan = { _, _ -> Result.success(Action(action = Action.COMPLETE)) },
+            execute = { true }, resolveSendPayload = { _, _ -> sendPayload }, verify = ::verifier
+        )
+        assertEquals(AgentLoopStatus.FAILED, result.status)
+        assertEquals("send tap kiya, confirm nahi hua", result.message)
+    }
+
     @Test fun declinedConfirmationNeverExecutesPendingAction() = runBlocking {
         var executions = 0
         val pending = AgentTaskSession("delete item", 0).requireConfirmation(Action(action = Action.CLICK, text = "Delete")).resolveConfirmation(false)
@@ -73,6 +142,7 @@ class AgentLoopRunnerTest {
         assertEquals(AgentLoopStatus.FAILED, result.status)
     }
 
+
     @Test fun plannerCompleteRequiresIndependentGoalVerificationFromFreshScreen() = runBlocking {
         var goalChecks = 0
         val result = runner.run(
@@ -107,5 +177,4 @@ class AgentLoopRunnerTest {
         assertEquals(AgentLoopStatus.FAILED, result.status)
         assertTrue(result.message.contains("Settings screen not observed"))
     }
-
 }

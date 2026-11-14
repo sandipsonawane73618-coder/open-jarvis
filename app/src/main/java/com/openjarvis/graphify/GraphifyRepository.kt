@@ -93,37 +93,18 @@ class GraphifyRepository(context: Context) {
         emit(patternNodeDao.getActivePatterns(cutoff, 0.3f).size)
     }
 
-    fun buildMemoryContext(command: String): String = kotlinx.coroutines.runBlocking {
-        withContext(Dispatchers.IO) {
-            val tasks = taskNodeDao.getRecentTasks(10)
-            val patterns = patternNodeDao.getActivePatterns(
-                System.currentTimeMillis() - 7 * 24 * 60 * 60 * 1000,
-                0.3f
-            )
-
-            val sb = StringBuilder()
-            sb.appendLine("## Recent Tasks")
-            for (task in tasks.take(5)) {
-                sb.appendLine("- ${task.command} → ${task.result}")
-            }
-
-            if (patterns.isNotEmpty()) {
-                sb.appendLine("\n## Detected Patterns")
-                for (pattern in patterns.take(3)) {
-                    sb.appendLine("- ${pattern.sequenceString} (${(pattern.confidence * 100).toInt()}% confidence)")
-                }
-            }
-
-            val contacts = contactNodeDao.getRecentContacts(3)
-            if (contacts.isNotEmpty()) {
-                sb.appendLine("\n## Frequent Contacts")
-                for (contact in contacts) {
-                    sb.appendLine("- ${contact.name}: ${contact.contactCount} interactions")
-                }
-            }
-
-            sb.toString().take(1500)
-        }
+    /**
+     * Builds a small, query-relevant episodic memory context.
+     * Raw commands, results, contact names and message contents are never copied into the LLM prompt.
+     */
+    suspend fun buildMemoryContext(command: String): String = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        val tasks = taskNodeDao.getRecentTasks(40)
+        val patterns = patternNodeDao.getActivePatterns(
+            now - 30L * 24L * 60L * 60L * 1000L,
+            0.60f
+        ).take(30)
+        MemoryContextBuilder.build(command, tasks, patterns, now)
     }
 
     fun getSuggestions(): Flow<List<String>> = flow {

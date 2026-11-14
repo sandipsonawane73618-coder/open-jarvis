@@ -12,6 +12,7 @@ internal object CommandRouter {
         SKILL_REGISTRY,
         STEP_INTENT,
         MESSAGE,
+        NOTIFICATION_READ,
         MESSAGE_CONTINUATION,
         SEARCH,
         CONTACT,
@@ -20,12 +21,16 @@ internal object CommandRouter {
     }
 
     fun classify(step: String): Route {
+        // Global BACK must win before generic step/navigation parsing can claim the utterance.
+        if (FastCommandParser.parse(step) is FastCommandParser.Command.Back) return Route.FAST
+        if (com.openjarvis.intelligence.ConnectedAppCommandParser.route(step) != null) return Route.NOTIFICATION_READ
         if (SkillRegistry.parse(step) != null) return Route.SKILL_REGISTRY
         if (StepIntentParser.parse(step) != null) return Route.STEP_INTENT
         if (MessageCommandParser.parse(step) != null) return Route.MESSAGE
         if (messageContinuationContact(step) != null) return Route.MESSAGE_CONTINUATION
         if (SearchCommandParser.parseYouTubeQuery(step) != null ||
-            SearchCommandParser.parseWebQuery(step) != null
+            SearchCommandParser.parseWebQuery(step) != null ||
+            SearchCommandParser.parseUnqualifiedQuery(step) != null
         ) return Route.SEARCH
         if (ContactCommandParser.parse(step) != null) return Route.CONTACT
         if (FastCommandParser.parse(step) != null) return Route.FAST

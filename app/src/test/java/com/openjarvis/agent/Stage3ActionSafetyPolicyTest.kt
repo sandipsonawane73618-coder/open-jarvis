@@ -21,6 +21,8 @@ class Stage3ActionSafetyPolicyTest {
     @Test fun whatsappApprovalIsBoundToExactContactAndText() {
         val preview = MessageSendApprovalPolicy.createPreview("Amit", "+919876543210", "mi yetoy")!!
         assertTrue(MessageSendApprovalPolicy.isApproved(preview, "Amit", "+919876543210", "mi yetoy", "haan"))
+        assertFalse(MessageSendApprovalPolicy.isApproved(preview, "Amit", "+919876543210", "mi yetoy", "yes"))
+        assertFalse(MessageSendApprovalPolicy.isApproved(preview, "Amit", "+919876543210", "mi yetoy", "confirm"))
     }
 
     @Test fun changedWhatsappTextInvalidatesApproval() {
