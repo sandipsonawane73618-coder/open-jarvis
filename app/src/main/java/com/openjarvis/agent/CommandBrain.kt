@@ -211,3 +211,93 @@ Never return maps/navigation, payments, bank transfers, sending, deleting, posti
 """
     }
 }
+
+/** Ordered, fail-fast dispatch seam shared by AgentCore and JVM contract tests. */
+internal object CommandBrainExecution {
+    suspend fun execute(
+        plan: CommandBrainPlan,
+        dispatch: suspend (CommandBrainStep) -> Result<String>
+    ): Result<List<String>> {
+        val results = mutableListOf<String>()
+        for (step in plan.steps) {
+            val result = try {
+                dispatch(step)
+            } catch (error: Exception) {
+                Result.failure(error)
+            }
+            val value = result.getOrElse { return Result.failure(it) }
+            results += value
+        }
+        return Result.success(results)
+    }
+}
+
+/** Fail-closed command-to-tool policy applied immediately before Android dispatch. */
+internal object CommandBrainExecutionPolicy {
+    fun validate(plan: CommandBrainPlan, command: String): Result<CommandBrainPlan> = runCatching {
+        require(!BankingSafetyPolicy.isBlockedCommand(command)) {
+            BankingSafetyPolicy.userGuidance(
+                BankingSafetyPolicy.failureRule(command, emptyList()) ?: BankingSafetyPolicy.BLOCKED_TRANSACTION
+            )
+        }
+        require(plan.steps.isNotEmpty()) { "Command brain returned no executable steps" }
+        require(plan.steps.none { it == CommandBrainStep.None } || plan.steps.size == 1) {
+            "none must be the only step"
+        }
+        plan.steps.forEach { step ->
+            when (step) {
+                is CommandBrainStep.OpenApp ->
+                    require(LlmSkillRouteSafetyPolicy.acceptedSkill("OPEN_APP", command) != null) {
+                        "App launch was not explicitly requested"
+                    }
+                is CommandBrainStep.Search ->
+                    require(LlmSkillRouteSafetyPolicy.acceptedSkill("SEARCH", command) != null) {
+                        "Search was not explicitly requested"
+                    }
+                is CommandBrainStep.PlayMedia ->
+                    require(Regex("(?i)(play|song|music|प्ले|गाना|गाने|बजाओ|सोंग)").containsMatchIn(command)) {
+                        "Media playback was not explicitly requested"
+                    }
+                is CommandBrainStep.MessageDraft -> {
+                    require(Regex("(?i)(message|msg|मैसेज|संदेश|व्हाट्सएप|whatsapp|sms)").containsMatchIn(command)) {
+                        "Message draft was not explicitly requested"
+                    }
+                    require(!Regex("(?i)(send money|make payment|pay now|bank transfer|money transfer|पैसे भेजो|पैसा भेजो)").containsMatchIn(command)) {
+                        "Banking/payment intent cannot be converted into a message draft"
+                    }
+                }
+                is CommandBrainStep.CallDraft ->
+                    require(LlmSkillRouteSafetyPolicy.acceptedSkill("CALL", command) != null) {
+                        "Call intent was not explicitly requested"
+                    }
+                is CommandBrainStep.Volume ->
+                    require(LlmSkillRouteSafetyPolicy.acceptedSkill("VOLUME", command) != null) {
+                        "Volume change was not explicitly requested"
+                    }
+                is CommandBrainStep.Torch ->
+                    require(LlmSkillRouteSafetyPolicy.acceptedSkill("TORCH", command) != null) {
+                        "Torch change was not explicitly requested"
+                    }
+                is CommandBrainStep.Alarm ->
+                    require(LlmSkillRouteSafetyPolicy.acceptedSkill("ALARM", command) != null) {
+                        "Alarm was not explicitly requested"
+                    }
+                is CommandBrainStep.Timer ->
+                    require(LlmSkillRouteSafetyPolicy.acceptedSkill("TIMER", command) != null) {
+                        "Timer was not explicitly requested"
+                    }
+                CommandBrainStep.Back ->
+                    require(Regex("(?i)(back|बैक|पीछे|वापस)").containsMatchIn(command)) {
+                        "Back navigation was not explicitly requested"
+                    }
+                CommandBrainStep.Home ->
+                    require(Regex("(?i)(home|होम|घर)").containsMatchIn(command)) {
+                        "Home navigation was not explicitly requested"
+                    }
+                is CommandBrainStep.Answer, is CommandBrainStep.Clarify, CommandBrainStep.None -> Unit
+            }
+        }
+        plan
+    }
+}
+
