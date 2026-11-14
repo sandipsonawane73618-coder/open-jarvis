@@ -3159,7 +3159,7 @@ ${fullSystem.substringAfter("MEMORY:")}
                 return "com.google.android.youtube"
             }
         }
-        val knownPackage = knownPackages[normalized]
+        val knownPackage = knownPackages[normalized] ?: AppIntegrationExecutionPolicy.appPackage(normalized)
         if (knownPackage != null && context.packageManager.getLaunchIntentForPackage(knownPackage) != null) {
             return knownPackage
         }
