@@ -1200,10 +1200,18 @@ ${fullSystem.substringAfter("MEMORY:")}
                         }
                     }
 
-                    // A pending clarification consumes the next user turn before any skill or action route.
+                    // Clarification context is short-lived; an old answer must never trigger
+                    // an action based on a stale request. Expired state is cleared and this
+                    // utterance proceeds as a fresh command through the normal guarded routes.
                     val pendingQuestion = pendingClarification
-                    if (pendingQuestion != null) {
-                        when (val decision = resolveClarification(safeCommand, pendingQuestion, System.currentTimeMillis())) {
+                    if (pendingQuestion?.isExpired(System.currentTimeMillis()) == true) {
+                        pendingClarification = null
+                        Log.i(TAG, "pending clarification expired; treating this utterance as a new command")
+                    }
+                    val activePendingQuestion = pendingClarification
+                    // A fresh pending clarification consumes the next user turn before any skill or action route.
+                    if (activePendingQuestion != null) {
+                        when (val decision = resolveClarification(safeCommand, activePendingQuestion, System.currentTimeMillis())) {
                             is ClarificationWorkflowPolicy.Decision.Ask -> {
                                 pendingClarification = decision.pending
                                 _state.value = AgentState.Done(decision.question)
