@@ -122,12 +122,7 @@ class AndroidSkillExecutor(private val context: Context) : SkillRegistry.SkillEx
             }
         }
         if (normalized in setOf("calendar", "google calendar")) {
-            val calendarPackages = listOf(
-                "com.google.android.calendar",
-                "com.coloros.calendar",
-                "com.android.calendar"
-            )
-            calendarPackages.firstOrNull { packageName ->
+            AppIntegrationExecutionPolicy.calendarPackageCandidates().firstOrNull { packageName ->
                 context.packageManager.getLaunchIntentForPackage(packageName) != null
             }?.let { return it }
             throw IllegalStateException("No Calendar app is installed on this device.")
