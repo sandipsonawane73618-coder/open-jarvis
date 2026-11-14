@@ -93,6 +93,7 @@ class CommandBrainTest {
         assertEquals(null, LlmSkillRouteSafetyPolicy.acceptedSkill("MAPS", "प्ले ए सोंग"))
         assertEquals(null, LlmSkillRouteSafetyPolicy.acceptedSkill("CALL", "WhatsApp per Rahul ko message bhejo hello"))
         assertEquals(null, LlmSkillRouteSafetyPolicy.acceptedSkill("SEARCH", "ओपन यूट्यूब"))
+        assertEquals("OPEN_APP", LlmSkillRouteSafetyPolicy.acceptedSkill("OPEN_APP", "हे जरवेस ओपन यूट्यूब"))
     }
 
     @Test fun validatedPlansDispatchEveryExactStepInOrder() = runBlocking {
