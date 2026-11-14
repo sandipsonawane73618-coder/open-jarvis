@@ -73,6 +73,21 @@ class ConnectedAppsPolicyTest {
             message.contains("allow", ignoreCase = true) || message.contains("enable", ignoreCase = true))
     }
 
+    @Test fun notificationIntentWinsBeforeGenericChatRouting() {
+        val router = singleton("com.openjarvis.agent.CommandRouter")
+        val method = router.javaClass.methods.first { it.name == "classify" && it.parameterTypes.size == 1 }
+        assertEquals("NOTIFICATION_READ", method.invoke(router, "koi naya message aaya?").toString())
+    }
+
+    @Test fun replyPhraseParsesAsWhatsAppPreviewRequestNotDirectSend() {
+        val parser = singleton("com.openjarvis.agent.MessageCommandParser")
+        val method = parser.javaClass.methods.first { it.name == "parse" && it.parameterTypes.size == 1 }
+        val request = method.invoke(parser, "Amit ko reply karo: ok") ?: error("reply request not parsed")
+        assertEquals("Amit", request.javaClass.getMethod("getContactName").invoke(request))
+        assertEquals("ok", request.javaClass.getMethod("getMessage").invoke(request))
+        assertEquals(true, request.javaClass.getMethod("getSendNow").invoke(request))
+    }
+
     @Test fun notificationReplyRequiresExplicitExactPayloadApproval() {
         assertEquals(false, invoke("com.openjarvis.intelligence.NotificationReplyPolicy", "maySend",
             "Amit", "ok", "Amit", "ok", false))
