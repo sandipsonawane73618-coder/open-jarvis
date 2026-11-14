@@ -18,6 +18,20 @@ internal object LlmSkillRouteSafetyPolicy {
         val required = keywords[normalized] ?: return normalized
         return normalized.takeIf { route -> tokens(command).any { it in required } }
     }
+    fun acceptedMainPromptSkill(skill: String, command: String): String? = acceptedSkill(skill, command)
+    fun acceptedPipelinePromptSkill(skill: String, command: String): String? = acceptedSkill(skill, command)
+
+    fun fewShotPromptInstructions(): String = """
+Few-shot examples:
+"flashlight on" -> {"skill":"TORCH","args":{"enabled":true}}
+"awaaz badhao" -> {"skill":"VOLUME","args":{"direction":"up"}}
+"alarm subah 6 baje" -> {"skill":"ALARM","args":{"hour":6,"minute":0}}
+"timer 2 minutes" -> {"skill":"TIMER","args":{"seconds":120}}
+"open Chrome" -> {"skill":"OPEN_APP","args":{"app":"Chrome"}}
+"kuch bhi" -> {"skill":"NONE","args":{}}
+Choose NONE whenever no explicit command evidence supports a native skill. Never infer TORCH from volume or unrelated language.
+""".trimIndent()
+
     fun skillFor(intent: StepIntent): String? = when (intent) {
         is StepIntent.Torch -> "TORCH"
         is StepIntent.Volume -> "VOLUME"

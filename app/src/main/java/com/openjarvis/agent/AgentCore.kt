@@ -13,6 +13,8 @@ import android.provider.Settings
 import android.provider.AlarmClock
 import android.provider.MediaStore
 import android.provider.ContactsContract
+import android.provider.CalendarContract
+import java.time.ZoneId
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -23,6 +25,8 @@ import com.openjarvis.devicecontrol.PowerOffActivity
 import com.openjarvis.accessibility.ScreenReader
 import com.openjarvis.graphify.AnalysisEngine
 import com.openjarvis.graphify.GraphifyRepository
+import com.openjarvis.graphify.MemoryContextBuilder
+import com.openjarvis.headroom.HeadroomCompressor
 import com.openjarvis.intelligence.AIAppInteractor
 import com.openjarvis.intelligence.AIApps
 import com.openjarvis.intelligence.AppAnalyzer
@@ -130,9 +134,13 @@ INSTALLED APPS: {INSTALLED_APPS}
         val remaining = remainingLlmBudgetMs(budgetStartMs)
         val requestBudget = AppCommandLlmPolicy.timeoutMs(user, remaining)
         if (requestBudget <= 0L) return Result.failure(IllegalStateException("LLM time budget exceeded. Try a shorter command."))
-        // Deterministic app parsers run before this fallback; app-control LLM fallback is capped at 10 seconds.
-        // Compress system/context material only. The user's command remains byte-identical.
-        val headroom = HeadroomLite.compress(system, HeadroomLite.ContentKind.POLICY)
+        // Hybrid stage removes only redundant formatting and immediately repeated tool/log lines.
+        // Then Headroom Lite applies its existing policy compressor. The user command stays byte-identical.
+        val hybrid = HeadroomCompressor.compressContext(system)
+        val headroom = HeadroomLite.compress(hybrid.compressed, HeadroomLite.ContentKind.POLICY)
+        if (hybrid.charactersSaved > 0) {
+            Log.i(TAG, "headroom_hybrid stage=system_prompt saved_chars=${hybrid.charactersSaved} saved_tokens_est=${hybrid.estimatedTokensSaved}")
+        }
         if (headroom.savedChars > 0) {
             Log.i(TAG, "headroom_lite stage=system_prompt saved_chars=${headroom.savedChars} saved_tokens_est=${headroom.savedTokens} ratio=${"%.3f".format(Locale.US, headroom.compressionRatio)}")
         }
@@ -150,8 +158,14 @@ INSTALLED APPS: {INSTALLED_APPS}
     ): Result<String> {
         val remaining = remainingLlmBudgetMs(budgetStartMs)
         if (remaining <= 0L) return Result.failure(IllegalStateException("LLM time budget exceeded."))
-        val cloudPrompt = HeadroomLite.compress(cloudSystem, HeadroomLite.ContentKind.POLICY)
-        val localPrompt = HeadroomLite.compress(localSystem, HeadroomLite.ContentKind.POLICY)
+        val cloudPrompt = HeadroomLite.compress(
+            HeadroomCompressor.compressContext(cloudSystem).compressed,
+            HeadroomLite.ContentKind.POLICY
+        )
+        val localPrompt = HeadroomLite.compress(
+            HeadroomCompressor.compressContext(localSystem).compressed,
+            HeadroomLite.ContentKind.POLICY
+        )
         return withTimeoutOrNull(remaining) {
             hybridChatRouter.complete(cloudPrompt.content, localPrompt.content, user, remaining)
         } ?: Result.failure(IllegalStateException("LLM time budget exceeded."))
@@ -241,7 +255,11 @@ Ask at most one question per response. Use Hindi/Marathi/Hinglish/English matchi
         val remaining = remainingLlmBudgetMs(budgetStartMs)
         val requestBudget = AppCommandLlmPolicy.timeoutMs(user, remaining)
         if (requestBudget <= 0L) return Result.failure(IllegalStateException("LLM time budget exceeded. Try a shorter command."))
-        val headroom = HeadroomLite.compress(system, HeadroomLite.ContentKind.POLICY)
+        val hybrid = HeadroomCompressor.compressContext(system)
+        val headroom = HeadroomLite.compress(hybrid.compressed, HeadroomLite.ContentKind.POLICY)
+        if (hybrid.charactersSaved > 0) {
+            Log.i(TAG, "headroom_hybrid stage=skill_system_prompt saved_chars=${hybrid.charactersSaved}")
+        }
         if (headroom.savedChars > 0) {
             Log.i(TAG, "headroom_lite stage=skill_system_prompt saved_chars=${headroom.savedChars} saved_tokens_est=${headroom.savedTokens}")
         }
@@ -567,6 +585,60 @@ ${rawResponse.take(1000)}
                         return@withLock
                     }
 
+                    // Supported app integrations use deterministic Android intents before any LLM fallback.
+                    val instagramQuery = AppIntegrationCommandParser.parseInstagramSearch(safeCommand)
+                    if (instagramQuery != null) {
+                        try {
+                            val plan = AppIntegrationExecutionPolicy.instagramSearch(instagramQuery)
+                                ?: throw IllegalArgumentException("Instagram search phrase is empty")
+                            val result = executeInstagramSearchWithFallback(instagramQuery)
+                            graphifyRepo.logTask(safeCommand, "success (Instagram integration): $result", "Android app integration", 0)
+                            _state.value = AgentState.Done(result)
+                        } catch (error: Exception) {
+                            val detail = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
+                            AgentDiagnostics.record(context, "instagram-integration", safeCommand, detail, error = error, provider = "Android app integration", model = "Not used")
+                            _state.value = AgentState.Error(detail)
+                        }
+                        return@withLock
+                    }
+
+                    val telegramRequest = AppIntegrationCommandParser.parseTelegramMessage(safeCommand)
+                    if (telegramRequest != null) {
+                        try {
+                            val plan = AppIntegrationExecutionPolicy.telegramMessage(
+                                telegramRequest.message,
+                                telegramRequest.contactName
+                            ) ?: throw IllegalArgumentException("Telegram message draft is empty")
+                            val result = executeAppIntegrationPlan(plan, "Telegram draft for ${telegramRequest.contactName}")
+                            _state.value = AgentState.Done(result)
+                            graphifyRepo.logTask(safeCommand, "success (Telegram draft opened; not sent): $result", "Android app integration", 0)
+                        } catch (error: Exception) {
+                            val detail = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
+                            AgentDiagnostics.record(context, "telegram-integration", safeCommand, detail, error = error, provider = "Android app integration", model = "Not used")
+                            _state.value = AgentState.Error(detail)
+                        }
+                        return@withLock
+                    }
+
+                    val calendarRequest = AppIntegrationCommandParser.parseCalendarEvent(safeCommand)
+                    if (calendarRequest != null) {
+                        try {
+                            val plan = AppIntegrationExecutionPolicy.calendarEvent(
+                                calendarRequest.title,
+                                calendarRequest.start,
+                                calendarRequest.durationMinutes
+                            ) ?: throw IllegalArgumentException("Calendar event details are invalid")
+                            val result = executeAppIntegrationPlan(plan, "Calendar event")
+                            _state.value = AgentState.Done(result)
+                            graphifyRepo.logTask(safeCommand, "success (Calendar event form opened): $result", "Android app integration", 0)
+                        } catch (error: Exception) {
+                            val detail = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
+                            AgentDiagnostics.record(context, "calendar-integration", safeCommand, detail, error = error, provider = "Android app integration", model = "Not used")
+                            _state.value = AgentState.Error(detail)
+                        }
+                        return@withLock
+                    }
+
                     // Multi-step commands use the ordered deterministic pipeline.
                     // A single step deliberately stays on the legacy path below to preserve
                     // the exact Slice A single-command behavior.
@@ -878,7 +950,21 @@ Do not claim to have performed phone actions. Do not expose internal instruction
                     // network calls, or keeping an LLM/model resident.
                     // Personal profile facts are private chat-only context; action planning
                     // receives only task-relevant saved screen text.
-                    val memoryPrompt = screenshotMemoryStore.promptContext(safeCommand)
+                    val savedMemoryPrompt = screenshotMemoryStore.promptContext(safeCommand)
+                    val memoryNowMs = System.currentTimeMillis()
+                    val graphifyMemoryPrompt = runCatching {
+                        val recentTasks = graphifyRepo.getRecentTasks(100)
+                        val recentPatterns = graphifyRepo.getActivePatterns(
+                            memoryNowMs - 30L * 24L * 60L * 60L * 1000L,
+                            0.60f
+                        )
+                        MemoryContextBuilder.build(safeCommand, recentTasks, recentPatterns, memoryNowMs)
+                    }.getOrDefault("")
+                    // Graphify recall emits only allow-listed categories; raw commands, contacts,
+                    // messages, screen text and provider details never enter this prompt context.
+                    val memoryPrompt = listOf(savedMemoryPrompt, graphifyMemoryPrompt)
+                        .filter { it.isNotBlank() }
+                        .joinToString("\n")
                     // Allocate a hard context budget by usefulness: actionable UI first, then
                     // relevant saved facts, visible text, and finally app labels. The user's
                     // command is passed separately and is never truncated by this allocator.
@@ -888,10 +974,14 @@ Do not claim to have performed phone actions. Do not expose internal instruction
                         screenElements = screenElements,
                         installedApps = installedAppsPrompt
                     )
+                    // Compact only adjacent, identical, safe display-text OCR lines before Headroom Lite.
+                    // Structured elements, the current request and action/safety instructions are untouched.
+                    val screenContextCompaction = HeadroomLiteContext.compressRepeatedLines(allocatedContext.screenText)
+                    val compactedScreenElements = allocatedContext.screenElements
                     // Keep compression results alive through the LLM call so exact originals remain recoverable.
                     val memoryCompression = HeadroomLite.compress(allocatedContext.memory, HeadroomLite.ContentKind.TEXT)
-                    val screenTextCompression = HeadroomLite.compress(allocatedContext.screenText, HeadroomLite.ContentKind.UI_TEXT)
-                    val screenElementsCompression = HeadroomLite.compress(allocatedContext.screenElements, HeadroomLite.ContentKind.UI_TEXT)
+                    val screenTextCompression = HeadroomLite.compress(screenContextCompaction.text, HeadroomLite.ContentKind.UI_TEXT)
+                    val screenElementsCompression = HeadroomLite.compress(compactedScreenElements, HeadroomLite.ContentKind.UI_TEXT)
                     val installedAppsCompression = HeadroomLite.compress(allocatedContext.installedApps, HeadroomLite.ContentKind.UI_TEXT)
                     val compactMemoryPrompt = memoryCompression.content
                     val compactScreenText = screenTextCompression.content
@@ -1039,14 +1129,7 @@ Never invent contact names or app labels. Understand Hindi, Marathi, Hinglish an
                     val skillSystem = """
 You are Jarvis, an Android skill router. Return ONLY one JSON object with exactly "skill" and "args".
 Allowed skills: OPEN_APP, SETTINGS, CALL, SEARCH, WHATSAPP_MESSAGE, SMS_MESSAGE, ALARM, TIMER, TORCH, VOLUME, MAPS, ANDROID_UI_ACTIONS.
-Few-shot examples:
-"flashlight on" -> {"skill":"TORCH","args":{"enabled":true}}
-"awaaz badhao" -> {"skill":"VOLUME","args":{"direction":"up"}}
-"alarm subah 6 baje" -> {"skill":"ALARM","args":{"hour":6,"minute":0}}
-"timer 2 minutes" -> {"skill":"TIMER","args":{"seconds":120}}
-"open Chrome" -> {"skill":"OPEN_APP","args":{"app":"Chrome"}}
-"kuch bhi" -> {"skill":"NONE","args":{}}
-Choose NONE whenever no explicit command evidence supports a native skill. Never infer TORCH from volume or unrelated language.
+${LlmSkillRouteSafetyPolicy.fewShotPromptInstructions()}
 Use ANDROID_UI_ACTIONS only for visible-screen tasks. Never invent app labels, contacts or controls.
 Never tap Send, Delete, Pay, Purchase, or other final confirmation controls. For messaging, open the composer only and never send.
 For UI actions, use only open_app, click, tap, type_text, type, scroll, back, press_back, home, press_home, press_recents, wait, wait_for, read_screen, ai_prompt, extract_text, error.
@@ -1071,7 +1154,7 @@ ${fullSystem.substringAfter("MEMORY:")}
                                 return@fold
                             }
                             if (skillPlan.skill != "ANDROID_UI_ACTIONS") {
-                                if (LlmSkillRouteSafetyPolicy.acceptedSkill(skillPlan.skill, safeCommand) == null) {
+                                if (LlmSkillRouteSafetyPolicy.acceptedMainPromptSkill(skillPlan.skill, safeCommand) == null) {
                                     val question = LlmSkillRouteSafetyPolicy.clarificationQuestion(skillPlan.skill)
                                     pendingClarification = ClarificationWorkflowPolicy.Pending(safeCommand, question, 0)
                                     _state.value = AgentState.Done(question)
@@ -1113,7 +1196,7 @@ ${fullSystem.substringAfter("MEMORY:")}
                                             SkillRegistry.Kind.ALARM -> "Alarm set"
                                             SkillRegistry.Kind.TIMER -> "Timer started"
                                             SkillRegistry.Kind.TORCH -> if (args["enabled"] == "true") "Torch turned on" else "Torch turned off"
-                                            SkillRegistry.Kind.VOLUME -> "Volume adjusted"
+                                            SkillRegistry.Kind.VOLUME -> if (args["direction"] == "up" || args["up"] == "true") "Volume badha diya" else "Volume kam kar diya"
                                             SkillRegistry.Kind.MAPS -> "Opening navigation"
                                             SkillRegistry.Kind.CALL -> "Dialer opened"
                                             SkillRegistry.Kind.TIME -> SkillRegistry.timeReply(safeCommand)
@@ -2248,8 +2331,85 @@ Actions remaining: ${session.remainingActions}
         return "Searched Instagram for $query (results verified; deterministic in-app route)"
     }
 
+    private suspend fun executeInstagramSearchWithFallback(query: String): String {
+        require(query.isNotBlank()) { "Instagram search query is empty" }
+        if (JarvisAccessibilityService.instance == null) {
+            val plan = AppIntegrationExecutionPolicy.instagramSearch(query)
+                ?: throw IllegalArgumentException("Instagram search phrase is empty")
+            return executeAppIntegrationPlan(plan, "Instagram search for $query")
+        }
+        return executeInstagramInAppSearch(query)
+    }
+
+    private suspend fun executeAppIntegrationPlan(
+        plan: AppIntegrationExecutionPolicy.Plan,
+        actionLabel: String
+    ): String {
+        val intent = Intent(plan.action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        plan.uri?.let { intent.data = Uri.parse(it) }
+        plan.mimeType?.let { intent.type = it }
+        plan.packageName?.let(intent::setPackage)
+        plan.text?.let { intent.putExtra(Intent.EXTRA_TEXT, it) }
+
+        if (plan.title != null && plan.start != null && plan.durationMinutes != null) {
+            val beginMillis = plan.start.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            val endMillis = beginMillis + plan.durationMinutes * 60_000L
+            intent.putExtra(CalendarContract.Events.TITLE, plan.title)
+            intent.putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, beginMillis)
+            intent.putExtra(CalendarContract.EXTRA_EVENT_END_TIME, endMillis)
+            intent.putExtra(CalendarContract.Events.EVENT_TIMEZONE, ZoneId.systemDefault().id)
+        }
+
+        var launchIntent = intent
+        var resolved = launchIntent.resolveActivity(context.packageManager)
+        if (resolved == null && plan.action == Intent.ACTION_VIEW &&
+            plan.packageName == "com.instagram.android" && plan.uri != null
+        ) {
+            // Instagram is optional; a browser can still open the official search URL.
+            launchIntent = Intent(Intent.ACTION_VIEW, Uri.parse(plan.uri))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            resolved = launchIntent.resolveActivity(context.packageManager)
+        }
+        if (resolved == null) {
+            val target = plan.packageName ?: actionLabel
+            throw IllegalStateException("Required app or compatible activity is unavailable: $target")
+        }
+
+        try {
+            context.startActivity(launchIntent)
+        } catch (error: Exception) {
+            throw IllegalStateException("Android could not open $actionLabel: ${error.message ?: error.javaClass.simpleName}", error)
+        }
+
+        // Intent.resolveActivity returns a ComponentName, not ResolveInfo.
+        val targetPackage = resolved.packageName
+        var foregroundConfirmed = false
+        for (check in 0 until 10) {
+            if (JarvisAccessibilityService.instance?.isPackageActive(targetPackage) == true) {
+                foregroundConfirmed = true
+                break
+            }
+            kotlinx.coroutines.delay(250)
+        }
+
+        val verification = if (foregroundConfirmed) "foreground confirmed" else "foreground confirmation unavailable"
+        return when {
+            plan.action == Intent.ACTION_SEND && plan.requiresUserSelection ->
+                "Telegram draft opened for ${plan.recipientName ?: "your selected contact"}; choose the chat and tap Send yourself ($verification)."
+            plan.action == Intent.ACTION_INSERT && plan.requiresUserConfirmation ->
+                "Calendar event form opened; review the details and save it yourself ($verification)."
+            else -> "$actionLabel opened ($verification)."
+        }
+    }
+
     private fun canParsePipelineStep(step: String): Boolean =
-        CommandRouter.classify(step) != CommandRouter.Route.NONE
+        CommandRouter.classify(step) != CommandRouter.Route.NONE ||
+            AppIntegrationCommandParser.parseInstagramSearch(step) != null ||
+            AppIntegrationCommandParser.parseTelegramMessage(step) != null ||
+            AppIntegrationCommandParser.parseCalendarEvent(step) != null ||
+            AppIntegrationCommandParser.parseInstagramSearch(step) != null ||
+            AppIntegrationCommandParser.parseTelegramMessage(step) != null ||
+            AppIntegrationCommandParser.parseCalendarEvent(step) != null
 
     private fun selectedMessageApp(app: String?): String = when (app?.lowercase(java.util.Locale.ROOT)) {
         "sms" -> "sms"
@@ -2266,7 +2426,41 @@ Actions remaining: ${session.remainingActions}
                 override val name: String = "skill"
 
                 override suspend fun handle(step: String, ctx: StepContext): StepOutcome? {
-                    // SkillRegistry is the first parser for every pipeline step.
+                    val instagramQuery = AppIntegrationCommandParser.parseInstagramSearch(step)
+                    if (instagramQuery != null) {
+                        return try {
+                            val plan = AppIntegrationExecutionPolicy.instagramSearch(instagramQuery)
+                                ?: throw IllegalArgumentException("Instagram search phrase is empty")
+                            StepOutcome(true, executeAppIntegrationPlan(plan, "Instagram search for $instagramQuery"), ctx.copy(app = "instagram"))
+                        } catch (error: Exception) {
+                            StepOutcome(false, error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName, ctx)
+                        }
+                    }
+
+                    val telegramRequest = AppIntegrationCommandParser.parseTelegramMessage(step)
+                    if (telegramRequest != null) {
+                        return try {
+                            val plan = AppIntegrationExecutionPolicy.telegramMessage(telegramRequest.message, telegramRequest.contactName)
+                                ?: throw IllegalArgumentException("Telegram message draft is empty")
+                            val reply = executeAppIntegrationPlan(plan, "Telegram draft for ${telegramRequest.contactName}")
+                            StepOutcome(true, reply, ctx.copy(app = "telegram", contact = telegramRequest.contactName, messageText = telegramRequest.message))
+                        } catch (error: Exception) {
+                            StepOutcome(false, error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName, ctx)
+                        }
+                    }
+
+                    val calendarRequest = AppIntegrationCommandParser.parseCalendarEvent(step)
+                    if (calendarRequest != null) {
+                        return try {
+                            val plan = AppIntegrationExecutionPolicy.calendarEvent(calendarRequest.title, calendarRequest.start, calendarRequest.durationMinutes)
+                                ?: throw IllegalArgumentException("Calendar event details are invalid")
+                            StepOutcome(true, executeAppIntegrationPlan(plan, "Calendar event"), ctx)
+                        } catch (error: Exception) {
+                            StepOutcome(false, error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName, ctx)
+                        }
+                    }
+
+                    // SkillRegistry is the first parser for every remaining pipeline step.
                     // StepIntentParser remains the compatibility parser for richer Hindi/Marathi forms.
                     val skillRequest = SkillRegistry.parse(step)
                     if (skillRequest != null) {
@@ -2304,7 +2498,7 @@ Actions remaining: ${session.remainingActions}
                                     SkillRegistry.Kind.ALARM -> "Alarm set"
                                     SkillRegistry.Kind.TIMER -> "Timer started"
                                     SkillRegistry.Kind.TORCH -> if (skillRequest.args["enabled"] == "true") "Torch turned on" else "Torch turned off"
-                                    SkillRegistry.Kind.VOLUME -> "Volume adjusted"
+                                    SkillRegistry.Kind.VOLUME -> if (skillRequest.args["direction"] == "up") "Volume badha diya" else "Volume kam kar diya"
                                     SkillRegistry.Kind.MAPS -> "Opening navigation"
                                 }
                                 val nextContext = when (skillRequest.kind) {
@@ -2456,7 +2650,7 @@ Actions remaining: ${session.remainingActions}
                             StepOutcome(false, "Could not open web search: ${error.message ?: error.javaClass.simpleName}", ctx)
                         }
                         "instagram", "insta" -> try {
-                            StepOutcome(true, executeInstagramInAppSearch(contextualQuery), ctx)
+                            StepOutcome(true, executeInstagramSearchWithFallback(contextualQuery), ctx)
                         } catch (error: Exception) {
                             StepOutcome(false, error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName, ctx)
                         }
@@ -2603,8 +2797,7 @@ Actions remaining: ${session.remainingActions}
         val skillSystem = """
 You are Jarvis, an Android skill router. Return ONLY one JSON object with exactly "skill" and "args".
 Allowed skills: OPEN_APP, SETTINGS, CALL, SEARCH, WHATSAPP_MESSAGE, SMS_MESSAGE, ALARM, TIMER, TORCH, VOLUME, MAPS, ANDROID_UI_ACTIONS.
-Native example: {"skill":"TORCH","args":{"enabled":true}}.
-UI example: {"skill":"ANDROID_UI_ACTIONS","args":{"actions":[{"action":"open_app","label":"Chrome"}]}}.
+${LlmSkillRouteSafetyPolicy.fewShotPromptInstructions()}
 Use a native skill whenever it fits. Use ANDROID_UI_ACTIONS only for visible-screen tasks. Never invent app labels, contacts or controls.
 Never tap Send, Delete, Pay, Purchase, or other final confirmation controls. For messaging, open the composer only and never send.
 For UI actions, use only open_app, click, tap, type_text, type, scroll, back, press_back, home, press_home, press_recents, wait, wait_for, read_screen, ai_prompt, extract_text, error.
@@ -2645,6 +2838,14 @@ ${fullSystem.substringAfter("MEMORY:")}
             )
         }
 
+        if (plan.skill == "NONE") {
+            return StepOutcome(true, ClarificationWorkflowPolicy.OFFLINE_FALLBACK, ctx)
+        }
+        if (plan.skill != "ANDROID_UI_ACTIONS" &&
+            LlmSkillRouteSafetyPolicy.acceptedPipelinePromptSkill(plan.skill, step) == null
+        ) {
+            return StepOutcome(true, LlmSkillRouteSafetyPolicy.clarificationQuestion(plan.skill), ctx)
+        }
         if (plan.skill != "ANDROID_UI_ACTIONS") {
             val kind = try {
                 SkillRegistry.Kind.valueOf(plan.skill)
@@ -2680,7 +2881,7 @@ ${fullSystem.substringAfter("MEMORY:")}
                         SkillRegistry.Kind.ALARM -> "Alarm set"
                         SkillRegistry.Kind.TIMER -> "Timer started"
                         SkillRegistry.Kind.TORCH -> if (args["enabled"] == "true") "Torch turned on" else "Torch turned off"
-                        SkillRegistry.Kind.VOLUME -> "Volume adjusted"
+                        SkillRegistry.Kind.VOLUME -> if (args["direction"] == "up" || args["up"] == "true") "Volume badha diya" else "Volume kam kar diya"
                         SkillRegistry.Kind.MAPS -> "Opening navigation"
                         SkillRegistry.Kind.CALL -> "Dialer opened"
                         SkillRegistry.Kind.TIME -> "Abhi " + SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date()) + " baj rahe hain."
@@ -3106,7 +3307,7 @@ ${fullSystem.substringAfter("MEMORY:")}
                 return "com.google.android.youtube"
             }
         }
-        val knownPackage = knownPackages[normalized]
+        val knownPackage = knownPackages[normalized] ?: AppIntegrationExecutionPolicy.appPackage(normalized)
         if (knownPackage != null && context.packageManager.getLaunchIntentForPackage(knownPackage) != null) {
             return knownPackage
         }

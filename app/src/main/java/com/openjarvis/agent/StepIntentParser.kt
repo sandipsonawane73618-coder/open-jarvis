@@ -63,7 +63,8 @@ object StepIntentParser {
         "youtube" to "youtube", "yt" to "youtube",
         "maps" to "maps", "google maps" to "google maps",
         "telegram" to "telegram",
-        "facebook" to "facebook", "fb" to "facebook",
+        "calendar" to "calendar", "google calendar" to "calendar", "calendar app" to "calendar",
+                "facebook" to "facebook", "fb" to "facebook",
         "settings" to "settings", "phone" to "phone", "camera" to "camera",
         "gallery" to "gallery", "calculator" to "calculator",
         "gpay" to "google pay", "google pay" to "google pay"

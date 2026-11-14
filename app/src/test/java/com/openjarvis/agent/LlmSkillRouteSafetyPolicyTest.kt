@@ -27,4 +27,25 @@ class LlmSkillRouteSafetyPolicyTest {
             assertFalse("Torch must remain off for command: $command", torchExecuted)
         }
     }
+    
+    private fun assertTorchRejected(
+        commands: List<String>,
+        gate: (String, String) -> String?
+    ) {
+        val fakeLlm = AlwaysTorchExampleFakeLlm()
+        commands.forEach { command ->
+            val modelPlan = fakeLlm.complete(command)
+            assertNull("TORCH must be rejected for command: $command", gate(modelPlan.skill, command))
+            var torchExecuted = false
+            gate(modelPlan.skill, command)?.let { torchExecuted = true }
+            assertFalse("Torch must remain off for command: $command", torchExecuted)
+        }
+    }
+
+    @Test fun mainSkillPromptRejectsTorchExampleForVolumeAndVagueCommands() =
+        assertTorchRejected(listOf("Awaaz badhao", "kuch bhi"), LlmSkillRouteSafetyPolicy::acceptedMainPromptSkill)
+
+    @Test fun pipelineSkillPromptRejectsTorchExampleForVolumeAndVagueCommands() =
+        assertTorchRejected(listOf("Awaaz badhao", "kuch bhi"), LlmSkillRouteSafetyPolicy::acceptedPipelinePromptSkill)
 }
+

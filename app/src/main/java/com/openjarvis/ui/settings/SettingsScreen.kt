@@ -78,6 +78,15 @@ fun SettingsScreen(
             androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
     }
+    val speechLocaleManager = remember { com.openjarvis.voice.SpeechLocaleSupportManager(context) }
+    val speechLocaleLabels = listOf("hi-IN" to "Hindi", "en-IN" to "English (India)", "mr-IN" to "Marathi")
+    val speechLocaleStatuses = remember {
+        androidx.compose.runtime.mutableStateMapOf<String, String>().apply {
+            speechLocaleLabels.forEach { (locale, _) -> put(locale, speechLocaleManager.savedStatus(locale)) }
+        }
+    }
+    var localeAwaitingDownloadConsent by remember { mutableStateOf<String?>(null) }
+
     val savedProvider = "Ollama (Local)"
     val savedModel = providerPrefs.getString("provider_model", OllamaProvider.DEFAULT_MODEL)
         .orEmpty().let { OllamaProvider.supportedChatModel(it) }
@@ -540,6 +549,72 @@ fun SettingsScreen(
                                 )
                             )
                         }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        color = VoidColor.Void900,
+                        border = BorderStroke(1.dp, VoidColor.BorderSubtle)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("Offline speech languages", color = VoidColor.TextPrimary, fontSize = 14.sp, fontWeight = FontWeight(600))
+                            Text(
+                                "Check installed on-device packs. Downloads are requested only after your approval; speech recognition never falls back to network speech.",
+                                color = VoidColor.TextDisabled, fontSize = 11.sp
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    speechLocaleLabels.forEach { (locale, _) ->
+                                        speechLocaleStatuses[locale] = "Checking…"
+                                        speechLocaleManager.checkRecognitionSupport(locale) { status ->
+                                            speechLocaleStatuses[locale] = status
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("Check language support") }
+                            speechLocaleLabels.forEach { (locale, label) ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("$label ($locale)", color = VoidColor.TextPrimary, fontSize = 12.sp)
+                                        Text(speechLocaleStatuses[locale] ?: "Not checked", color = VoidColor.TextDisabled, fontSize = 11.sp)
+                                    }
+                                    if (speechLocaleStatuses[locale] in setOf("Available", "Download pending")) {
+                                        TextButton(onClick = { localeAwaitingDownloadConsent = locale }) {
+                                            Text("Download")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    localeAwaitingDownloadConsent?.let { locale ->
+                        val label = speechLocaleLabels.firstOrNull { it.first == locale }?.second ?: locale
+                        AlertDialog(
+                            onDismissRequest = { localeAwaitingDownloadConsent = null },
+                            title = { Text("Download $label offline speech pack?") },
+                            text = {
+                                Text("Jarvis will request the Android on-device language model. This may use your network only to download the language pack. Speech recognition itself remains on-device. Android may show its own approval prompt.")
+                            },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    localeAwaitingDownloadConsent = null
+                                    speechLocaleStatuses[locale] = "Download requested"
+                                    speechLocaleManager.requestDownload(locale) { status ->
+                                        speechLocaleStatuses[locale] = status
+                                    }
+                                }) { Text("Allow download") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { localeAwaitingDownloadConsent = null }) { Text("Cancel") }
+                            }
+                        )
                     }
                 }
                 
