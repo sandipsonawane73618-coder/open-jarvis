@@ -339,6 +339,73 @@ ${rawResponse.take(1000)}
         return rawResponse to initial
     }
 
+    /**
+     * Execute the online JSON command plan without inflating executeTask's coroutine state
+     * machine. A false result means unavailable/rejected and deliberately falls through to
+     * the existing offline parsers; true means a terminal result was produced.
+     */
+    private suspend fun executeCommandBrainIfAvailable(command: String): Boolean {
+        val settings = hybridChatSettingsStore.load()
+        if (!settings.onlineChatEnabled) return false
+
+        _state.value = AgentState.Running("hybrid command brain...")
+        val startedAt = System.currentTimeMillis()
+        val installedLabels = runCatching { getInstalledLauncherApps().map { it.label } }
+            .getOrDefault(emptyList())
+        val result = withTimeoutOrNull(1_500L) {
+            commandBrain.plan(command, 1_500L, installedLabels)
+        }
+        val plan = result?.getOrNull()
+        if (plan == null) {
+            val detail = result?.exceptionOrNull()?.message
+                ?: "Gemini/Groq JSON chain timed out or is unavailable"
+            Log.w(TAG, "CommandBrain unavailable after 1500ms; continuing to offline parsers: " + detail)
+            return false
+        }
+
+        val guarded = CommandBrainExecutionPolicy.validate(plan, command)
+        if (guarded.isFailure) {
+            val detail = guarded.exceptionOrNull()?.message ?: "Command brain plan rejected"
+            AgentDiagnostics.record(
+                context, "command-brain-policy", command, detail,
+                provider = "Hybrid CommandBrain", model = settings.model
+            )
+            Log.w(TAG, "CommandBrain plan rejected; continuing to guarded offline parser: " + detail)
+            return false
+        }
+
+        val validated = guarded.getOrThrow()
+        return try {
+            val stepResults = CommandBrainExecution.execute(validated) { step ->
+                runCatching { executeCommandBrainStep(step, command) }
+            }.getOrElse { throw it }
+            val reply = when {
+                validated.acknowledge -> "Haan, boliye. Main sun raha hoon."
+                validated.steps.singleOrNull() == CommandBrainStep.None ->
+                    "Command samajh nahi aaya. Dobara boliye."
+                else -> stepResults.joinToString(". ")
+            }
+            graphifyRepo.logTask(
+                command, "success (hybrid command brain): " + reply,
+                "Gemini/Groq JSON command brain", System.currentTimeMillis() - startedAt
+            )
+            _state.value = AgentState.Done(reply)
+            true
+        } catch (error: Exception) {
+            val detail = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
+            AgentDiagnostics.record(
+                context, "command-brain-execution", command, detail,
+                error = error, provider = "Hybrid CommandBrain", model = settings.model
+            )
+            graphifyRepo.logTask(
+                command, "failed (hybrid command brain): " + detail,
+                "Gemini/Groq JSON command brain", System.currentTimeMillis() - startedAt
+            )
+            _state.value = AgentState.Error(detail)
+            true
+        }
+    }
+
     fun executeTask(cleanCommand: String, onFinished: ((AgentState) -> Unit)? = null) {
         scope.launch {
             taskMutex.withLock {
@@ -937,68 +1004,9 @@ Do not claim to have performed phone actions. Do not expose internal instruction
                         return@withLock
                     }
 
-                    // Hybrid JSON command brain is the online action planner after all instant
-                    // deterministic routes above. The existing native/Ollama planners below
-                    // remain the offline fallback when the configured cloud chain is unavailable.
-                    val commandBrainSettings = hybridChatSettingsStore.load()
-                    if (commandBrainSettings.onlineChatEnabled) {
-                        _state.value = AgentState.Running("hybrid command brain...")
-                        val brainStartedAt = System.currentTimeMillis()
-                        val installedLabels = runCatching { getInstalledLauncherApps().map { it.label } }
-                            .getOrDefault(emptyList())
-                        val brainResult = withTimeoutOrNull(1_500L) {
-                            commandBrain.plan(safeCommand, 1_500L, installedLabels)
-                        }
-                        val plan = brainResult?.getOrNull()
-                        if (plan != null) {
-                            val guardedPlan = CommandBrainExecutionPolicy.validate(plan, safeCommand)
-                            if (guardedPlan.isSuccess) {
-                                val validated = guardedPlan.getOrThrow()
-                                try {
-                                    val stepResults = CommandBrainExecution.execute(validated) { step ->
-                                        runCatching { executeCommandBrainStep(step, safeCommand) }
-                                    }.getOrElse { throw it }
-                                    val reply = when {
-                                        validated.acknowledge -> "Haan, boliye. Main sun raha hoon."
-                                        validated.steps.singleOrNull() == CommandBrainStep.None ->
-                                            "Command samajh nahi aaya. Dobara boliye."
-                                        else -> stepResults.joinToString(". ")
-                                    }
-                                    graphifyRepo.logTask(
-                                        safeCommand,
-                                        "success (hybrid command brain): " + reply,
-                                        "Gemini/Groq JSON command brain",
-                                        System.currentTimeMillis() - brainStartedAt
-                                    )
-                                    _state.value = AgentState.Done(reply)
-                                    return@withLock
-                                } catch (error: Exception) {
-                                    val detail = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
-                                    AgentDiagnostics.record(
-                                        context, "command-brain-execution", safeCommand, detail,
-                                        error = error, provider = "Hybrid CommandBrain", model = commandBrainSettings.model
-                                    )
-                                    graphifyRepo.logTask(
-                                        safeCommand, "failed (hybrid command brain): " + detail,
-                                        "Gemini/Groq JSON command brain", System.currentTimeMillis() - brainStartedAt
-                                    )
-                                    _state.value = AgentState.Error(detail)
-                                    return@withLock
-                                }
-                            } else {
-                                val detail = guardedPlan.exceptionOrNull()?.message ?: "Command brain plan rejected"
-                                AgentDiagnostics.record(
-                                    context, "command-brain-policy", safeCommand, detail,
-                                    provider = "Hybrid CommandBrain", model = commandBrainSettings.model
-                                )
-                                Log.w(TAG, "CommandBrain plan rejected; continuing to guarded offline parser: " + detail)
-                            }
-                        } else {
-                            val detail = brainResult?.exceptionOrNull()?.message
-                                ?: "Gemini/Groq JSON chain timed out or is unavailable"
-                            Log.w(TAG, "CommandBrain unavailable after 1500ms; continuing to offline parsers: " + detail)
-                        }
-                    }
+                    // Online CommandBrain runs after instant deterministic routes; false means
+                    // the existing guarded native/Ollama offline fallback should continue.
+                    if (executeCommandBrainIfAvailable(safeCommand)) return@withLock
 
                     var continueToActionPlanner = false
                     var shouldAskClarify = false
