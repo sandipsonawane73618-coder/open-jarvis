@@ -10,7 +10,7 @@ object SkillRegistry {
 
     interface SkillExecutor { suspend fun execute(request: Request): Result<Unit> }
 
-    private fun norm(s: String) = Normalizer.normalize(s, Normalizer.Form.NFC)
+    private fun norm(s: String) = Normalizer.normalize(com.openjarvis.agent.VoiceTextNormalizer.normalize(s), Normalizer.Form.NFC)
         .lowercase(Locale.ROOT).trim().replace(Regex("\\s+"), " ")
 
     private val EXPLICIT_NAVIGATION_WORDS = setOf(
