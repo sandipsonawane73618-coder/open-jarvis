@@ -80,6 +80,19 @@ jobs:
       - name: Validate feature-to-test map
         run: python3 scripts/check-feature-test-map.py
 
+      - name: Required feature-class guard
+        run: python3 scripts/check-required-feature-classes.py
+
+      - name: Audit remote feature branches with git cherry
+        run: bash scripts/audit-branch-cherry.sh origin/feat/jarvis-all-in-one
+
+      - name: Upload branch cherry audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: branch-cherry-counts
+          path: artifacts/branch-cherry-counts.txt
+          if-no-files-found: error
       - name: Run unit tests
         run: gradle --no-daemon :app:testDebugUnitTest
 
