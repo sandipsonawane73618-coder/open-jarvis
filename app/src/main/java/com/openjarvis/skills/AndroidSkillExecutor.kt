@@ -121,6 +121,17 @@ class AndroidSkillExecutor(private val context: Context) : SkillRegistry.SkillEx
                 return "com.google.android.youtube"
             }
         }
+        if (normalized in setOf("calendar", "google calendar")) {
+            val calendarPackages = listOf(
+                "com.google.android.calendar",
+                "com.coloros.calendar",
+                "com.android.calendar"
+            )
+            calendarPackages.firstOrNull { packageName ->
+                context.packageManager.getLaunchIntentForPackage(packageName) != null
+            }?.let { return it }
+            throw IllegalStateException("No Calendar app is installed on this device.")
+        }
         val known = when (normalized) {
             "youtube" -> "com.google.android.youtube"
             "whatsapp" -> "com.whatsapp"
