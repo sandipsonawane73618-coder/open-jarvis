@@ -4,7 +4,7 @@ import com.openjarvis.llm.providers.GeminiProvider
 import com.openjarvis.llm.providers.GroqProvider
 import kotlinx.coroutines.CancellationException
 
-/** Routes ordinary conversation only; action planning and skills remain on local paths. */
+/** Routes ordinary chat and strict JSON command plans through the same configured provider chain. */
 internal class HybridChatRouter(
     private val settings: () -> HybridChatSettings,
     private val apiKey: (HybridChatProvider) -> String,
@@ -17,10 +17,35 @@ internal class HybridChatRouter(
     private val localProvider: () -> LLMProvider,
     private val cloudTimeoutMs: Long = DEFAULT_CLOUD_TIMEOUT_MS
 ) {
-    suspend fun complete(cloudSystemPrompt: String, localSystemPrompt: String, userMessage: String, timeoutMs: Long): Result<String> {
+    @Volatile private var providerNotice: String? = null
+
+    fun consumeProviderNotice(): String? = providerNotice.also { providerNotice = null }
+
+    suspend fun complete(
+        cloudSystemPrompt: String,
+        localSystemPrompt: String,
+        userMessage: String,
+        timeoutMs: Long
+    ): Result<String> = completeInternal(cloudSystemPrompt, localSystemPrompt, userMessage, timeoutMs, jsonMode = false)
+
+    suspend fun completeJson(
+        cloudSystemPrompt: String,
+        localSystemPrompt: String,
+        userMessage: String,
+        timeoutMs: Long
+    ): Result<String> = completeInternal(cloudSystemPrompt, localSystemPrompt, userMessage, timeoutMs, jsonMode = true)
+
+    private suspend fun completeInternal(
+        cloudSystemPrompt: String,
+        localSystemPrompt: String,
+        userMessage: String,
+        timeoutMs: Long,
+        jsonMode: Boolean
+    ): Result<String> {
+        providerNotice = null
         if (timeoutMs <= 0L) return timeoutFailure()
         val config = settings()
-        if (!config.onlineChatEnabled) return localComplete(localSystemPrompt, userMessage, timeoutMs)
+        if (!config.onlineChatEnabled) return localComplete(localSystemPrompt, userMessage, timeoutMs, jsonMode)
 
         val startedAt = System.nanoTime()
         for (providerType in listOf(config.provider, config.provider.other())) {
@@ -32,33 +57,58 @@ internal class HybridChatRouter(
                 HybridChatSettingsPolicy.normalizeModel(providerType, config.model)
             } else providerType.defaultModel
             val attempt = try {
-                // Mandatory redaction is applied at the final network boundary, after
-                // user-approved context has been assembled and before either cloud provider.
                 val safeCloudSystem = com.openjarvis.agent.CloudPromptRedactionPolicy.redact(cloudSystemPrompt)
                 val safeUserMessage = com.openjarvis.agent.CloudPromptRedactionPolicy.redact(userMessage)
-                cloudProvider(providerType, key, model).completeWithDeadline(
+                val provider = cloudProvider(providerType, key, model)
+                if (jsonMode) provider.completeJsonWithDeadline(
+                    safeCloudSystem, safeUserMessage, minOf(remaining, cloudTimeoutMs)
+                ) else provider.completeWithDeadline(
                     safeCloudSystem, safeUserMessage, minOf(remaining, cloudTimeoutMs), conversation = true
                 )
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Exception) {
-                Result.failure(IllegalStateException("Cloud provider request failed"))
+            } catch (error: Exception) {
+                Result.failure(error)
             }
             val answer = attempt.getOrNull()
             if (!answer.isNullOrBlank()) return Result.success(answer)
+            val message = attempt.exceptionOrNull()?.message.orEmpty()
+            if (providerType == HybridChatProvider.GEMINI &&
+                (message.contains("Gemini model band ho gaya", true) ||
+                    message.contains("model not found", true) ||
+                    message.contains("HTTP 404", true))
+            ) {
+                providerNotice = "Gemini model band ho gaya, Settings me model badlo"
+            }
         }
 
         val remaining = remainingMs(startedAt, timeoutMs)
         if (config.localFallbackEnabled && remaining > 0L) {
-            return localComplete(localSystemPrompt, userMessage, remaining)
+            val local = localComplete(localSystemPrompt, userMessage, remaining, jsonMode)
+            if (local.isSuccess) return local
+            val notice = providerNotice
+            if (notice != null) {
+                return Result.failure(IllegalStateException("$notice. Groq aur local Ollama bhi unavailable hain."))
+            }
+            return local
         }
-        return Result.failure(IllegalStateException("Online chat is unavailable. Check provider settings or enable local fallback."))
+        val notice = providerNotice
+        return Result.failure(IllegalStateException(
+            notice ?: "Online chat is unavailable. Check provider settings or enable local fallback."
+        ))
     }
 
-    private suspend fun localComplete(system: String, user: String, timeoutMs: Long): Result<String> {
+    private suspend fun localComplete(
+        system: String,
+        user: String,
+        timeoutMs: Long,
+        jsonMode: Boolean
+    ): Result<String> {
         if (timeoutMs <= 0L) return timeoutFailure()
         return try {
-            localProvider().completeWithDeadline(system, user, timeoutMs, conversation = true)
+            val provider = localProvider()
+            if (jsonMode) provider.completeJsonWithDeadline(system, user, timeoutMs)
+            else provider.completeWithDeadline(system, user, timeoutMs, conversation = true)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {

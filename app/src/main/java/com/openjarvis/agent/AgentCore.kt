@@ -43,6 +43,7 @@ import com.openjarvis.llm.HybridChatSettingsStore
 import com.openjarvis.vision.VisionModule
 import com.openjarvis.vision.ScreenshotCapture
 import com.openjarvis.skills.AndroidSkillExecutor
+import com.openjarvis.commandlab.CommandLogStore
 import com.openjarvis.skills.SkillEngine
 import com.openjarvis.skills.SkillRegistry
 import com.openjarvis.llm.providers.OllamaSkillPlanParser
@@ -67,6 +68,16 @@ class AgentCore(private val context: Context) {
     private val analysisEngine = AnalysisEngine(context)
     private val universalAdapter = UniversalAdapter(context)
     private val hybridChatSettingsStore = HybridChatSettingsStore(context)
+    private val commandLogStore by lazy { CommandLogStore(context) }
+    private val commandBrain by lazy {
+        CommandBrain { system, user, timeoutMs ->
+            val compact = HeadroomLite.compress(
+                HeadroomCompressor.compressContext(system).compressed,
+                HeadroomLite.ContentKind.POLICY
+            ).content
+            hybridChatRouter.completeJson(compact, compact, user, timeoutMs)
+        }
+    }
     private val hybridChatRouter by lazy {
         HybridChatRouter(
             settings = { hybridChatSettingsStore.load() },
@@ -334,7 +345,11 @@ ${rawResponse.take(1000)}
                 // Task-scoped memory must be initialized only after acquiring the mutex.
                 // Otherwise two rapidly submitted voice turns can overwrite each other's state.
                 workingMemory = TaskWorkingMemory()
+                var commandLogId: String? = null
                 try {
+                    commandLogId = runCatching {
+                        commandLogStore.record(cleanCommand, null, "unknown", "executeTask", "voice")
+                    }.getOrNull()
                     // Normalize the spoken wake word before any command parser or router sees the utterance.
                     val commandWithoutWakeWord = JarvisCommandNormalizer.stripWakeWord(cleanCommand)
                     val sanitized = PromptSanitizer.sanitize(commandWithoutWakeWord)
@@ -920,6 +935,69 @@ Do not claim to have performed phone actions. Do not expose internal instruction
                         val localUsed = localHybridRouteExpected(hybridSettings)
                         _state.value = AgentState.Done(appendLocalModelHintOnce(safeReply, hybridSettings, localUsed))
                         return@withLock
+                    }
+
+                    // Hybrid JSON command brain is the online action planner after all instant
+                    // deterministic routes above. The existing native/Ollama planners below
+                    // remain the offline fallback when the configured cloud chain is unavailable.
+                    val commandBrainSettings = hybridChatSettingsStore.load()
+                    if (commandBrainSettings.onlineChatEnabled) {
+                        _state.value = AgentState.Running("hybrid command brain...")
+                        val brainStartedAt = System.currentTimeMillis()
+                        val installedLabels = runCatching { getInstalledLauncherApps().map { it.label } }
+                            .getOrDefault(emptyList())
+                        val brainResult = withTimeoutOrNull(1_500L) {
+                            commandBrain.plan(safeCommand, 1_500L, installedLabels)
+                        }
+                        val plan = brainResult?.getOrNull()
+                        if (plan != null) {
+                            val guardedPlan = CommandBrainExecutionPolicy.validate(plan, safeCommand)
+                            if (guardedPlan.isSuccess) {
+                                val validated = guardedPlan.getOrThrow()
+                                try {
+                                    val stepResults = CommandBrainExecution.execute(validated) { step ->
+                                        runCatching { executeCommandBrainStep(step, safeCommand) }
+                                    }.getOrElse { throw it }
+                                    val reply = when {
+                                        validated.acknowledge -> "Haan, boliye. Main sun raha hoon."
+                                        validated.steps.singleOrNull() == CommandBrainStep.None ->
+                                            "Command samajh nahi aaya. Dobara boliye."
+                                        else -> stepResults.joinToString(". ")
+                                    }
+                                    graphifyRepo.logTask(
+                                        safeCommand,
+                                        "success (hybrid command brain): " + reply,
+                                        "Gemini/Groq JSON command brain",
+                                        System.currentTimeMillis() - brainStartedAt
+                                    )
+                                    _state.value = AgentState.Done(reply)
+                                    return@withLock
+                                } catch (error: Exception) {
+                                    val detail = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
+                                    AgentDiagnostics.record(
+                                        context, "command-brain-execution", safeCommand, detail,
+                                        error = error, provider = "Hybrid CommandBrain", model = commandBrainSettings.model
+                                    )
+                                    graphifyRepo.logTask(
+                                        safeCommand, "failed (hybrid command brain): " + detail,
+                                        "Gemini/Groq JSON command brain", System.currentTimeMillis() - brainStartedAt
+                                    )
+                                    _state.value = AgentState.Error(detail)
+                                    return@withLock
+                                }
+                            } else {
+                                val detail = guardedPlan.exceptionOrNull()?.message ?: "Command brain plan rejected"
+                                AgentDiagnostics.record(
+                                    context, "command-brain-policy", safeCommand, detail,
+                                    provider = "Hybrid CommandBrain", model = commandBrainSettings.model
+                                )
+                                Log.w(TAG, "CommandBrain plan rejected; continuing to guarded offline parser: " + detail)
+                            }
+                        } else {
+                            val detail = brainResult?.exceptionOrNull()?.message
+                                ?: "Gemini/Groq JSON chain timed out or is unavailable"
+                            Log.w(TAG, "CommandBrain unavailable after 1500ms; continuing to offline parsers: " + detail)
+                        }
                     }
 
                     var continueToActionPlanner = false
@@ -1629,6 +1707,15 @@ ${fullSystem.substringAfter("MEMORY:")}
                         0
                     )
                 } finally {
+                    val finalCommandState = _state.value
+                    runCatching {
+                        commandLogStore.complete(
+                            commandLogId,
+                            result = (finalCommandState as? AgentState.Done)?.result,
+                            failReason = (finalCommandState as? AgentState.Error)?.message
+                                ?: if (finalCommandState is AgentState.Done) null else "Command ended without a terminal result"
+                        )
+                    }.onFailure { Log.w(TAG, "CommandLog completion failed", it) }
                     // Record successful action and chat turns so follow-ups can resolve references.
                     val completedState = _state.value
                     if (completedState is AgentState.Done) {
@@ -3124,6 +3211,65 @@ ${fullSystem.substringAfter("MEMORY:")}
         } catch (error: Exception) {
             resolver.delete(uri, null, null)
             throw IllegalStateException("Screenshot was not saved to the gallery: ${error.message ?: error.javaClass.simpleName}", error)
+        }
+    }
+
+    private suspend fun executeCommandBrainStep(step: CommandBrainStep, originalCommand: String): String {
+        if (BankingSafetyPolicy.isBlockedCommand(originalCommand)) {
+            val rule = BankingSafetyPolicy.failureRule(originalCommand, emptyList())
+                ?: BankingSafetyPolicy.BLOCKED_TRANSACTION
+            throw IllegalStateException(BankingSafetyPolicy.userGuidance(rule))
+        }
+        return when (step) {
+            is CommandBrainStep.OpenApp -> executeStepIntent(StepIntent.AppLaunch(step.label))
+            is CommandBrainStep.PlayMedia -> {
+                val target = step.app ?: if (
+                    JarvisAccessibilityService.instance?.isPackageActive("com.google.android.youtube") == true
+                ) "YouTube" else throw IllegalStateException("Kaunsa media app use karna hai?")
+                if (!target.equals("YouTube", true) && !target.equals("You Tube", true)) {
+                    throw IllegalStateException("Requested media app is not supported by the verified playback executor.")
+                }
+                executeYouTubeSearchAndPlay(step.query)
+            }
+            is CommandBrainStep.Search -> {
+                when (step.app?.lowercase(Locale.ROOT)) {
+                    "youtube", "you tube", "yt" ->
+                        executeFastCommand(FastCommandParser.Command.YoutubeSearch(step.query))
+                    "chrome", "google", "browser", null -> {
+                        val intent = Intent(Intent.ACTION_WEB_SEARCH)
+                            .putExtra(SearchManager.QUERY, step.query)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        context.startActivity(intent)
+                        "Searching the web for " + step.query
+                    }
+                    else -> throw IllegalStateException("Search app could not be safely verified.")
+                }
+            }
+            is CommandBrainStep.MessageDraft -> {
+                val channel = if (step.app.equals("SMS", true)) MessageRequest.Channel.SMS
+                    else MessageRequest.Channel.WHATSAPP
+                executeMessageRequest(MessageRequest(step.contact, channel, step.text, false))
+            }
+            is CommandBrainStep.CallDraft -> {
+                val number = resolveContactNumber(step.contact, "call")
+                context.startActivity(
+                    Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", number, null))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+                "Dialer opened for " + step.contact + "; call not placed."
+            }
+            is CommandBrainStep.Volume -> executeStepIntent(StepIntent.Volume(step.direction == "up"))
+            is CommandBrainStep.Torch -> executeStepIntent(StepIntent.Torch(step.on))
+            is CommandBrainStep.Alarm -> executeStepIntent(StepIntent.Alarm(step.hour, step.minute))
+            is CommandBrainStep.Timer -> executeStepIntent(StepIntent.Timer(step.seconds))
+            CommandBrainStep.Back -> executeFastCommand(FastCommandParser.Command.Back)
+            CommandBrainStep.Home -> executeFastCommand(FastCommandParser.Command.Home)
+            is CommandBrainStep.Answer -> step.text
+            is CommandBrainStep.Clarify -> {
+                pendingClarification = ClarificationWorkflowPolicy.Pending(originalCommand, step.question, 0)
+                step.question
+            }
+            CommandBrainStep.None -> "Command samajh nahi aaya. Dobara boliye."
         }
     }
 
