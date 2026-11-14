@@ -350,10 +350,13 @@ ${rawResponse.take(1000)}
 
         _state.value = AgentState.Running("hybrid command brain...")
         val startedAt = System.currentTimeMillis()
-        val installedLabels = runCatching { getInstalledLauncherApps().map { it.label } }
-            .getOrDefault(emptyList())
+        // The complete online attempt (including installed-app grounding) shares one
+        // hard 1.5s budget. Slow package-manager lookup must not delay offline fallback.
         val result = withTimeoutOrNull(1_500L) {
-            commandBrain.plan(command, 1_500L, installedLabels)
+            val installedLabels = runCatching { getInstalledLauncherApps().map { it.label } }
+                .getOrDefault(emptyList())
+            val remainingMs = (1_500L - (System.currentTimeMillis() - startedAt)).coerceAtLeast(1L)
+            commandBrain.plan(command, remainingMs, installedLabels)
         }
         val plan = result?.getOrNull()
         if (plan == null) {
