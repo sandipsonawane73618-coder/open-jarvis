@@ -1,61 +1,94 @@
-# Branch coverage audit
+# Branch coverage — final all-in-one audit
 
-Comparison baseline: `feat/jarvis-all-in-one` at `3ff7e627b28fb1321f61501919099b0e5693880d` (2026-11-14).
-Scope: every repository branch matching `feature/*`, including the separate Euronics branch.
-Policy: do not force-merge diverged branches. Preserve all existing tests; total `@Test` count must never decrease. `HeadroomLiteContext`, `HeadroomCompressor` and `MemoryContextBuilder` are already integrated and CI-green in PR #95 (`3ff7e627`). Wakeword-reliability/Sherpa is explicitly skipped.
+Final audit base: `origin/feat/jarvis-all-in-one` at `b4e0a6b87ce8b1e1289af02123ee0ca856c68b7a` (2026-11-14; post PR #96 and CI guard commits).
+Scope: all 67 remote branches matching `feat/*` or `feature/*`.
+Method: `git cherry -v origin/feat/jarvis-all-in-one origin/<branch>` for every remote branch. In the count column, first number is `+` (commits not patch-equivalent in all-in-one); second is `-` (patch-equivalent commits). `already contained` means exactly zero `+` commits. The full per-commit output is in the CI artifact [branch-cherry-counts](https://github.com/sandipsonawane73618-coder/open-jarvis/actions/runs/43569969445).
 
-| branch | feature | already in all-in-one (path) | missing | action |
-|---|---|---|---|---|
-| `feature/autonomous-self-healing-edition` | Command dictionary, error diagnosis, verified repair memory and bounded retry guard; also contains a wider network/repair dashboard | `AgentCore.kt`, `LLMResponseValidator.kt`, `UniversalAdapter.kt`, `Providers.kt` | `agent/CommandDictionary.kt`, `agent/ErrorDiagnosis.kt`, `agent/RepairMemory.kt`, `agent/SelfHealingEngine.kt`, `agent/ExperimentalSelfHealingSettings.kt` | **selectively ported in PR #96** as new files behind the Settings switch (default OFF). AgentCore only uses command normalization, privacy-filtered repair failure diagnostics and success cleanup when explicitly enabled; current retry/safety gates remain authoritative. Network/security files excluded. |
-| `feature/euronics-webview-integration` | Separate Euronics WebView feature | Jarvis app baseline only | Euronics assets/activity and app wiring are outside Jarvis scope | **skip**; separate Euronics workstream; do not alter Euronics app or data. |
-| `feature/jarvis-accessibility-agent-loop` | Screen evidence and compact repeated OCR context | `accessibility/ScreenEvidenceVerifier.kt`, `agent/AgentDiagnostics.kt`, `ui/OverlayService.kt` | `agent/HeadroomLiteContext.kt`; diagnostic logger also absent | **integrate HeadroomLiteContext test-first**; defer unrelated diagnostic logger and wakeword bundle. |
-| `feature/jarvis-action-session-multistep-fix` | Multi-step action session | `agent/AgentCore.kt`, `agent/StepPipeline.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-advanced-hud-hardening` | HUD and HeadroomLite hardening | `agent/HeadroomLite.kt`, `ui/OverlayService.kt`, `agent/AgentCore.kt` | Branch's old compressor also rewrites repeated TEXT lines; current policy deliberately preserves natural text, UI labels and policy prompts and only compresses diagnostic LOG lines with explicit reversible markers. Current tests cover restore and preservation. Overlay branch also carries Porcupine/Sherpa wakeword code and older HUD lifecycle. | **audited — newer safer implementation already present at SHA `3ff7e627`**; do not port text/UI compression or wakeword changes. Preserve Voicute-only engine and current overlay attachment gate. |
-| `feature/jarvis-command-listener-no-wakeword` | Manual command listener | `voice/VoiceManager.kt`, `voice/CommandListeningPolicy.kt`, `ui/OverlayService.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-contact-app-intent-priority` | Contact/app intent priority | `agent/StepIntentParser.kt`, `skills/AndroidSkillExecutor.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-continuous-voice-session` | Continuous voice session | Existing voice session lifecycle in `voice/VoiceManager.kt` | Branch-only workflow-file change | **skip**; no missing app implementation. |
-| `feature/jarvis-conversation-memory-marathi` | Marathi/Hinglish language profile | `voice/SpeechLanguage.kt`, `voice/MaharashtraSpeechProfile.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-deterministic-fast-skills` | Deterministic fast skills | `skills/SkillRegistry.kt`, `intelligence/FastCommandParser.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-diagnostic-export` | Diagnostic export | `agent/AgentDiagnostics.kt`, `ui/settings/SettingsScreen.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-false-completion-guard` | False-completion and screenshot guard | `agent/AgentPlanPolicy.kt`, `ui/ScreenCapturePermissionActivity.kt`, `vision/ScreenshotCapture.kt`, `agent/AgentCore.kt` | No unique missing behaviour. All-in-One already requires verified planned actions, foreground confirmation for app launch, non-empty required payloads, and an executable-plan final gate; existing tests cover incomplete payload rejection. | **audited — already covered at All-in-One SHA `3ff7e627`**; branch-specific planner is older. No weakening of completion verification or screenshot permission gate. |
-| `feature/jarvis-fast-response-streaming` | Fast response streaming | `agent/AgentCore.kt`, `llm/providers/OllamaProvider.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-foreground-banking-guard` | Foreground banking guard | `agent/BankingSafetyPolicy.kt`, `agent/ActionRiskPolicy.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-full-potential-foundation` | Agent foundation and deterministic routing | `agent/AgentCore.kt`, `agent/StepPipeline.kt`, `agent/AgentPlanPolicy.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-headroom-fidelity` | Headroom Lite fidelity | `agent/HeadroomLite.kt`, `agent/HeadroomContextBudget.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-headroom-hybrid` | Headroom Hybrid conservative context compression | `agent/HeadroomLite.kt`, `agent/AgentCore.kt` | `headroom/HeadroomCompressor.kt` and tests | **integrate HeadroomCompressor test-first**; use the same implementation also referenced by Phase 3 Memory, not duplicate it. |
-| `feature/jarvis-jandal-memory-recall` | Local personal-memory recall | `agent/PersonalMemoryStore.kt`, `agent/ScreenshotMemoryStore.kt`, `graphify/GraphifyRepository.kt` | None identified; branch is behind All-in-One | **skip**; existing memory system is already present. |
-| `feature/jarvis-keyfree-wakeword` | Key-free wakeword work | `voice/VoicuteOnnxWakeWordController.kt`, `voice/WakeWordDiagnostics.kt` | No accepted missing implementation identified | **skip**; retain the user's Voicute-only wakeword decision; do not add Sherpa or paid engines. |
-| `feature/jarvis-long-command-engine-pr17` | Long-command splitting | `agent/CommandSplitter.kt`, `agent/StepPipeline.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-m3-m5-proactive-hud` | Proactive HUD | Existing HUD and current `ui/OverlayService.kt` | No app source changes in branch comparison; only `.github/workflows/android-build.yml` and `.github/workflows/main.yml` workflow changes. | **audited — no missing app feature to port** at SHA `3ff7e627`; workflow-only deltas are not merged into app source. |
-| `feature/jarvis-manual-mic-hud-headroom` | Manual mic HUD and Headroom | `ui/OverlayService.kt`, `agent/HeadroomLite.kt`, `ui/settings/SettingsScreen.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-manual-mic-report-doctor` | Manual mic and Report Doctor | `diagnostics/ReportDoctor.kt`, `ui/settings/SettingsScreen.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-multilingual-volume-routing` | Multilingual volume routing | `skills/SkillRegistry.kt`, `voice/SpeechLanguage.kt` | None identified; branch is behind All-in-One | **skip**; already included; directional reply remains tracked under PR #75. |
-| `feature/jarvis-offline-multilingual-stt` | Offline multilingual STT and overlay lifecycle | `voice/AndroidSTTEngine.kt`, `voice/SpeechLanguage.kt`, `ui/OverlayService.kt` | Error 12/13 locale recovery, support check, consented model download and per-locale Settings status | **integrate via PR #95**; its older overlay-view reconciliation overlaps the current `overlayAttachmentGate` and is not copied. |
-| `feature/jarvis-opendroid-agent-loop` | OpenDroid agent loop | `agent/AgentCore.kt`, `agent/LLMResponseValidator.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-phase1-p0-security` | Phase 1 security gates | `agent/ActionRiskPolicy.kt`, `agent/BankingSafetyPolicy.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-phase2-continuation` | Diagnostics, voice continuity and context work | `agent/AgentDiagnostics.kt`, `ui/OverlayService.kt`, `ui/settings/SettingsScreen.kt` | `agent/HeadroomLiteContext.kt`; `diagnostics/JarvisDiagnosticLog.kt` absent | **integrate HeadroomLiteContext test-first**; defer unrelated logger and wakeword changes for separate review. |
-| `feature/jarvis-phase3-headroom-ecc` | Headroom/ECC diagnostics and OCR context | `agent/AgentDiagnostics.kt`, `ui/OverlayService.kt`, `ui/settings/SettingsScreen.kt` | `agent/HeadroomLiteContext.kt`; `diagnostics/JarvisDiagnosticLog.kt` absent | **integrate HeadroomLiteContext test-first**; do not import bundled wakeword changes. |
-| `feature/jarvis-phase3-memory` | Graphify episodic memory and Headroom Hybrid | `graphify/GraphifyRepository.kt`, `agent/AgentCore.kt`, `graphify/MemoryContextBuilder.kt`, `headroom/HeadroomCompressor.kt` | No missing source files: `MemoryContextBuilder.kt` and `HeadroomCompressor.kt` are already present in All-in-One and byte-identical to the branch. Their tests also already exist (6 each); memory builder is category-only and privacy-filtered. | **audited — already covered at SHA `3ff7e627`**; no duplicate source port. Keep current privacy filters and user-command byte-identity boundary. |
-| `feature/jarvis-report-doctor-safe-recovery` | Safe recovery and Report Doctor | `agent/SelfHealingExecutor.kt`, `agent/SelfHealingSafetyPolicy.kt`, `diagnostics/ReportDoctor.kt`, `ui/OverlayService.kt`, `agent/AgentCore.kt` | `ReportDoctor.kt` is already identical in All-in-One. Branch retry code is older and permits only bounded WAIT; current executor has failure classification, read-only dependency probes, learning thresholds and refuses side-effect replay. Current policy restricts retries to classified WAIT/WAIT_FOR/READ_SCREEN/EXTRACT_TEXT. Overlay branch contains old wakeword stack. | **audited — current safer implementation already present at SHA `3ff7e627`**; existing ReportDoctor tests (8) and SelfHealingSafetyPolicy tests (9) remain. Do not port older executor/policy or wakeword changes. |
-| `feature/jarvis-sanna-memory-learning-audit` | App-task hints, diagnostics and memory learning | `agent/AppTaskHintPolicy.kt`, `agent/AppTaskHintStore.kt`, `agent/AgentDiagnostics.kt` | `agent/HeadroomLiteContext.kt`; diagnostic logger absent | **integrate HeadroomLiteContext test-first**; skip bundled wakeword diagnostics. |
-| `feature/jarvis-screenshot-capture-reliability` | Screenshot capture reliability | `ui/ScreenCapturePermissionActivity.kt`, `vision/ScreenshotCapture.kt`, `agent/AgentCore.kt` | No unique screenshot behaviour missing in current All-in-One. Permission-denied state, capture lifecycle cleanup, padded bitmap sizing and screenshot execution path are already present; branch's AgentCore is older. | **audited — already covered at All-in-One SHA `3ff7e627`**; no duplicate port. No permission lifecycle or capture gate changes. |
-| `feature/jarvis-self-healing-retry-gates` | Bounded self-healing retry gates | `agent/SelfHealingExecutor.kt`, `agent/SelfHealingSafetyPolicy.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-single-floating-overlay` | Single floating overlay attachment | `ui/OverlayService.kt`, `ui/OverlayAttachmentGate.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-slice-c-router-llm-schema` | Router and LLM schema | `agent/CommandRouter.kt`, `llm/providers/OllamaSkillPlanParser.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-stable-1.0-phase2-wakeword` | Stable wakeword phase | `voice/VoicuteOnnxWakeWordController.kt`, `voice/WakeWordDiagnostics.kt` | No accepted missing implementation identified | **skip**; keep the current Voicute-only engine. |
-| `feature/jarvis-stable-1.0-phase3-ollama` | Local Ollama integration | `llm/providers/OllamaProvider.kt`, `agent/AgentCore.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-stable-1.0-phase4-command-execution` | Command execution and response validation | `agent/LLMResponseValidator.kt`, `llm/providers/OllamaResponseParser.kt`, `agent/AgentCore.kt`, `agent/AgentDiagnostics.kt`, `llm/providers/Providers.kt` | The two requested field mappings are already in current validator: scroll `target` → `direction`, error `value` → user-facing `message`; current extractor accepts wrapped `steps`. Old `steps`-only prompt/schema and adapter calls are superseded by newer action/skill/native-intent schemas and deadline-bounded provider path. | **audited — current source already covers behaviour**; PR #96 adds two regression tests (`mapsStepsSchemaScrollTargetToDirection`, `mapsStepsSchemaErrorValueToUserFacingMessage`). Unit tests pass on SHA `bda79052`. Do not import older schema/AgentCore/Providers. |
-| `feature/jarvis-stable-1.0` | Stable 1.0 baseline | `agent/AgentCore.kt`, `agent/LLMResponseValidator.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-streaming-response` | Streaming response | `llm/providers/OllamaProvider.kt`, `agent/AgentCore.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-stt-multilingual-ci` | Multilingual STT CI coverage | `voice/AndroidSTTEngine.kt`, `voice/SpeechLanguage.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-stt-multilingual-fix` | Earlier STT locale fix | `voice/AndroidSTTEngine.kt`, `voice/SpeechLanguage.kt` | Its older retry path is superseded by PR #95's bounded locale policy and model-support flow | **skip**; superseded by PR #95; do not duplicate or regress the new fallback. |
-| `feature/jarvis-tts-utterance-callback-isolation` | TTS utterance callback isolation | `voice/AndroidTTSEngine.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-uktam-indic-stt` | Indic model compatibility and voice diagnostics | `voice/IndicModelCompatibility.kt`, `agent/AgentDiagnostics.kt` | No accepted missing non-wakeword feature identified | **skip**; current compatibility implementation exists; do not import its wakeword bundle. |
-| `feature/jarvis-uktam-indic-stt-audit` | Indic STT audit and diagnostics | `voice/IndicModelCompatibility.kt`, `agent/AgentDiagnostics.kt` | No accepted missing non-wakeword feature identified | **skip**; current compatibility implementation exists; do not import its wakeword bundle. |
-| `feature/jarvis-voice-screen-command-fixes` | Voice screen command fixes | `intelligence/FastCommandParser.kt`, `agent/AgentCore.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-wakeword-reliability` | Sherpa ONNX wakeword reliability | Existing Voicute controller remains the selected engine | Sherpa controller and Sherpa-specific config/tests | **skip by user decision**; no Sherpa integration. |
-| `feature/self-healing-command-dictionary` | Same four self-healing helpers as autonomous branch | `AgentCore.kt`, `LLMResponseValidator.kt`, `UniversalAdapter.kt`, `SettingsScreen.kt` | Same helpers now present as new files in PR #96; no unique commits in this branch | **covered by the one selective port**; 41 commits behind autonomous branch. Explicitly exclude its `app/src/main/assets/euronics/index.html` and `EuronicsActivity.kt`; no Euronics asset/activity changes. |
- 
+Summary: **67 branches audited; 44 already contained; 10 selectively ported; 13 skipped.** `git cherry` totals: **583 commits not patch-equivalent; 20 patch-equivalent; 603 total branch-side commits inspected**.
+
+| Remote branch | git cherry (+ / -) | Final state | Port detail or skip reason |
+|---|---:|---|---|
+| `feat/jarvis-agent-loop` | 10 / 0 | **skipped** | Large divergent AgentLoopRunner/AgentTaskSession/ActionVerifier and AgentCore planner rewrite; 396 commits behind. No wholesale port without separate RED tests and review. |
+| `feat/jarvis-all-in-one` | 0 / 0 | **already contained** | This is the comparison base. |
+| `feat/jarvis-app-integrations` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feat/jarvis-command-lab` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feat/jarvis-floating-ui` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feat/jarvis-home-ui` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feat/jarvis-hybrid-chat` | 8 / 1 | **skipped** | Adds Gemini/Groq cloud providers and hybrid routing; conflicts with local-only Ollama/no-cloud-fallback requirement. 398 commits behind. |
+| `feat/jarvis-maharashtra-voice-full-control` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feat/jarvis-memory-personality` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feat/jarvis-overlay-stt-locale-recovery` | 0 / 0 | **already contained** | PR #95 changes already in all-in-one. |
+| `feat/jarvis-reality-fixes` | 0 / 0 | **already contained** | PR #75 changes already in all-in-one. |
+| `feat/jarvis-send-safety` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feat/jarvis-tier2-selective-ports` | 0 / 0 | **already contained** | PR #96 changes already in all-in-one. |
+| `feat/jarvis-v3-agent-loop` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feat/jarvis-v4-understanding` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feat/jarvis-v5` | 2 / 0 | **skipped** | Only remaining unique commits add then revert a scroll-until-target test; no unique feature implementation to port. |
+| `feat/jarvis-voice-personality` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feat/jarvis-voice-power-off` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/autonomous-self-healing-edition` | 82 / 4 | **selectively ported** | PR #96 commit f043a5fcc98db62bfe4a5a27108be5d757a77190 ports CommandDictionary, ErrorDiagnosis, RepairMemory and SelfHealingEngine behind default-OFF setting. SocketServer, unauthenticated bridge, SignedUpdateManager, network/manifest rewrites and patch auto-apply are excluded. |
+| `feature/euronics-webview-integration` | 29 / 0 | **skipped** | Separate Euronics app/workstream; Euronics HTML, activity, manifest and data are explicitly out of scope. |
+| `feature/jarvis-accessibility-agent-loop` | 60 / 0 | **selectively ported** | PR #95 SHA 3ff7e627b28fb1321f61501919099b0e5693880d includes HeadroomLiteContext and its tests; remaining diagnostics/wakeword bundle not ported. |
+| `feature/jarvis-action-session-multistep-fix` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-advanced-hud-hardening` | 5 / 0 | **skipped** | Older HUD/HeadroomLite changes are superseded; branch compresses TEXT/UI content and carries alternate wakeword code, both excluded. |
+| `feature/jarvis-command-listener-no-wakeword` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-contact-app-intent-priority` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-continuous-voice-session` | 0 / 1 | **already contained** | 0 commits not in all-in-one; one patch-equivalent commit. |
+| `feature/jarvis-conversation-memory-marathi` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-deterministic-fast-skills` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-diagnostic-export` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-false-completion-guard` | 12 / 0 | **skipped** | No unique behaviour missing: current AgentPlanPolicy, foreground verification, required-payload gate and screenshot consent path are stronger/current. |
+| `feature/jarvis-fast-response-streaming` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-foreground-banking-guard` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-full-potential-foundation` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-headroom-fidelity` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-headroom-hybrid` | 2 / 1 | **selectively ported** | PR #95 SHA 3ff7e627b28fb1321f61501919099b0e5693880d contains HeadroomCompressor and its tests; one source commit is patch-equivalent. |
+| `feature/jarvis-jandal-memory-recall` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-keyfree-wakeword` | 0 / 0 | **already contained** | No commits unique by patch ID; retain user's Voicute-only selection. |
+| `feature/jarvis-long-command-engine-pr17` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-m3-m5-proactive-hud` | 2 / 0 | **skipped** | Unique commits are workflow-only; Sherpa wakeword/model workflow is excluded by the Voicute-only decision. |
+| `feature/jarvis-manual-mic-hud-headroom` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-manual-mic-report-doctor` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-multilingual-volume-routing` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-offline-multilingual-stt` | 4 / 1 | **selectively ported** | PR #95 SHA 3ff7e627b28fb1321f61501919099b0e5693880d ports bounded error 12/13 locale recovery, model-support/consent flow and per-locale Settings status; old overlay rewrite excluded. |
+| `feature/jarvis-opendroid-agent-loop` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-phase1-p0-security` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-phase2-continuation` | 24 / 0 | **selectively ported** | PR #95 SHA 3ff7e627b28fb1321f61501919099b0e5693880d includes HeadroomLiteContext and tests; diagnostic logger and wakeword bundle excluded. |
+| `feature/jarvis-phase3-headroom-ecc` | 53 / 0 | **selectively ported** | PR #95 SHA 3ff7e627b28fb1321f61501919099b0e5693880d includes HeadroomLiteContext and tests; unrelated logger and wakeword bundle excluded. |
+| `feature/jarvis-phase3-memory` | 5 / 4 | **selectively ported** | PR #96 commit f043a5fcc98db62bfe4a5a27108be5d757a77190 makes GraphifyRepository suspend and privacy-filtered via MemoryContextBuilder; builder/compressor implementations and tests were already in PR #95 SHA 3ff7e627b28fb1321f61501919099b0e5693880d. |
+| `feature/jarvis-report-doctor-safe-recovery` | 11 / 2 | **skipped** | Current ReportDoctor is equivalent; current SelfHealingExecutor/SafetyPolicy are stricter and evidence-gated than this branch's older WAIT-only retry path. |
+| `feature/jarvis-sanna-memory-learning-audit` | 61 / 0 | **selectively ported** | PR #95 SHA 3ff7e627b28fb1321f61501919099b0e5693880d includes HeadroomLiteContext and tests; bundled diagnostic logger and wakeword changes excluded. |
+| `feature/jarvis-screenshot-capture-reliability` | 5 / 0 | **skipped** | No missing screenshot behaviour; current permission-denied lifecycle, capture readiness, cleanup and bitmap sizing are already present. Branch AgentCore is older. |
+| `feature/jarvis-self-healing-retry-gates` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-single-floating-overlay` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-slice-c-router-llm-schema` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-stable-1.0` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-stable-1.0-phase2-wakeword` | 0 / 0 | **already contained** | No commits unique by patch ID; retain Voicute-only engine. |
+| `feature/jarvis-stable-1.0-phase3-ollama` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-stable-1.0-phase4-command-execution` | 16 / 0 | **selectively ported** | PR #96 merge SHA aeabc2c0acc5fba29f7da1ebed5b974124201afa includes two regression tests for scroll target-to-direction and error value-to-message mappings; implementation already existed. |
+| `feature/jarvis-streaming-response` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-stt-multilingual-ci` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-stt-multilingual-fix` | 3 / 0 | **skipped** | Older locale retry is superseded by PR #95's bounded error 12/13 locale fallback and consented model support. |
+| `feature/jarvis-tts-utterance-callback-isolation` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-uktam-indic-stt` | 53 / 0 | **skipped** | No accepted missing non-wakeword feature; current Indic compatibility remains. Bundled wakeword/diagnostic changes not imported. |
+| `feature/jarvis-uktam-indic-stt-audit` | 61 / 0 | **skipped** | No accepted missing non-wakeword feature; current Indic compatibility remains. Bundled wakeword/diagnostic changes not imported. |
+| `feature/jarvis-voice-screen-command-fixes` | 0 / 0 | **already contained** | No commits unique by patch ID. |
+| `feature/jarvis-wakeword-reliability` | 29 / 4 | **skipped** | Explicit user decision: no Sherpa ONNX integration; retain Voicute-only wakeword engine. |
+| `feature/self-healing-command-dictionary` | 46 / 2 | **selectively ported** | Same four helper files as autonomous branch were selectively ported in PR #96 commit f043a5fcc98db62bfe4a5a27108be5d757a77190; no duplicate port. Euronics asset/activity and bridge/security changes excluded. |
+
+## Final-state rules
+
+- Selective ports are recorded with the exact PR commit SHA and the specific behavior/files carried forward. A selective port does not authorize importing the rest of a divergent branch.
+- Branches with zero `+` commits are marked already contained even if their `-` count is nonzero; those commits are patch-equivalent to commits on all-in-one.
+- Skips preserve the current safer implementation and explicit constraints: local-only Ollama, Voicute-only wakeword, test count must not decrease, and Euronics remains untouched.
+- No branch was force-merged. PR #96 was merged normally as `aeabc2c0acc5fba29f7da1ebed5b974124201afa`.
+
+## CI feature-presence guard
+
+`scripts/check-required-feature-classes.py` is executed in the Unit tests job. It fails if any required source file or class/object/interface declaration for core agent routing, LLM response validation, banking safety, self-healing safety, pipeline handling, screenshot capture, screen-capture permission, overlay attachment, Headroom, Graphify memory or voice/STT is missing.
+
+`scripts/audit-branch-cherry.sh` enumerates every fetched remote `feat/*` and `feature/*` ref, runs `git cherry` against the all-in-one base, writes per-branch counts and commit details to `artifacts/branch-cherry-counts.txt`, and uploads that report in CI.
+
 ## Self-healing conflict report
 
 The old `feature/autonomous-self-healing-edition` branch adds a bridge `SocketServer`, Graphify `AnalysisEngine`, command dictionary/error diagnosis, repair memory/center/patch policy, self-healing engine, Ollama health monitor and signed-update manager. Those source files are absent from current All-in-One, but the branch is 87 commits ahead and 1298 behind and also changes AgentCore, manifest, Gradle, Settings, providers and STT. **No forced merge**; isolate and test the unique bridge/analysis features before considering any port.
