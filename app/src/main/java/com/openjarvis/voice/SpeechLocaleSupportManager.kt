@@ -9,6 +9,7 @@ import android.speech.ModelDownloadListener
 import android.speech.RecognitionSupportCallback
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import java.util.concurrent.Executor
 
 /**
  * Reports on-device model availability and only requests a model download when the
@@ -17,6 +18,7 @@ import android.speech.SpeechRecognizer
 class SpeechLocaleSupportManager(private val context: Context) {
     private val prefs = context.getSharedPreferences("speech_locale_status", Context.MODE_PRIVATE)
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val mainExecutor = Executor { command -> mainHandler.post(command) }
 
     fun savedStatus(locale: String): String =
         prefs.getString("status_$locale", "Not checked").orEmpty()
@@ -37,7 +39,7 @@ class SpeechLocaleSupportManager(private val context: Context) {
                 publish(locale, "On-device recognizer unavailable", onStatus)
                 return@post
             }
-            recognizer.checkRecognitionSupport(localeIntent(locale), context.mainExecutor,
+            recognizer.checkRecognitionSupport(localeIntent(locale), mainExecutor,
                 object : RecognitionSupportCallback {
                     override fun onSupportResult(support: android.speech.RecognitionSupport) {
                         val status = RecognitionLocaleRetryPolicy.statusFor(
@@ -77,7 +79,7 @@ class SpeechLocaleSupportManager(private val context: Context) {
             }
             try {
                 if (Build.VERSION.SDK_INT >= 34) {
-                    recognizer.triggerModelDownload(localeIntent(locale), context.mainExecutor,
+                    recognizer.triggerModelDownload(localeIntent(locale), mainExecutor,
                         object : ModelDownloadListener {
                             override fun onProgress(completedPercent: Int) {
                                 publish(locale, "Downloading $completedPercent%", onStatus)
