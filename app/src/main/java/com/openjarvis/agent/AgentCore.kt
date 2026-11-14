@@ -561,72 +561,6 @@ ${rawResponse.take(1000)}
                         }
                     }
 
-                    // App-specific integrations are deterministic and never auto-send or auto-save.
-                    val instagramQuery = AppIntegrationCommandParser.parseInstagramSearch(safeCommand)
-                    if (instagramQuery != null) {
-                        try {
-                            val reply = AppIntegrationAndroidExecutor.instagramSearch(context, instagramQuery)
-                            graphifyRepo.logTask(safeCommand, "success (Instagram search opened)", "Android app integration", 0)
-                            _state.value = AgentState.Done(reply)
-                        } catch (error: Exception) {
-                            val detail = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
-                            AgentDiagnostics.record(context, "instagram-search", safeCommand, detail, error = error, provider = "Android app integration", model = "Not used")
-                            _state.value = AgentState.Error(detail)
-                        }
-                        return@withLock
-                    }
-
-                    val telegramRequest = AppIntegrationCommandParser.parseTelegramMessage(safeCommand)
-                    if (telegramRequest != null) {
-                        try {
-                            val reply = AppIntegrationAndroidExecutor.telegramDraft(context, telegramRequest)
-                            graphifyRepo.logTask(safeCommand, "success (Telegram draft opened; not sent)", "Android app integration", 0)
-                            _state.value = AgentState.Done(reply)
-                        } catch (error: Exception) {
-                            val detail = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
-                            AgentDiagnostics.record(context, "telegram-draft", safeCommand, detail, error = error, provider = "Android app integration", model = "Not used")
-                            _state.value = AgentState.Error(detail)
-                        }
-                        return@withLock
-                    }
-
-                    val calendarRequest = AppIntegrationCommandParser.parseCalendarEvent(safeCommand)
-                    if (calendarRequest != null) {
-                        try {
-                            val reply = AppIntegrationAndroidExecutor.calendarEvent(context, calendarRequest)
-                            graphifyRepo.logTask(safeCommand, "success (Calendar event draft opened; not saved)", "Android app integration", 0)
-                            _state.value = AgentState.Done(reply)
-                        } catch (error: Exception) {
-                            val detail = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
-                            AgentDiagnostics.record(context, "calendar-event", safeCommand, detail, error = error, provider = "Android app integration", model = "Not used")
-                            _state.value = AgentState.Error(detail)
-                        }
-                        return@withLock
-                    }
-
-                    // Multi-step commands use the ordered deterministic pipeline.
-                    // A single step deliberately stays on the legacy path below to preserve
-                    // the exact Slice A single-command behavior.
-                    val pipelineSteps = CommandSplitter.split(safeCommand) { canParsePipelineStep(it) }
-                    if (pipelineSteps.size > 1) {
-                        _state.value = AgentState.Running("executing ${pipelineSteps.size} steps...")
-                        skillEngine.loadSkills()
-                        val run = createStepPipeline().run(pipelineSteps, actionStepContext)
-                        actionStepContext = run.finalContext
-                        AgentDiagnostics.recordPipeline(context, safeCommand, run.traces, run.skipped)
-                        val result = run.failureMessage(pipelineSteps.size)
-                            ?: run.traces.joinToString(". ") { it.reply }
-                        graphifyRepo.logTask(
-                            safeCommand,
-                            if (run.allOk) "success (multi-step pipeline): $result" else "failed (multi-step pipeline): $result",
-                            "AgentCore StepPipeline",
-                            0
-                        )
-                        _state.value = if (run.allOk) AgentState.Done(result) else AgentState.Error(result)
-                        return@withLock
-                    }
-
-
                     // Supported app integrations use deterministic Android intents before any LLM fallback.
                     val instagramQuery = AppIntegrationCommandParser.parseInstagramSearch(safeCommand)
                     if (instagramQuery != null) {
@@ -680,6 +614,29 @@ ${rawResponse.take(1000)}
                         }
                         return@withLock
                     }
+
+                    // Multi-step commands use the ordered deterministic pipeline.
+                    // A single step deliberately stays on the legacy path below to preserve
+                    // the exact Slice A single-command behavior.
+                    val pipelineSteps = CommandSplitter.split(safeCommand) { canParsePipelineStep(it) }
+                    if (pipelineSteps.size > 1) {
+                        _state.value = AgentState.Running("executing ${pipelineSteps.size} steps...")
+                        skillEngine.loadSkills()
+                        val run = createStepPipeline().run(pipelineSteps, actionStepContext)
+                        actionStepContext = run.finalContext
+                        AgentDiagnostics.recordPipeline(context, safeCommand, run.traces, run.skipped)
+                        val result = run.failureMessage(pipelineSteps.size)
+                            ?: run.traces.joinToString(". ") { it.reply }
+                        graphifyRepo.logTask(
+                            safeCommand,
+                            if (run.allOk) "success (multi-step pipeline): $result" else "failed (multi-step pipeline): $result",
+                            "AgentCore StepPipeline",
+                            0
+                        )
+                        _state.value = if (run.allOk) AgentState.Done(result) else AgentState.Error(result)
+                        return@withLock
+                    }
+
 
                     // Additive general UI agent; deterministic pipeline and direct routes retain priority.
                     if (AgentLoopCommandPolicy.shouldUseLoop(safeCommand)) {
