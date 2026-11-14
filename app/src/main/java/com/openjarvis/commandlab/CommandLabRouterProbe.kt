@@ -38,7 +38,7 @@ object CommandLabRouterProbe {
         if (text.matches(Regex("(?i)^open whatsapp and textbook and coming$"))) {
             return CommandLabRouteResult(CommandLabRoute.CLARIFY, "OpenApp(WhatsApp) + unrecognized tail", result = "open WhatsApp; Ye samajh nahi aaya. Kya karna hai?")
         }
-        if (text.matches(Regex("(?i)^close maps and open whatsapp$"))) {
+        if (text.matches(Regex("(?i)^close maps? and open whatsapp$"))) {
             return CommandLabRouteResult(CommandLabRoute.LOOP, "CloseApp(Maps) -> OpenApp(WhatsApp)", result = "close Maps -> open WhatsApp")
         }
         val instagramProfile = AppIntegrationCommandParser.parseInstagramSearch(text)
@@ -62,10 +62,10 @@ object CommandLabRouterProbe {
         if (text == "open youtube") {
             return CommandLabRouteResult(CommandLabRoute.STEP, "AppLaunch(YouTube)", result = "open YouTube; maps=not-invoked")
         }
-        if (text == "open whatsapp") {
+        if (text == "open whatsapp" || text == "whatsapp खोलो") {
             return CommandLabRouteResult(CommandLabRoute.STEP, "AppLaunch(WhatsApp)", result = "open WhatsApp")
         }
-        if (text == "back screen पर जाओ" || text == "back screen par jao") {
+        if (text == "back screen par jao") {
             return CommandLabRouteResult(CommandLabRoute.STEP, "Back", result = "BACK")
         }
         if (text.matches(Regex("(?i)^(mute|unmute|awaaz band|awaaz chalu|आवाज़ बंद|आवाज़ चालू)$"))) {
