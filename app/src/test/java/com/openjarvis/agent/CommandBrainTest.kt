@@ -34,13 +34,14 @@ class CommandBrainTest {
             "ओपन यूट्यूब" to """{"steps":[{"tool":"open_app","args":{"label":"YouTube"}}]}""",
             "ओपन यूट्यूब एंड सर्च" to """{"steps":[{"tool":"open_app","args":{"label":"YouTube"}},{"tool":"clarify","args":{"question":"Kya search karun?"}}]}""",
             "एंड प्ले रोमांटिक सोंग" to """{"steps":[{"tool":"play_media","args":{"query":"romantic song","app":null}}]}""",
-            "ओपन यूट्यूब एंड प्ले अरीजित सिंह सोंग" to """{"steps":[{"tool":"open_app","args":{"label":"YouTube"}},{"tool":"play_media","args":{"query":"arijit singh song","app":"YouTube"}}]}""",
+            "हे जरवेस ओपन यूट्यूब एंड प्ले अरीजित सिंह सोंग" to """{"steps":[{"tool":"open_app","args":{"label":"YouTube"}},{"tool":"play_media","args":{"query":"arijit singh song","app":"YouTube"}}]}""",
             "बैक स्क्रीन पर जाओ" to """{"steps":[{"tool":"back","args":{}}]}""",
             "व्हाट्सएप खोलो" to """{"steps":[{"tool":"open_app","args":{"label":"WhatsApp"}}]}""",
             "WhatsApp per Rahul ko message bhejo hello" to """{"steps":[{"tool":"message_draft","args":{"app":"WhatsApp","contact":"Rahul","text":"hello"}}]}""",
             "Awaaz badhao" to """{"steps":[{"tool":"volume","args":{"direction":"up"}}]}""",
             "इंडिया का कैपिटल" to """{"steps":[{"tool":"answer","args":{"text":"भारत की राजधानी नई दिल्ली है।"}}]}""",
-            "मद्राचोद" to """{"steps":[{"tool":"none","args":{}}]}"""
+            "मद्राचोद" to """{"steps":[{"tool":"none","args":{}}]}""",
+            "Torch on" to """{"steps":[{"tool":"torch","args":{"on":true}}]}"""
         )
         val expected = mapOf(
             "ओपन यूट्यूब" to CommandBrainPlan(listOf(CommandBrainStep.OpenApp("YouTube"))),
@@ -59,6 +60,7 @@ class CommandBrainTest {
             "Awaaz badhao" to CommandBrainPlan(listOf(CommandBrainStep.Volume("up"))),
             "इंडिया का कैपिटल" to CommandBrainPlan(listOf(CommandBrainStep.Answer("भारत की राजधानी नई दिल्ली है।"))),
             "मद्राचोद" to CommandBrainPlan(listOf(CommandBrainStep.None)),
+            "Torch on" to CommandBrainPlan(listOf(CommandBrainStep.Torch(true))),
             "जरवेस" to CommandBrainPlan(emptyList(), acknowledge = true)
         )
         val provider = FakeProvider { responses.getValue(it) }
@@ -126,6 +128,7 @@ class CommandBrainTest {
             "Awaaz badhao" to listOf(CommandBrainStep.Volume("up")),
             "इंडिया का कैपिटल" to listOf(CommandBrainStep.Answer("भारत की राजधानी नई दिल्ली है।")),
             "मद्राचोद" to listOf(CommandBrainStep.None),
+            "Torch on" to listOf(CommandBrainStep.Torch(true)),
             "जरवेस" to emptyList()
         )
         expected.forEach { (utterance, expectedSteps) ->
