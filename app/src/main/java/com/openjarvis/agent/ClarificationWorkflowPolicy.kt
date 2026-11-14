@@ -12,11 +12,17 @@ internal object ClarificationWorkflowPolicy {
     const val OFFLINE_FALLBACK = "Aap kya karna chahte ho? Thoda detail mein batao."
     const val MAX_ROUNDS = 2
 
+    const val PENDING_TTL_MS = 60_000L
+
     data class Pending(
         val originalCommand: String,
         val question: String,
-        val round: Int
-    )
+        val round: Int,
+        val createdAtMs: Long = System.currentTimeMillis()
+    ) {
+        fun isExpired(nowMs: Long): Boolean =
+            nowMs < createdAtMs || nowMs - createdAtMs > PENDING_TTL_MS
+    }
 
     sealed interface Decision {
         data class Ask(val question: String, val pending: Pending) : Decision
