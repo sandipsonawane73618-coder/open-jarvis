@@ -17,7 +17,7 @@ class CommandLabSelfTestTest {
     @Test
     fun selfTestUsesTheRealReadOnlyRouterAndExecutesNoAndroidActions() {
         val results = CommandLabSelfTest.run()
-        assertEquals(48, results.size)
+        assertEquals(58, results.size)
         val failures = results.filterNot { it.passed }
         assertTrue(failures.joinToString("\n") { "${it.case.command}: ${it.failReason}" }, failures.isEmpty())
     }
@@ -46,5 +46,16 @@ class CommandLabSelfTestTest {
     @Test fun extraInstagramCaseUsesDeterministicPipelineWithoutLlm() = assertExtraCase("Extra 6 Instagram open then in-app search")
     @Test fun extraFactualQuestionUsesChatNotActionLoop() = assertExtraCase("Extra 7 India capital is chat")
     @Test fun extraVagueCommandClarifiesWithoutAnyAction() = assertExtraCase("Extra 8 vague command clarifies safely")
+
+    @Test fun phoneReportOpenYouTubeDoesNotNavigate() = assertExtraCase("Phone report 1 Devanagari open YouTube")
+    @Test fun phoneReportYouTubeMissingSearchClarifies() = assertExtraCase("Phone report 2 YouTube search missing query")
+    @Test fun phoneReportPlaySongMissingQueryClarifies() = assertExtraCase("Phone report 3 play a song missing query")
+    @Test fun phoneReportPlayRomanticSongUsesCurrentMediaApp() = assertExtraCase("Phone report 4 play romantic song in current media app")
+    @Test fun phoneReportWakeYouTubeSearchAndPlay() = assertExtraCase("Phone report 5 wake YouTube search and play")
+    @Test fun phoneReportBackPhraseIsGlobalBack() = assertExtraCase("Phone report 6 back screen")
+    @Test fun phoneReportWhatsAppOpens() = assertExtraCase("Phone report 7 WhatsApp open")
+    @Test fun phoneReportWhatsAppGarbageTailClarifiesWithoutMaps() = assertExtraCase("Phone report 8 WhatsApp garbage tail")
+    @Test fun phoneReportMisheardWakeAliasClosesMapsThenOpensWhatsApp() = assertExtraCase("Phone report 9 misheard wake alias close Maps open WhatsApp")
+    @Test fun phoneReportInstagramFollowersSearchesProfile() = assertExtraCase("Phone report 10 Instagram followers profile search")
 
 }
