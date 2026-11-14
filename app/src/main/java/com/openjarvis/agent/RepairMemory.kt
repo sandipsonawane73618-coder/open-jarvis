@@ -79,7 +79,7 @@ class RepairMemory(context: Context) {
 
 object RepairMemoryPolicy {
     private val sensitive = Regex(
-        """(?i)(?:https?://|www\\.|[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}|\\b(?:\\+?\\d[\\d -]{7,}\\d)\\b|\\b(?:otp|password|passcode|upi|bank|account|card|message|send|call|contact)\\b)"""
+        """(?i)(?:https?://|www\.|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\b(?:\+?\d[\d -]{7,}\d)\b|\b(?:otp|password|passcode|upi|bank|account|card|message|send|call|contact)\b)"""
     )
 
     fun commandKey(command: String): String {
