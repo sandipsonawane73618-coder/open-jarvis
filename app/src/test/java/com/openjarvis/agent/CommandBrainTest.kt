@@ -58,7 +58,8 @@ class CommandBrainTest {
             )),
             "Awaaz badhao" to CommandBrainPlan(listOf(CommandBrainStep.Volume("up"))),
             "इंडिया का कैपिटल" to CommandBrainPlan(listOf(CommandBrainStep.Answer("भारत की राजधानी नई दिल्ली है।"))),
-            "मद्राचोद" to CommandBrainPlan(listOf(CommandBrainStep.None))
+            "मद्राचोद" to CommandBrainPlan(listOf(CommandBrainStep.None)),
+            "जरवेस" to CommandBrainPlan(emptyList(), acknowledge = true)
         )
         val provider = FakeProvider { responses.getValue(it) }
         val commandBrain = brain(provider)
@@ -123,18 +124,24 @@ class CommandBrainTest {
             ),
             "Awaaz badhao" to listOf(CommandBrainStep.Volume("up")),
             "इंडिया का कैपिटल" to listOf(CommandBrainStep.Answer("भारत की राजधानी नई दिल्ली है।")),
-            "मद्राचोद" to listOf(CommandBrainStep.None)
+            "मद्राचोद" to listOf(CommandBrainStep.None),
+            "जरवेस" to emptyList()
         )
         expected.forEach { (utterance, expectedSteps) ->
             val provider = FakeProvider { input -> responses.getValue(input) }
-            val validated = brain(provider).plan(utterance, 1_500L).getOrThrow()
-            assertEquals("$utterance validated steps", expectedSteps, validated.steps)
-
+            val planned = brain(provider).plan(utterance, 1_500L).getOrThrow()
             val executed = mutableListOf<CommandBrainStep>()
-            CommandBrainExecution.execute(validated) { step ->
-                executed += step
-                Result.success("executed")
-            }.getOrThrow()
+            if (planned.acknowledge) {
+                assertTrue("$utterance must be a local wake acknowledgement", expectedSteps.isEmpty())
+                assertTrue(provider.calls.isEmpty())
+            } else {
+                val validated = CommandBrainExecutionPolicy.validate(planned, utterance).getOrThrow()
+                assertEquals("$utterance validated steps", expectedSteps, validated.steps)
+                CommandBrainExecution.execute(validated) { step ->
+                    executed += step
+                    Result.success("executed")
+                }.getOrThrow()
+            }
             assertEquals("$utterance executed steps", expectedSteps, executed)
         }
     }
@@ -156,4 +163,32 @@ class CommandBrainTest {
             """{"steps":[{"tool":"message_draft","args":{"app":"WhatsApp","contact":"Rahul","text":"hello","send":true}}]}"""
         ).isFailure)
     }
+
+    @Test fun invalidOrUnsafePlansNeverReachTheExecutor() {
+        val cases = listOf(
+            Triple("""{"steps":[{"tool":"unknown_tool","args":{}}]}""", "open YouTube", "unknown tool"),
+            Triple("""{"steps":[{"tool":"open_app","args":{"label":"YouTube","extra":true}}]}""", "open YouTube", "bad args"),
+            Triple("""{"steps":[{"tool":"maps","args":{"destination":"Pune"}}]}""", "open YouTube", "MAPS hallucination"),
+            Triple("""{"steps":[{"tool":"message_draft","args":{"app":"WhatsApp","contact":"Rahul","text":"hello","send":true}}]}""", "WhatsApp message Rahul hello", "message send flag"),
+            Triple("""{"steps":[{"tool":"message_draft","args":{"app":"WhatsApp","contact":"Rahul","text":"hello"}}]}""", "WhatsApp message Rahul hello and make payment now", "banking/payment")
+        )
+        cases.forEach { (raw, command, label) ->
+            val parsed = CommandBrainPlanParser.parse(raw)
+            var dispatchCount = 0
+            if (parsed.isSuccess) {
+                val validated = CommandBrainExecutionPolicy.validate(parsed.getOrThrow(), command)
+                assertTrue("$label must be rejected before dispatch", validated.isFailure)
+                if (validated.isSuccess) {
+                    CommandBrainExecution.execute(validated.getOrThrow()) {
+                        dispatchCount++
+                        Result.success("unexpected")
+                    }
+                }
+            } else {
+                assertTrue("$label parser must reject", parsed.isFailure)
+            }
+            assertEquals("$label must never dispatch", 0, dispatchCount)
+        }
+    }
+
 }
