@@ -137,6 +137,10 @@ class JarvisNotificationListener : NotificationListenerService() {
     }
 
     private fun upsertNotification(sbn: StatusBarNotification) {
+        // Enforce the same financial-app privacy gate before any notification fields
+        // are parsed, regardless of whether this is bootstrap or a live update.
+        if (!NotificationIngestionPolicy.accepts(sbn.packageName)) return
+
         val parsed = parseNotification(sbn)
         synchronized(notificationsLock) {
             // Notification IDs are scoped to a package; replace an updated active item.
