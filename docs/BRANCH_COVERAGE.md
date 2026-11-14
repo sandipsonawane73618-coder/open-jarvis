@@ -26,7 +26,7 @@ Policy: do not force-merge diverged branches. Preserve all existing tests; total
 | `feature/jarvis-jandal-memory-recall` | Local personal-memory recall | `agent/PersonalMemoryStore.kt`, `agent/ScreenshotMemoryStore.kt`, `graphify/GraphifyRepository.kt` | None identified; branch is behind All-in-One | **skip**; existing memory system is already present. |
 | `feature/jarvis-keyfree-wakeword` | Key-free wakeword work | `voice/VoicuteOnnxWakeWordController.kt`, `voice/WakeWordDiagnostics.kt` | No accepted missing implementation identified | **skip**; retain the user's Voicute-only wakeword decision; do not add Sherpa or paid engines. |
 | `feature/jarvis-long-command-engine-pr17` | Long-command splitting | `agent/CommandSplitter.kt`, `agent/StepPipeline.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-m3-m5-proactive-hud` | Proactive HUD | Existing HUD in `ui/OverlayService.kt` | Branch-only workflow changes | **skip**; no missing app code identified. |
+| `feature/jarvis-m3-m5-proactive-hud` | Proactive scheduler, local notifications, dashboard HUD, AndroidUse and vision adapters | `proactive/ProactiveAssistant.kt`, `automation/AndroidUseBridge.kt`, `llm/providers/LocalAiProvider.kt` (optional), `vision/MobileAgentClient.kt`, `vision/OmniParserClient.kt`, `ui/OverlayService.kt`, `ui/dashboard/DashboardScreen.kt` | No missing non-wake-word app source; the only absent source file is `voice/SherpaOnnxWakeWordController.kt`, explicitly excluded by user decision | **already present for non-wake-word features**; no code port. Do not import Sherpa assets/controller or workflow dependency. |
 | `feature/jarvis-manual-mic-hud-headroom` | Manual mic HUD and Headroom | `ui/OverlayService.kt`, `agent/HeadroomLite.kt`, `ui/settings/SettingsScreen.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
 | `feature/jarvis-manual-mic-report-doctor` | Manual mic and Report Doctor | `diagnostics/ReportDoctor.kt`, `ui/settings/SettingsScreen.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
 | `feature/jarvis-multilingual-volume-routing` | Multilingual volume routing | `skills/SkillRegistry.kt`, `voice/SpeechLanguage.kt` | None identified; branch is behind All-in-One | **skip**; already included; directional reply remains tracked under PR #75. |
@@ -146,3 +146,22 @@ Merge base: `1388daa00ce57458aeb974d70df3d8451ef66845`; source branch is 13 comm
 | `app/src/main/java/com/openjarvis/ui/OverlayService.kt` | Prevents transient VoiceState.Idle from hiding THINKING while AgentCore is Running. | Current file has the same guard plus continuous-session, mic-disabled and command-mute state handling. | Already present; no port. |
 
 Tests: source `SelfHealingSafetyPolicyTest.kt` has 3 tests; current suite has 9, including classified failures, read-only retries, permission/unknown fail-closed behaviour, recurrence pausing and verified recovery reset. Source `ReportDoctorTest.kt` has 8; current is identical (8). Source `HeadroomLiteTest.kt` has 13; current has 15 with stricter preservation and multilingual token metrics. No test was deleted or loosened. All unique source behaviours are already present or superseded; no new tests/code required for this branch.
+
+
+### 6. `feature/jarvis-m3-m5-proactive-hud` — completed full-scope audit
+
+Compare against All-in-One: 2 commits ahead / 1017 behind; the two unique commits change only `.github/workflows/android-build.yml` and `.github/workflows/main.yml`. There are **no app source or test changes** in those two commits.
+
+The wider M3/M5 feature set from PR #16 was also checked against the current All-in-One tree:
+
+| PR #16 source feature | Current All-in-One path | Result |
+|---|---|---|
+| Local reminder/daily briefing/battery/charging notifications | `app/src/main/java/com/openjarvis/proactive/ProactiveAssistant.kt` | Present |
+| Android-native accessibility bridge | `app/src/main/java/com/openjarvis/automation/AndroidUseBridge.kt` | Present; remains an Android-native bridge, not upstream Python/ADB host runtime |
+| Optional LocalAI connector | `app/src/main/java/com/openjarvis/llm/providers/LocalAiProvider.kt` | Present but optional; does not replace local Ollama default or create automatic fallback |
+| MobileAgent-compatible adapter | `app/src/main/java/com/openjarvis/vision/MobileAgentClient.kt` | Present; external service only, validated proposals |
+| OmniParser-compatible adapter | `app/src/main/java/com/openjarvis/vision/OmniParserClient.kt` | Present; external service only, validated proposals |
+| Dashboard/HUD | `app/src/main/java/com/openjarvis/ui/dashboard/DashboardScreen.kt`, `ui/OverlayService.kt` | Present |
+| Sherpa ONNX wakeword controller/runtime | `app/src/main/java/com/openjarvis/voice/SherpaOnnxWakeWordController.kt` | Not present in All-in-One and **skipped by explicit user decision**; no wakeword change or model asset import |
+
+Current workflow is newer and has ECC scan, test-count guard, feature/test map, APK build, smoke and release-ready artifact stages. The old branch workflow adds a Sherpa model-preparation step, which is incompatible with the no-wakeword-change decision; its older diagnostics job is not copied. No app feature beyond the excluded Sherpa wakeword is missing.
