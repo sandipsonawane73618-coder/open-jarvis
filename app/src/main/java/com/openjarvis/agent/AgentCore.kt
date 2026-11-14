@@ -279,6 +279,17 @@ Ask at most one question per response. Use Hindi/Marathi/Hinglish/English matchi
         budgetStartMs: Long
     ): Pair<String, LLMResponseValidator.ValidationResult> {
         val initial = LLMResponseValidator.validate(rawResponse)
+        if (initial.wasRepaired) {
+            // Record that a conservative parser repair occurred, but AgentDiagnostics stores
+            // only a shape summary; raw command, OCR, and model payload text remain private.
+            AgentDiagnostics.record(
+                context, "response-validation-repaired", userCommand,
+                "Applied a conservative local JSON shape repair",
+                rawResponse = rawResponse,
+                provider = universalAdapter.getProviderName(),
+                model = "qwen3:1.7b"
+            )
+        }
         if (initial.isValid) return rawResponse to initial
         // Validation repair shares the original request's 45-second deadline.
         // If the budget is spent, keep the validation failure and do not start another LLM call.
@@ -300,8 +311,17 @@ ${rawResponse.take(1000)}
         val repaired = repairResult.getOrNull() ?: return rawResponse to initial
 
         val repairedValidation = LLMResponseValidator.validate(repaired)
-        return if (repairedValidation.isValid) repaired to repairedValidation
-        else rawResponse to initial
+        if (repairedValidation.isValid) {
+            AgentDiagnostics.record(
+                context, "response-validation-retried", userCommand,
+                "Initial output was invalid; one deadline-bounded structure repair succeeded",
+                rawResponse = repaired,
+                provider = universalAdapter.getProviderName(),
+                model = "qwen3:1.7b"
+            )
+            return repaired to repairedValidation
+        }
+        return rawResponse to initial
     }
 
     fun executeTask(cleanCommand: String) {
