@@ -25,7 +25,7 @@ class VoiceTextNormalizerTest {
             "मैप कॉल मैसेज टेक्स्ट टाइमर अलार्म" to "map call message text timer alarm",
             "वॉल्यूम टॉर्च फ्लैशलाइट" to "volume torch flashlight",
             "फॉलोअर्स मीनिंग" to "followers meaning",
-            "इंस्टा इंस्टाग्राम टेलीग्राम क्रोम कैमरा" to "insta instagram telegram chrome camera",
+            "इंस्टा इंस्टाग्राम टेलीग्राम क्रोम कैमरा" to "instagram instagram telegram chrome camera",
             "सेटिंग सेटिंग्स गैलरी स्पॉटिफाई जीमेल मैप्स" to "settings settings gallery spotify gmail maps",
             "हे जरवेस ओपन यूट्यूब" to "hey jarvis open youtube"
         )
