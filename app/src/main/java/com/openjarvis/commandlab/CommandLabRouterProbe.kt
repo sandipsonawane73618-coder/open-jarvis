@@ -1,5 +1,7 @@
 package com.openjarvis.commandlab
 
+import com.openjarvis.agent.AppIntegrationCommandParser
+import com.openjarvis.agent.VoiceTextNormalizer
 import com.openjarvis.agent.BankingSafetyPolicy
 import com.openjarvis.agent.CommandRouter
 import com.openjarvis.agent.CommandSplitter
