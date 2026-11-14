@@ -34,6 +34,8 @@ import com.openjarvis.intelligence.TaskRouter
 import com.openjarvis.intelligence.FastCommandParser
 import com.openjarvis.intelligence.FastCommandRetryPolicy
 import com.openjarvis.intelligence.TaskWorkingMemory
+import com.openjarvis.intelligence.JarvisNotificationListener
+import com.openjarvis.intelligence.ConnectedAppCommandParser
 import com.openjarvis.llm.UniversalAdapter
 import com.openjarvis.llm.HybridChatRouter
 import com.openjarvis.llm.HybridChatSettingsStore
@@ -2455,6 +2457,37 @@ Actions remaining: ${session.remainingActions}
 
     private fun createStepPipeline(): StepPipeline = StepPipeline(
         listOf<StepHandler>(
+            object : StepHandler {
+                override val name: String = "notifications"
+
+                override suspend fun handle(step: String, ctx: StepContext): StepOutcome? {
+                    if (ConnectedAppCommandParser.route(step) == null) return null
+                    val listener = JarvisNotificationListener.instance
+                        ?: return StepOutcome(false, "Notification access is disabled. Enable it in Settings > Connected apps.", ctx)
+                    val senderFilter = ConnectedAppCommandParser.senderFilter(step)
+                    val appFilter = if (ConnectedAppCommandParser.whatsappOnly(step)) "com.whatsapp" else null
+                    val limit = if (ConnectedAppCommandParser.wantsMoreThanFive(step)) 50 else 5
+                    val messages = listener.getUnread(appFilter, limit).filter { item ->
+                        senderFilter == null ||
+                            item.sender?.contains(senderFilter, ignoreCase = true) == true ||
+                            item.title.contains(senderFilter, ignoreCase = true)
+                    }
+                    if (messages.isEmpty()) {
+                        val reply = if (senderFilter == null) "Koi naya notification nahi mila."
+                            else "${senderFilter} ka koi naya message nahi mila."
+                        return StepOutcome(true, reply, ctx.copy(app = "notifications"))
+                    }
+                    val reply = messages.joinToString(separator = "\\n") { item ->
+                        val sender = item.sender?.takeIf { it.isNotBlank() }
+                            ?: item.title.takeIf { it.isNotBlank() }
+                            ?: item.appLabel
+                        val body = com.openjarvis.intelligence.NotificationPrivacyPolicy.redact(item.body)
+                            .ifBlank { item.title.takeIf { it != sender }.orEmpty() }
+                        "$sender (${item.appLabel}): $body"
+                    }
+                    return StepOutcome(true, reply, ctx.copy(app = "notifications"))
+                }
+            },
             object : StepHandler {
                 override val name: String = "skill"
 
