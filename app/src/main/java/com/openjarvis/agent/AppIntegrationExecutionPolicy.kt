@@ -14,6 +14,7 @@ internal object AppIntegrationExecutionPolicy {
         val uri: String? = null,
         val mimeType: String? = null,
         val text: String? = null,
+        val recipientName: String? = null,
         val title: String? = null,
         val start: LocalDateTime? = null,
         val durationMinutes: Int? = null,
@@ -42,13 +43,14 @@ internal object AppIntegrationExecutionPolicy {
         )
     }
 
-    fun telegramMessage(message: String): Plan? {
+    fun telegramMessage(message: String, recipientName: String? = null): Plan? {
         if (message.isBlank()) return null
         return Plan(
             action = "android.intent.action.SEND",
             packageName = "org.telegram.messenger",
             mimeType = "text/plain",
             text = message.trim(),
+            recipientName = recipientName?.trim()?.takeIf { it.isNotBlank() },
             requiresUserSelection = true,
             automaticSend = false
         )
