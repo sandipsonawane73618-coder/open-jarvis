@@ -36,6 +36,7 @@ import com.openjarvis.intelligence.FastCommandRetryPolicy
 import com.openjarvis.intelligence.TaskWorkingMemory
 import com.openjarvis.intelligence.JarvisNotificationListener
 import com.openjarvis.intelligence.ConnectedAppCommandParser
+import com.openjarvis.intelligence.ConnectedAppsReader
 import com.openjarvis.llm.UniversalAdapter
 import com.openjarvis.llm.HybridChatRouter
 import com.openjarvis.llm.HybridChatSettingsStore
@@ -84,6 +85,7 @@ class AgentCore(private val context: Context) {
     private val skillEngine = SkillEngine(context)
     private val nativeLearnedStore = NativeLearnedStore(context)
     private val selfHealingExecutor = SelfHealingExecutor(context)
+    private val connectedAppsReader = ConnectedAppsReader(context)
 
     private var workingMemory = TaskWorkingMemory()
     private val contactFollowUpWindow = ContactFollowUpWindow()
@@ -2461,31 +2463,58 @@ Actions remaining: ${session.remainingActions}
                 override val name: String = "notifications"
 
                 override suspend fun handle(step: String, ctx: StepContext): StepOutcome? {
-                    if (ConnectedAppCommandParser.route(step) == null) return null
-                    val listener = JarvisNotificationListener.instance
-                        ?: return StepOutcome(false, "Notification access is disabled. Enable it in Settings > Connected apps.", ctx)
-                    val senderFilter = ConnectedAppCommandParser.senderFilter(step)
-                    val appFilter = if (ConnectedAppCommandParser.whatsappOnly(step)) "com.whatsapp" else null
-                    val limit = if (ConnectedAppCommandParser.wantsMoreThanFive(step)) 50 else 5
-                    val messages = listener.getUnread(appFilter, limit).filter { item ->
-                        senderFilter == null ||
-                            item.sender?.contains(senderFilter, ignoreCase = true) == true ||
-                            item.title.contains(senderFilter, ignoreCase = true)
+                    val route = ConnectedAppCommandParser.route(step) ?: return null
+                    return try {
+                        when (route) {
+                            "NOTIFICATION_READ" -> {
+                                val listener = JarvisNotificationListener.instance
+                                    ?: return StepOutcome(false, "Notification access is disabled. Enable it in Settings > Connected apps.", ctx)
+                                val senderFilter = ConnectedAppCommandParser.senderFilter(step)
+                                val appFilter = if (ConnectedAppCommandParser.whatsappOnly(step)) "com.whatsapp" else null
+                                val limit = if (ConnectedAppCommandParser.wantsMoreThanFive(step)) 50 else 5
+                                val messages = listener.getUnread(appFilter, limit).filter { item ->
+                                    senderFilter == null ||
+                                        item.sender?.contains(senderFilter, ignoreCase = true) == true ||
+                                        item.title.contains(senderFilter, ignoreCase = true)
+                                }
+                                if (messages.isEmpty()) {
+                                    val reply = if (senderFilter == null) "Koi naya notification nahi mila."
+                                        else "$senderFilter ka koi naya message nahi mila."
+                                    StepOutcome(true, reply, ctx.copy(app = "notifications"))
+                                } else {
+                                    val reply = messages.joinToString(separator = "\\n") { item ->
+                                        val sender = item.sender?.takeIf { it.isNotBlank() }
+                                            ?: item.title.takeIf { it.isNotBlank() }
+                                            ?: item.appLabel
+                                        val body = com.openjarvis.intelligence.NotificationPrivacyPolicy.redact(item.body)
+                                            .ifBlank { item.title.takeIf { it != sender }.orEmpty() }
+                                        "$sender (${item.appLabel}): $body"
+                                    }
+                                    StepOutcome(true, reply, ctx.copy(app = "notifications"))
+                                }
+                            }
+                            "CONTACT_READ" -> {
+                                val name = ConnectedAppCommandParser.contactName(step)
+                                    ?: return StepOutcome(false, "Contact name samajh nahi aaya.", ctx)
+                                val number = connectedAppsReader.contactNumber(name)
+                                StepOutcome(true, "$name ka number: $number", ctx.copy(app = "contacts", contact = name))
+                            }
+                            "CALENDAR_READ" -> {
+                                val offset = com.openjarvis.intelligence.CalendarQueryParser.dayOffset(step) ?: 0
+                                val events = connectedAppsReader.calendarEvents(offset)
+                                val label = when (offset) { 0 -> "Aaj"; 1 -> "Kal"; else -> "Parso" }
+                                val reply = if (events.isEmpty()) "$label koi calendar event nahi hai."
+                                    else "$label ke events:\\n" + events.joinToString("\\n")
+                                StepOutcome(true, reply, ctx.copy(app = "calendar"))
+                            }
+                            "SMS_READ" -> StepOutcome(true, connectedAppsReader.lastSmsSender(), ctx.copy(app = "sms"))
+                            else -> null
+                        }
+                    } catch (error: SecurityException) {
+                        StepOutcome(true, error.message ?: "Permission denied. Android app settings mein permission allow karein.", ctx)
+                    } catch (error: Exception) {
+                        StepOutcome(false, error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName, ctx)
                     }
-                    if (messages.isEmpty()) {
-                        val reply = if (senderFilter == null) "Koi naya notification nahi mila."
-                            else "${senderFilter} ka koi naya message nahi mila."
-                        return StepOutcome(true, reply, ctx.copy(app = "notifications"))
-                    }
-                    val reply = messages.joinToString(separator = "\\n") { item ->
-                        val sender = item.sender?.takeIf { it.isNotBlank() }
-                            ?: item.title.takeIf { it.isNotBlank() }
-                            ?: item.appLabel
-                        val body = com.openjarvis.intelligence.NotificationPrivacyPolicy.redact(item.body)
-                            .ifBlank { item.title.takeIf { it != sender }.orEmpty() }
-                        "$sender (${item.appLabel}): $body"
-                    }
-                    return StepOutcome(true, reply, ctx.copy(app = "notifications"))
                 }
             },
             object : StepHandler {
