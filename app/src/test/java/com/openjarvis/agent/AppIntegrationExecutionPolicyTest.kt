@@ -21,8 +21,10 @@ class AppIntegrationExecutionPolicyTest {
 
     @Test
     fun telegramMessageOpensShareDraftAndNeverSendsAutomatically() {
-        val plan = AppIntegrationExecutionPolicy.telegramMessage("Hello Rahul")
+        val plan = AppIntegrationExecutionPolicy.telegramMessage("Hello Rahul", "Rahul")
         assertEquals("android.intent.action.SEND", plan?.action)
+        assertEquals("org.telegram.messenger", plan?.packageName)
+        assertEquals("Rahul", plan?.recipientName)
         assertEquals("text/plain", plan?.mimeType)
         assertEquals("Hello Rahul", plan?.text)
         assertTrue(plan?.requiresUserSelection == true)
