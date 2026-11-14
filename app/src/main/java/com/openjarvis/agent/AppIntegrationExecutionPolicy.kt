@@ -25,6 +25,12 @@ internal object AppIntegrationExecutionPolicy {
 
     private fun encoded(value: String): String = URLEncoder.encode(value.trim(), "UTF-8")
 
+    fun calendarPackageCandidates(): List<String> = listOf(
+        "com.google.android.calendar",
+        "com.coloros.calendar",
+        "com.android.calendar"
+    )
+
     fun appPackage(label: String): String? = when (label.trim().lowercase()) {
         "whatsapp", "wa" -> "com.whatsapp"
         "instagram", "insta", "ig" -> "com.instagram.android"
