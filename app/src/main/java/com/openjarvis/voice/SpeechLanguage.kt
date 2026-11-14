@@ -2,7 +2,7 @@ package com.openjarvis.voice
 
 /** Deterministic locale selection shared by speech recognition and speech output. */
 internal object SpeechLanguage {
-    val recognitionLocales: List<String> = listOf("hi-IN", "mr-IN", "en-IN")
+    val recognitionLocales: List<String> = listOf("hi-IN", "en-IN", "mr-IN")
 
     fun preferredRecognitionLocale(deviceLanguage: String): String = when (deviceLanguage.lowercase()) {
         "mr" -> "mr-IN"

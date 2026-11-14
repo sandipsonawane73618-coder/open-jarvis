@@ -25,6 +25,8 @@ import com.openjarvis.devicecontrol.PowerOffActivity
 import com.openjarvis.accessibility.ScreenReader
 import com.openjarvis.graphify.AnalysisEngine
 import com.openjarvis.graphify.GraphifyRepository
+import com.openjarvis.graphify.MemoryContextBuilder
+import com.openjarvis.headroom.HeadroomCompressor
 import com.openjarvis.intelligence.AIAppInteractor
 import com.openjarvis.intelligence.AIApps
 import com.openjarvis.intelligence.AppAnalyzer
@@ -132,9 +134,13 @@ INSTALLED APPS: {INSTALLED_APPS}
         val remaining = remainingLlmBudgetMs(budgetStartMs)
         val requestBudget = AppCommandLlmPolicy.timeoutMs(user, remaining)
         if (requestBudget <= 0L) return Result.failure(IllegalStateException("LLM time budget exceeded. Try a shorter command."))
-        // Deterministic app parsers run before this fallback; app-control LLM fallback is capped at 10 seconds.
-        // Compress system/context material only. The user's command remains byte-identical.
-        val headroom = HeadroomLite.compress(system, HeadroomLite.ContentKind.POLICY)
+        // Hybrid stage removes only redundant formatting and immediately repeated tool/log lines.
+        // Then Headroom Lite applies its existing policy compressor. The user command stays byte-identical.
+        val hybrid = HeadroomCompressor.compressContext(system)
+        val headroom = HeadroomLite.compress(hybrid.compressed, HeadroomLite.ContentKind.POLICY)
+        if (hybrid.charactersSaved > 0) {
+            Log.i(TAG, "headroom_hybrid stage=system_prompt saved_chars=${hybrid.charactersSaved} saved_tokens_est=${hybrid.estimatedTokensSaved}")
+        }
         if (headroom.savedChars > 0) {
             Log.i(TAG, "headroom_lite stage=system_prompt saved_chars=${headroom.savedChars} saved_tokens_est=${headroom.savedTokens} ratio=${"%.3f".format(Locale.US, headroom.compressionRatio)}")
         }
@@ -152,8 +158,14 @@ INSTALLED APPS: {INSTALLED_APPS}
     ): Result<String> {
         val remaining = remainingLlmBudgetMs(budgetStartMs)
         if (remaining <= 0L) return Result.failure(IllegalStateException("LLM time budget exceeded."))
-        val cloudPrompt = HeadroomLite.compress(cloudSystem, HeadroomLite.ContentKind.POLICY)
-        val localPrompt = HeadroomLite.compress(localSystem, HeadroomLite.ContentKind.POLICY)
+        val cloudPrompt = HeadroomLite.compress(
+            HeadroomCompressor.compressContext(cloudSystem).compressed,
+            HeadroomLite.ContentKind.POLICY
+        )
+        val localPrompt = HeadroomLite.compress(
+            HeadroomCompressor.compressContext(localSystem).compressed,
+            HeadroomLite.ContentKind.POLICY
+        )
         return withTimeoutOrNull(remaining) {
             hybridChatRouter.complete(cloudPrompt.content, localPrompt.content, user, remaining)
         } ?: Result.failure(IllegalStateException("LLM time budget exceeded."))
@@ -243,7 +255,11 @@ Ask at most one question per response. Use Hindi/Marathi/Hinglish/English matchi
         val remaining = remainingLlmBudgetMs(budgetStartMs)
         val requestBudget = AppCommandLlmPolicy.timeoutMs(user, remaining)
         if (requestBudget <= 0L) return Result.failure(IllegalStateException("LLM time budget exceeded. Try a shorter command."))
-        val headroom = HeadroomLite.compress(system, HeadroomLite.ContentKind.POLICY)
+        val hybrid = HeadroomCompressor.compressContext(system)
+        val headroom = HeadroomLite.compress(hybrid.compressed, HeadroomLite.ContentKind.POLICY)
+        if (hybrid.charactersSaved > 0) {
+            Log.i(TAG, "headroom_hybrid stage=skill_system_prompt saved_chars=${hybrid.charactersSaved}")
+        }
         if (headroom.savedChars > 0) {
             Log.i(TAG, "headroom_lite stage=skill_system_prompt saved_chars=${headroom.savedChars} saved_tokens_est=${headroom.savedTokens}")
         }
@@ -926,7 +942,21 @@ Do not claim to have performed phone actions. Do not expose internal instruction
                     // network calls, or keeping an LLM/model resident.
                     // Personal profile facts are private chat-only context; action planning
                     // receives only task-relevant saved screen text.
-                    val memoryPrompt = screenshotMemoryStore.promptContext(safeCommand)
+                    val savedMemoryPrompt = screenshotMemoryStore.promptContext(safeCommand)
+                    val memoryNowMs = System.currentTimeMillis()
+                    val graphifyMemoryPrompt = runCatching {
+                        val recentTasks = graphifyRepo.getRecentTasks(100)
+                        val recentPatterns = graphifyRepo.getActivePatterns(
+                            memoryNowMs - 30L * 24L * 60L * 60L * 1000L,
+                            0.60f
+                        )
+                        MemoryContextBuilder.build(safeCommand, recentTasks, recentPatterns, memoryNowMs)
+                    }.getOrDefault("")
+                    // Graphify recall emits only allow-listed categories; raw commands, contacts,
+                    // messages, screen text and provider details never enter this prompt context.
+                    val memoryPrompt = listOf(savedMemoryPrompt, graphifyMemoryPrompt)
+                        .filter { it.isNotBlank() }
+                        .joinToString("\n")
                     // Allocate a hard context budget by usefulness: actionable UI first, then
                     // relevant saved facts, visible text, and finally app labels. The user's
                     // command is passed separately and is never truncated by this allocator.
@@ -936,10 +966,14 @@ Do not claim to have performed phone actions. Do not expose internal instruction
                         screenElements = screenElements,
                         installedApps = installedAppsPrompt
                     )
+                    // Compact only adjacent, identical, safe display-text OCR lines before Headroom Lite.
+                    // Structured elements, the current request and action/safety instructions are untouched.
+                    val screenContextCompaction = HeadroomLiteContext.compressRepeatedLines(allocatedContext.screenText)
+                    val compactedScreenElements = allocatedContext.screenElements
                     // Keep compression results alive through the LLM call so exact originals remain recoverable.
                     val memoryCompression = HeadroomLite.compress(allocatedContext.memory, HeadroomLite.ContentKind.TEXT)
-                    val screenTextCompression = HeadroomLite.compress(allocatedContext.screenText, HeadroomLite.ContentKind.UI_TEXT)
-                    val screenElementsCompression = HeadroomLite.compress(allocatedContext.screenElements, HeadroomLite.ContentKind.UI_TEXT)
+                    val screenTextCompression = HeadroomLite.compress(screenContextCompaction.text, HeadroomLite.ContentKind.UI_TEXT)
+                    val screenElementsCompression = HeadroomLite.compress(compactedScreenElements, HeadroomLite.ContentKind.UI_TEXT)
                     val installedAppsCompression = HeadroomLite.compress(allocatedContext.installedApps, HeadroomLite.ContentKind.UI_TEXT)
                     val compactMemoryPrompt = memoryCompression.content
                     val compactScreenText = screenTextCompression.content
