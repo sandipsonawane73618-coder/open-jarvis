@@ -30,7 +30,7 @@ class SelfHealingEngine(context: Context) {
         if (!ExperimentalSelfHealingSettings.isEnabled(app)) return
         val prefix = "retry_${digest(command.trim().lowercase(Locale.ROOT))}_"
         val editor = prefs.edit()
-        prefs.all.keys.filter { it.startsWith(prefix) }.forEach(editor::remove)
+        prefs.all.keys.filter { it.startsWith(prefix) }.forEach { editor.remove(it) }
         editor.putString(KEY_LAST_SUCCESS, System.currentTimeMillis().toString()).apply()
     }
 
