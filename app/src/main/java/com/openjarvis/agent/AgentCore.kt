@@ -279,6 +279,17 @@ Ask at most one question per response. Use Hindi/Marathi/Hinglish/English matchi
         budgetStartMs: Long
     ): Pair<String, LLMResponseValidator.ValidationResult> {
         val initial = LLMResponseValidator.validate(rawResponse)
+        if (initial.wasRepaired) {
+            // Record that a conservative parser repair occurred, but AgentDiagnostics stores
+            // only a shape summary; raw command, OCR, and model payload text remain private.
+            AgentDiagnostics.record(
+                context, "response-validation-repaired", userCommand,
+                "Applied a conservative local JSON shape repair",
+                rawResponse = rawResponse,
+                provider = universalAdapter.getProviderName(),
+                model = "qwen3:1.7b"
+            )
+        }
         if (initial.isValid) return rawResponse to initial
         // Validation repair shares the original request's 45-second deadline.
         // If the budget is spent, keep the validation failure and do not start another LLM call.
@@ -300,8 +311,17 @@ ${rawResponse.take(1000)}
         val repaired = repairResult.getOrNull() ?: return rawResponse to initial
 
         val repairedValidation = LLMResponseValidator.validate(repaired)
-        return if (repairedValidation.isValid) repaired to repairedValidation
-        else rawResponse to initial
+        if (repairedValidation.isValid) {
+            AgentDiagnostics.record(
+                context, "response-validation-retried", userCommand,
+                "Initial output was invalid; one deadline-bounded structure repair succeeded",
+                rawResponse = repaired,
+                provider = universalAdapter.getProviderName(),
+                model = "qwen3:1.7b"
+            )
+            return repaired to repairedValidation
+        }
+        return rawResponse to initial
     }
 
     fun executeTask(cleanCommand: String, onFinished: ((AgentState) -> Unit)? = null) {
@@ -337,6 +357,12 @@ ${rawResponse.take(1000)}
                             sanitized.text
 
                         else -> cleanCommand
+                    }
+
+                    // These legacy helpers are opt-in only. The default command path and
+                    // all current banking/send/permission/retry gates remain unchanged.
+                    if (ExperimentalSelfHealingSettings.isEnabled(context)) {
+                        safeCommand = RepairMemory(context).normalize(CommandDictionary.normalize(safeCommand))
                     }
 
                     // Full-device power off is a dedicated deterministic action, never an LLM plan.
@@ -1516,6 +1542,9 @@ ${fullSystem.substringAfter("MEMORY:")}
                                 provider = universalAdapter.getProviderName(),
                                 latencyMs = latency
                             )
+                            if (ExperimentalSelfHealingSettings.isEnabled(context)) {
+                                SelfHealingEngine(context).recordSuccess(safeCommand)
+                            }
 
                             runCatching { analysisEngine.analyzeLastTask() }
                                 .onFailure { Log.e(TAG, "Post-task analysis failed", it) }
@@ -1558,6 +1587,10 @@ ${fullSystem.substringAfter("MEMORY:")}
                                 }
                             }
 
+                            if (ExperimentalSelfHealingSettings.isEnabled(context)) {
+                                val diagnosis = ErrorDiagnosis.fromThrowable(error, "LLM request")
+                                RepairMemory(context).recordFailure(diagnosis.code, diagnosis.stage)
+                            }
                             AgentDiagnostics.record(context, "ollama-request", safeCommand, msg, error = error, provider = universalAdapter.getProviderName(), model = "qwen3:1.7b")
                             _state.value = AgentState.Error(msg)
 

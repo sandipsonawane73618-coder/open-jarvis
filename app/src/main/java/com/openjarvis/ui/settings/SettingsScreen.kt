@@ -35,6 +35,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.openjarvis.agent.ExperimentalSelfHealingSettings
 import com.openjarvis.agent.PersonalMemoryStore
 import com.openjarvis.agent.JarvisPersonality
 import com.openjarvis.agent.JarvisPersonalityStore
@@ -108,6 +109,7 @@ fun SettingsScreen(
     var lastSaved by remember { mutableStateOf(0L) }
     var savedVisible by remember { mutableStateOf(false) }
     var voiceEnabled by remember { mutableStateOf(voicePrefs.getBoolean("voice_enabled", false)) }
+    var experimentalSelfHealingEnabled by remember { mutableStateOf(ExperimentalSelfHealingSettings.isEnabled(context)) }
     var speakResults by remember { mutableStateOf(voicePrefs.getBoolean("speak_results", true)) }
     var hindiVoiceGender by remember { mutableStateOf(voicePrefs.getString("tts_voice_gender_hi", "Female") ?: "Female") }
     var marathiVoiceGender by remember { mutableStateOf(voicePrefs.getString("tts_voice_gender_mr", "Female") ?: "Female") }
@@ -382,6 +384,19 @@ fun SettingsScreen(
                         ) { Text("Save personality") }
                     }
                 }
+                Spacer(modifier = Modifier.height(24.dp))
+
+                SectionLabel("EXPERIMENTAL FEATURES")
+                Spacer(modifier = Modifier.height(10.dp))
+                SettingsToggleRow(
+                    title = "Experimental self-healing helpers",
+                    subtitle = "Optional Hindi/Marathi command aliases and verified local repair memory. Default OFF; no automatic device-action replay.",
+                    enabled = experimentalSelfHealingEnabled,
+                    onToggle = {
+                        experimentalSelfHealingEnabled = !experimentalSelfHealingEnabled
+                        ExperimentalSelfHealingSettings.setEnabled(context, experimentalSelfHealingEnabled)
+                    }
+                )
                 Spacer(modifier = Modifier.height(24.dp))
 
                 SectionLabel("VOICE")

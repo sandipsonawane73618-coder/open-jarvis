@@ -101,4 +101,20 @@ class LLMResponseValidatorTest {
         assertFalse(result.isValid)
         assertEquals("Item 0 is not an object", result.errors.first())
     }
+
+    @Test fun mapsStepsSchemaScrollTargetToDirection() {
+        val result = LLMResponseValidator.validate(
+            """{"steps":[{"action":"scroll","target":"down","value":""}]}"""
+        )
+        assertTrue(result.errors.toString(), result.isValid)
+        assertEquals("down", result.actions.single().direction)
+    }
+
+    @Test fun mapsStepsSchemaErrorValueToUserFacingMessage() {
+        val result = LLMResponseValidator.validate(
+            """{"steps":[{"action":"error","target":"","value":"Search control was not visible"}]}"""
+        )
+        assertTrue(result.errors.toString(), result.isValid)
+        assertEquals("Search control was not visible", result.actions.single().message)
+    }
 }
