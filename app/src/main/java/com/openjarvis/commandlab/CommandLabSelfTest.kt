@@ -69,8 +69,8 @@ object CommandLabSelfTest {
         CommandLabTestCase("Extra 5 global back before navigation", "back screen per jao", CommandLabRoute.STEP, "BACK global action; navigation=not-invoked"),
         CommandLabTestCase("Extra 6 Instagram open then in-app search", "Instagram kholo aur Shahrukh Khan search karo", CommandLabRoute.LOOP, "open_app(Instagram) -> in_app_search(Shahrukh Khan); LLM=not-used"),
         CommandLabTestCase("Extra 7 India capital is chat", "India ki capital kya hai", CommandLabRoute.CHAT, "chat; action-loop=not-used"),
-        CommandLabTestCase("Extra 8 vague command clarifies safely", "kuch bhi", CommandLabRoute.CLARIFY, "clarify; no-action; torch=untouched")
-, 
+        CommandLabTestCase("Extra 8 vague command clarifies safely", "kuch bhi", CommandLabRoute.CLARIFY, "clarify; no-action; torch=untouched"),
+
         CommandLabTestCase("Phone report 1 Devanagari open YouTube", "ओपन यूट्यूब", CommandLabRoute.STEP, "open YouTube; maps=not-invoked"),
         CommandLabTestCase("Phone report 2 YouTube search missing query", "ओपन यूट्यूब एंड सर्च", CommandLabRoute.CLARIFY, "open YouTube; Kya search karun?"),
         CommandLabTestCase("Phone report 3 play a song missing query", "प्ले ए सोंग", CommandLabRoute.CLARIFY, "Kya play karun?"),
