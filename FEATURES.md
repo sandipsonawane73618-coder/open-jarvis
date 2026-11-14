@@ -88,3 +88,20 @@ Parser-level intent tests do not count as proof that Android device actions exec
 | Floating overlay window never blurs/dims the display; collapsed WRAP_CONTENT and expanded 304dp width | `OverlayWindowPolicy.create` | `app/src/test/java/com/openjarvis/ui/OverlayWindowPolicyTest.kt::collapsedWindowIsWrapContentAndNeverBlursOrDims`; `app/src/test/java/com/openjarvis/ui/OverlayWindowPolicyTest.kt::expandedWindowIs304DpWideAndNeverBlursOrDims` |\n\n## DEVICE-ONLY
 
 - Floating bubble drag, edge snapping, touch pass-through, outside-tap collapse, and Back-key behavior require verification on a physical Android device. JVM tests cannot prove WindowManager touch routing or OEM overlay behavior.
+
+
+## STAGE C — CONNECTED APPS
+
+| Feature | Implementation | Named test method |
+|---|---|---|
+| Notification OTP redaction before in-memory storage | `NotificationPrivacyPolicy.redact` / `JarvisNotificationListener.parseNotification` | `app/src/test/java/com/openjarvis/intelligence/ConnectedAppsPolicyTest.kt::otpIsRedactedBeforeNotificationStorage` |
+| Notification PIN, password, CVV and card-number redaction | `NotificationPrivacyPolicy.redact` | `app/src/test/java/com/openjarvis/intelligence/ConnectedAppsPolicyTest.kt::pinAndCardContentAreRedacted` |
+| Bank/payment notification collection blocked | `NotificationPrivacyPolicy.shouldStore` / `JarvisNotificationListener.shouldProcessNotification` | `app/src/test/java/com/openjarvis/intelligence/ConnectedAppsPolicyTest.kt::bankAndPaymentNotificationsAreNeverStored` |
+| Notification memory bounded to latest 50; default read is newest-first max 5 | `NotificationBufferPolicy.keepLatest` / `JarvisNotificationListener.getUnread` | `app/src/test/java/com/openjarvis/intelligence/ConnectedAppsPolicyTest.kt::notificationBufferKeepsOnlyNewestFifty` |
+| Notification read commands win over generic chat route | `ConnectedAppCommandParser.route` / `CommandRouter.classify` | `app/src/test/java/com/openjarvis/intelligence/ConnectedAppsPolicyTest.kt::notificationReadUtteranceRoutesToNotificationReaderNotChat`; `app/src/test/java/com/openjarvis/intelligence/ConnectedAppsPolicyTest.kt::notificationIntentWinsBeforeGenericChatRouting` |
+| WhatsApp notification and read-all phrases | `ConnectedAppCommandParser.route` | `app/src/test/java/com/openjarvis/intelligence/ConnectedAppsPolicyTest.kt::whatsappSenderAndReadAllUtterancesRouteToNotificationReader` |
+| Calendar today/tomorrow query parsing | `CalendarQueryParser.dayOffset` | `app/src/test/java/com/openjarvis/intelligence/ConnectedAppsPolicyTest.kt::calendarParserDistinguishesTodayAndTomorrow` |
+| Permission-denied honest response | `PermissionStatusMessage.denied` / `RuntimePermissionRequestBroker.ensure` | `app/src/test/java/com/openjarvis/intelligence/ConnectedAppsPolicyTest.kt::permissionDenialReturnsHonestActionableMessage` |
+| Reply command routed to existing exact-payload send preview; no direct notification send | `MessageCommandParser.parse` / `MessageSendApprovalPolicy` / `NotificationReplyPolicy.maySend` | `app/src/test/java/com/openjarvis/intelligence/ConnectedAppsPolicyTest.kt::replyCommandParsesAsWhatsAppPreviewRequestNotDirectSend`; `app/src/test/java/com/openjarvis/intelligence/ConnectedAppsPolicyTest.kt::notificationReplyRequiresExplicitExactPayloadApproval` |
+
+Contacts, Calendar and SMS require first-use Android runtime permission prompts. Notification access requires the user to enable the Notification Listener in Android Settings. These device permission and provider-query flows still require physical-device verification; JVM policy tests do not claim OEM/OS permission UI success.
