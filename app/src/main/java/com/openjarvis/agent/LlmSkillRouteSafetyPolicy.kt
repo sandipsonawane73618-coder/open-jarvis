@@ -22,7 +22,7 @@ internal object LlmSkillRouteSafetyPolicy {
 
     fun acceptedSkill(skill: String, command: String): String? {
         val normalized = skill.uppercase(Locale.ROOT)
-        val intentCommand = JarvisCommandNormalizer.stripWakeWord(command)
+        val intentCommand = stripWakeAliases(JarvisCommandNormalizer.stripWakeWord(command))
         val commandTokens = tokens(intentCommand)
         if (normalized == "MAPS") {
             return normalized.takeIf { SkillRegistry.hasExplicitNavigationIntent(intentCommand) }
@@ -39,6 +39,17 @@ internal object LlmSkillRouteSafetyPolicy {
         val required = keywords[normalized] ?: return normalized
         return normalized.takeIf { route -> commandTokens.any { it in required } }
     }
+
+
+
+    private fun stripWakeAliases(command: String): String =
+        command.trim().replaceFirst(
+            Regex(
+                "^\\s*(?:(?:hey|hi|हे)\\s+)?(?:jarvis|जार्विस|जरवेस|जार्वीस|एचआरवी|hrv)(?:\\s*[,،:;.!?।-]\\s*|\\s+|$)",
+                RegexOption.IGNORE_CASE
+            ),
+            ""
+        ).trim()
 
     fun acceptedMainPromptSkill(skill: String, command: String): String? = acceptedSkill(skill, command)
     fun acceptedPipelinePromptSkill(skill: String, command: String): String? = acceptedSkill(skill, command)
