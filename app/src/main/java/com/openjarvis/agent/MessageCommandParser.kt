@@ -29,7 +29,7 @@ internal object MessageCommandParser {
     )
 
     fun parse(command: String): MessageRequest? {
-        val cleaned = Normalizer.normalize(command, Normalizer.Form.NFKC).trim()
+        val cleaned = Normalizer.normalize(VoiceTextNormalizer.normalize(command), Normalizer.Form.NFKC).trim()
         val replyMatch = Regex("^(.+?)\\s+(?:ko|को|ला)\\s+reply(?:\\s+karo)?\\s*:\\s*(.+)$", RegexOption.IGNORE_CASE).matchEntire(cleaned)
         if (replyMatch != null) {
             val name = replyMatch.groupValues[1].trim()

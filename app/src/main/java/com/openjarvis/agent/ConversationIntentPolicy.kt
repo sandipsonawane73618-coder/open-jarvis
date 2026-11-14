@@ -24,7 +24,7 @@ internal object ConversationIntentPolicy {
     )
 
     fun isChatRequest(command: String): Boolean {
-        val text = command.trim()
+        val text = VoiceTextNormalizer.normalize(command).trim()
         if (text.isEmpty() || text.length > 1200) return false
         if (instructionalQuestionIntent.containsMatchIn(text)) return true
         if (actionIntent.containsMatchIn(text)) return false

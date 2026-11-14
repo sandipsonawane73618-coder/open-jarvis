@@ -12,7 +12,7 @@ import java.util.Locale
 object SearchCommandParser {
 
     private fun norm(s: String): String =
-        Normalizer.normalize(s, Normalizer.Form.NFC).lowercase(Locale.ROOT)
+        VoiceTextNormalizer.normalize(s).lowercase(Locale.ROOT)
 
     private fun words(vararg w: String): Set<String> = w.map { norm(it) }.toSet()
 
@@ -93,7 +93,7 @@ object SearchCommandParser {
         if (tokens.none { it in SEARCH_VERBS }) return null
 
         val remaining = tokens.filterNot {
-            it in platformWords || it in SEARCH_VERBS || it in OPEN_VERBS || it in FILLERS
+            it in platformWords || it in SEARCH_VERBS || it in OPEN_VERBS || it in FILLERS || it in CONNECTORS
         }.toMutableList()
         while (remaining.isNotEmpty() && remaining.first() in NOISE) {
             remaining.removeAt(0)

@@ -23,6 +23,7 @@ object AppIntegrationCommandParser {
     )
 
     private val instagramSearchPatterns = listOf(
+        Regex("""^\s*(?:instagram|insta)\s+followers\s+(.+?)\s*$""", RegexOption.IGNORE_CASE),
         Regex(
             """^\s*(?:instagram|insta)(?:\s+(?:kholo|open))?(?:\s+(?:par|pe))?\s+(?:aur\s+)?(.+?)\s+search\s+(?:karo|kro|kar)\s*$""",
             RegexOption.IGNORE_CASE
@@ -34,7 +35,7 @@ object AppIntegrationCommandParser {
     )
 
     fun parseInstagramSearch(command: String): String? {
-        val normalized = command.trim().replace(Regex("""\s+"""), " ")
+        val normalized = VoiceTextNormalizer.normalize(command).trim().replace(Regex("""\s+"""), " ")
         val match = instagramSearchPatterns.firstNotNullOfOrNull { it.matchEntire(normalized) }
             ?: return null
         return match.groupValues[1].trim()

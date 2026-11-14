@@ -133,7 +133,7 @@ internal object AppTargetResolver {
     private const val OFFICIAL_YOUTUBE_PACKAGE = "com.google.android.youtube"
 
     private fun normalize(value: String): String =
-        Normalizer.normalize(value, Normalizer.Form.NFKC)
+        Normalizer.normalize(VoiceTextNormalizer.normalize(value), Normalizer.Form.NFKC)
             .lowercase(Locale.ROOT)
             .replace(Regex("[^\\p{L}\\p{N}\\p{M}]+"), " ")
             .trim()

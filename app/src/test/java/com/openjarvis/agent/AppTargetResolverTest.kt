@@ -22,6 +22,13 @@ class AppTargetResolverTest {
         assertEquals(listOf("com.android.chrome", "com.whatsapp"), result?.map { it.packageName })
     }
 
+    @Test fun resolvesDevanagariSpokenAppNamesAgainstLatinInstalledLabels() {
+        assertEquals("com.google.android.youtube", AppTargetResolver.findMentionedApps("ओपन यूट्यूब", apps)?.singleOrNull()?.packageName)
+        assertEquals("com.whatsapp", AppTargetResolver.findMentionedApps("व्हाट्सएप खोलो", apps)?.singleOrNull()?.packageName)
+        assertTrue(VoiceTextNormalizer.appLabelsMatch("YouTube", "यूट्यूब"))
+        assertTrue(VoiceTextNormalizer.appLabelsMatch("WhatsApp", "व्हाट्सएप"))
+    }
+
     @Test fun matchesHindiAndMarathiFriendlyAliases() {
         val result = AppTargetResolver.findMentionedApps("व्हॉट्सअॅप kholo", apps)
         assertEquals("com.whatsapp", result?.singleOrNull()?.packageName)
