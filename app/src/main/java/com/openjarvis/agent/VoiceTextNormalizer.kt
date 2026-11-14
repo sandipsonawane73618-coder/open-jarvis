@@ -32,7 +32,7 @@ object VoiceTextNormalizer {
         "गैलरी" to "gallery", "स्पॉटिफाई" to "spotify", "जीमेल" to "gmail",
         "जार्विस" to "jarvis", "जारविस" to "jarvis", "जर्विस" to "jarvis",
         "शाहरुख" to "shahrukh", "खन" to "khan", "अरीजित" to "arijit", "सिंह" to "singh", "रोमांटिक" to "romantic",
-        "पर" to "par", "जाओ" to "jao",
+        "ए" to "a", "कमिंग" to "coming", "टेक्स्टबुक" to "textbook",
         "जरवेस" to "jarvis", "एचआरवी" to "jarvis", "हे" to "hey"
     )
     private val wakeAliases = setOf(
@@ -44,12 +44,10 @@ object VoiceTextNormalizer {
 
     fun normalize(input: String): String {
         val source = Normalizer.normalize(input, Normalizer.Form.NFC)
-            .replace(punctuation, " ")
-            .replace(spaces, " ")
-            .trim()
-        if (source.isEmpty()) return ""
-        return source.split(" ").joinToString(" ") { token ->
-            aliases[token.lowercase(Locale.ROOT)] ?: token
+        if (source.isBlank()) return ""
+        val token = Regex("[\\\\p{L}\\\\p{M}\\\\p{N}]+")
+        return token.replace(source) { match ->
+            aliases[match.value.lowercase(Locale.ROOT)] ?: match.value
         }.replace(spaces, " ").trim()
     }
 
