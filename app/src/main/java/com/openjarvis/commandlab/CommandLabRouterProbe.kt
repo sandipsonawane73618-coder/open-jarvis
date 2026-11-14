@@ -94,6 +94,9 @@ object CommandLabRouterProbe {
                 val intent = MessageCommandParser.parse(text)
                 return CommandLabRouteResult(CommandLabRoute.STEP, intent?.toString() ?: "MessageIntent")
             }
+            CommandRouter.Route.NOTIFICATION_READ -> {
+                return CommandLabRouteResult(CommandLabRoute.STEP, "NotificationRead", result = "read-notifications; newest-first; redacted-only")
+            }
             CommandRouter.Route.MESSAGE_CONTINUATION -> {
                 val contact = CommandRouter.messageContinuationContact(text)
                 return CommandLabRouteResult(CommandLabRoute.STEP, "MessageContinuation(contact=${contact.orEmpty()})")
