@@ -55,6 +55,20 @@ internal object ConnectedAppCommandParser {
             .lowercase(Locale.ROOT).replace(Regex("\\s+"), " ").trim()
         return if (notificationIntent.containsMatchIn(normalized)) "NOTIFICATION_READ" else null
     }
+
+    fun senderFilter(command: String): String? {
+        val cleaned = Normalizer.normalize(command, Normalizer.Form.NFKC).trim()
+        val match = Regex("(?i)^(.+?)\\s+(?:ka|ki)\\s+kya\\s+message(?:\\s+hai)?[?!.।॥]*$").matchEntire(cleaned)
+            ?: return null
+        return match.groupValues[1].trim().takeIf { it.isNotBlank() && it.length <= 80 }
+    }
+
+    fun wantsMoreThanFive(command: String): Boolean {
+        val value = command.lowercase(Locale.ROOT)
+        return listOf("sab", "saare", "all", "jitne", "more", "aur").any(value::contains)
+    }
+
+    fun whatsappOnly(command: String): Boolean = command.contains("whatsapp", ignoreCase = true)
 }
 
 internal object CalendarQueryParser {
