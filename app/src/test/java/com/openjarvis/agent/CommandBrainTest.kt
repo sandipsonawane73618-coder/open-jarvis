@@ -164,7 +164,7 @@ class CommandBrainTest {
         ).isFailure)
     }
 
-    @Test fun invalidOrUnsafePlansNeverReachTheExecutor() {
+    @Test fun invalidOrUnsafePlansNeverReachTheExecutor() = runBlocking {
         val cases = listOf(
             Triple("""{"steps":[{"tool":"unknown_tool","args":{}}]}""", "open YouTube", "unknown tool"),
             Triple("""{"steps":[{"tool":"open_app","args":{"label":"YouTube","extra":true}}]}""", "open YouTube", "bad args"),
