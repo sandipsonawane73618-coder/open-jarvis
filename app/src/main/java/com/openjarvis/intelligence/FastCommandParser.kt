@@ -164,5 +164,5 @@ internal object FastCommandParser {
     }
 
     private fun normalize(command: String): String =
-        command.trim().replace(Regex("\\s+"), " ")
+        com.openjarvis.agent.VoiceTextNormalizer.normalize(command).trim().replace(Regex("\\s+"), " ")
 }
