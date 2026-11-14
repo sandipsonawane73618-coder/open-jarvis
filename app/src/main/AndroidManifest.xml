@@ -7,9 +7,6 @@
         <package android:name="com.openai.chatgpt" />
         <package android:name="com.instagram.android" />
         <package android:name="com.whatsapp" />
-        <package android:name="org.telegram.messenger" />
-        <package android:name="com.google.android.calendar" />
-        <package android:name="com.android.calendar" />
         <package android:name="com.coloros.calendar" />
         <package android:name="org.telegram.messenger" />
         <package android:name="com.google.android.calendar" />
