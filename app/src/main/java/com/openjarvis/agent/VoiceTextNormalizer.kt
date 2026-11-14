@@ -45,7 +45,7 @@ object VoiceTextNormalizer {
     fun normalize(input: String): String {
         val source = Normalizer.normalize(input, Normalizer.Form.NFC)
         if (source.isBlank()) return ""
-        val token = Regex("[\\\\p{L}\\\\p{M}\\\\p{N}]+")
+        val token = Regex("""[\\p{L}\\p{M}\\p{N}]+""")
         return token.replace(source) { match ->
             aliases[match.value.lowercase(Locale.ROOT)] ?: match.value
         }.replace(spaces, " ").trim()
