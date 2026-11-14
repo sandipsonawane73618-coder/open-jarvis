@@ -70,7 +70,7 @@ class ConnectedAppsPolicyTest {
         @Suppress("UNCHECKED_CAST")
         val kept = invoke("com.openjarvis.intelligence.NotificationBufferPolicy", "keepLatestKeys",
             listOf("whatsapp:7", "telegram:4", "whatsapp:7", "sms:2")) as List<String>
-        assertEquals(listOf("whatsapp:7", "telegram:4", "sms:2"), kept)
+        assertEquals(listOf("telegram:4", "whatsapp:7", "sms:2"), kept)
     }
 
     @Test fun notificationBufferMovesUpdatedKeyToNewestPosition() {
