@@ -93,7 +93,7 @@ object SearchCommandParser {
         if (tokens.none { it in SEARCH_VERBS }) return null
 
         val remaining = tokens.filterNot {
-            it in platformWords || it in SEARCH_VERBS || it in OPEN_VERBS || it in FILLERS
+            it in platformWords || it in SEARCH_VERBS || it in OPEN_VERBS || it in FILLERS || it in CONNECTORS
         }.toMutableList()
         while (remaining.isNotEmpty() && remaining.first() in NOISE) {
             remaining.removeAt(0)
