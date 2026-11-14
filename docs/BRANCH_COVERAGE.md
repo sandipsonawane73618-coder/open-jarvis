@@ -17,7 +17,7 @@ Policy: do not force-merge diverged branches. Preserve all existing tests; total
 | `feature/jarvis-conversation-memory-marathi` | Marathi/Hinglish language profile | `voice/SpeechLanguage.kt`, `voice/MaharashtraSpeechProfile.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
 | `feature/jarvis-deterministic-fast-skills` | Deterministic fast skills | `skills/SkillRegistry.kt`, `intelligence/FastCommandParser.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
 | `feature/jarvis-diagnostic-export` | Diagnostic export | `agent/AgentDiagnostics.kt`, `ui/settings/SettingsScreen.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
-| `feature/jarvis-false-completion-guard` | False-completion and screenshot guard | `agent/AgentPlanPolicy.kt`, `ui/ScreenCapturePermissionActivity.kt`, `vision/ScreenshotCapture.kt` | No new isolated file; branch changes overlap current implementations | **skip for now**; compare/resolve the file-level deltas separately, do not overwrite current guardrails. |
+| `feature/jarvis-false-completion-guard` | False completion guard and truthful app launch reporting | `agent/AgentPlanPolicy.kt`, `agent/AgentCore.kt`, `ui/ScreenCapturePermissionActivity.kt`, `vision/ScreenshotCapture.kt` | None: foreground verification, timeout-as-Error, truthful native launch replies, and screenshot consent wait are already in current All-in-One; current `AgentPlanPolicy` additionally enforces required payloads and excludes COMPLETE from executable plans | **already present; no code port needed**. Existing stricter policy retained; source test in current branch has 14 tests vs 13 on source branch. |
 | `feature/jarvis-fast-response-streaming` | Fast response streaming | `agent/AgentCore.kt`, `llm/providers/OllamaProvider.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
 | `feature/jarvis-foreground-banking-guard` | Foreground banking guard | `agent/BankingSafetyPolicy.kt`, `agent/ActionRiskPolicy.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
 | `feature/jarvis-full-potential-foundation` | Agent foundation and deterministic routing | `agent/AgentCore.kt`, `agent/StepPipeline.kt`, `agent/AgentPlanPolicy.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
@@ -84,3 +84,18 @@ Merge base: `88676a1926ba9bc8ad5f9934487445a754f66f21`; branch head file set com
 | `app/src/main/java/com/openjarvis/vision/ScreenshotCapture.kt` | Add volatile permissionDenied state, reset it on start/initialize, expose mark/wasPermissionDenied | New behaviour relative to merge base, but current file blob is identical to branch | No code change |
 
 The only other changed file is `.github/workflows/android-build.yml`; its workflow-only hunk is not an app feature and is not copied. No screenshot source hunk is missing from All-in-One, so no new test/code port is necessary. Existing permission lifecycle remains untouched.
+
+
+### 2. `feature/jarvis-false-completion-guard` — completed audit
+
+Merge base: `88676a1926ba9bc8ad5f9934487445a754f66f21`; source branch is 12 commits ahead / 394 behind All-in-One. The source branch contains 4 app source files plus one modified test file and workflow-only changes.
+
+| Source file | Branch hunks / behaviour | Classification against current All-in-One | Action |
+|---|---|---|---|
+| `app/src/main/java/com/openjarvis/agent/AgentCore.kt` | (1) Time-budget exhaustion becomes `AgentState.Error`, not Done. (2) LLM app launch is not marked complete until the target package is confirmed foreground. (3) Native OPEN_APP paths use truthful “launch requested; foreground confirmation unavailable” wording. (4) Screenshot consent keeps the command alive for up to 45 seconds and handles denial/timeout. | All four behaviours are already present in current All-in-One. It has more recent command normalization, hybrid chat routing, explicit approval gates and stronger diagnostics around the same execution flow. | No port; keep newer AgentCore. |
+| `app/src/main/java/com/openjarvis/agent/AgentPlanPolicy.kt` | Adds `isAppLaunchVerified(launchAccepted, foregroundConfirmed)`. | Exact function already exists. Current file additionally validates required action payloads and excludes COMPLETE, so current policy is stricter. | No port; keep stricter policy. |
+| `app/src/main/java/com/openjarvis/ui/ScreenCapturePermissionActivity.kt` | Marks MediaProjection permission denied when consent result is not OK. | Current file blob is identical to branch. | No port. |
+| `app/src/main/java/com/openjarvis/vision/ScreenshotCapture.kt` | Adds volatile denial state and resets it on new capture/initialization. | Current file blob is identical to branch. | No port. |
+| `app/src/test/java/com/openjarvis/agent/AgentPlanPolicyTest.kt` | Adds app-launch verification truth table. | Current suite contains the same test plus newer payload/guard coverage: 14 `@Test` methods vs 13 on this branch. | No test port; no tests removed or loosened. |
+
+The workflow-only hunk is not copied. No missing false-completion behaviour was found, so this branch requires no code change. The current stricter send/banking rules, retry gates, overlay attachment gate and permission lifecycle are retained.
