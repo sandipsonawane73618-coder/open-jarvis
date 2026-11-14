@@ -82,6 +82,7 @@ class ClarificationWorkflowPolicyTest {
         )
         assertFalse(pending.isExpired(61_000L))
         assertTrue(pending.isExpired(61_001L))
+        assertTrue(pending.isExpired(999L))
     }
 
     @Test
