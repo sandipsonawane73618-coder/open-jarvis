@@ -8,7 +8,8 @@ internal object RecognitionLocaleRetryPolicy {
 
     fun localeAttempts(deviceLocale: String): List<String> {
         val normalizedDevice = normalizeLocale(deviceLocale)
-        return (listOf("hi-IN", "en-IN", "mr-IN") + normalizedDevice)
+        val deviceFallback = normalizedDevice?.let(::listOf).orEmpty()
+        return (listOf("hi-IN", "en-IN", "mr-IN") + deviceFallback)
             .distinct()
             .take(MAX_RETRIES + 1)
     }
@@ -33,6 +34,13 @@ internal object RecognitionLocaleRetryPolicy {
     private fun normalizeLocale(raw: String): String? {
         val locale = Locale.forLanguageTag(raw.trim().replace('_', '-'))
         if (locale.language.isBlank()) return null
-        return locale.toLanguageTag().takeIf { it.contains('-') }
+        val tag = locale.toLanguageTag()
+        if (tag.contains('-')) return tag
+        return when (locale.language.lowercase(Locale.ROOT)) {
+            "hi" -> "hi-IN"
+            "en" -> "en-IN"
+            "mr" -> "mr-IN"
+            else -> null
+        }
     }
 }
