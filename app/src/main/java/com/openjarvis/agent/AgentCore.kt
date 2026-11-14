@@ -352,10 +352,10 @@ ${rawResponse.take(1000)}
         val startedAt = System.currentTimeMillis()
         // The complete online attempt (including installed-app grounding) shares one
         // hard 1.5s budget. Slow package-manager lookup must not delay offline fallback.
-        val result = withTimeoutOrNull(1_500L) {
+        val result = CommandBrainAttemptPolicy.withinDeadline {
             val installedLabels = runCatching { getInstalledLauncherApps().map { it.label } }
                 .getOrDefault(emptyList())
-            val remainingMs = (1_500L - (System.currentTimeMillis() - startedAt)).coerceAtLeast(1L)
+            val remainingMs = (CommandBrainAttemptPolicy.TIMEOUT_MS - (System.currentTimeMillis() - startedAt)).coerceAtLeast(1L)
             commandBrain.plan(command, remainingMs, installedLabels)
         }
         val plan = result?.getOrNull()
