@@ -248,7 +248,7 @@ internal object CommandBrainExecutionPolicy {
             when (step) {
                 is CommandBrainStep.OpenApp ->
                     require(LlmSkillRouteSafetyPolicy.acceptedSkill("OPEN_APP", command) != null) {
-                        "App launch was not explicitly requested"
+                        "App launch was not explicitly requested: $command"
                     }
                 is CommandBrainStep.Search ->
                     require(LlmSkillRouteSafetyPolicy.acceptedSkill("SEARCH", command) != null) {
