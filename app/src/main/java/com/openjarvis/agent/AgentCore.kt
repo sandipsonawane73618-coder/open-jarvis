@@ -584,12 +584,6 @@ ${rawResponse.take(1000)}
                     }
 
 
-                    // Additive general UI agent; deterministic pipeline and direct routes retain priority.
-                    if (AgentLoopCommandPolicy.shouldUseLoop(safeCommand)) {
-                        runGeneralAgentLoop(safeCommand, null, approvedConfirmation = false)
-                        return@withLock
-                    }
-
                     // Supported app integrations use deterministic Android intents before any LLM fallback.
                     val instagramQuery = AppIntegrationCommandParser.parseInstagramSearch(safeCommand)
                     if (instagramQuery != null) {
@@ -641,6 +635,12 @@ ${rawResponse.take(1000)}
                             AgentDiagnostics.record(context, "calendar-integration", safeCommand, detail, error = error, provider = "Android app integration", model = "Not used")
                             _state.value = AgentState.Error(detail)
                         }
+                        return@withLock
+                    }
+
+                    // Additive general UI agent; deterministic pipeline and direct routes retain priority.
+                    if (AgentLoopCommandPolicy.shouldUseLoop(safeCommand)) {
+                        runGeneralAgentLoop(safeCommand, null, approvedConfirmation = false)
                         return@withLock
                     }
 
@@ -2278,7 +2278,9 @@ Actions remaining: ${session.remainingActions}
             throw IllegalStateException("Android could not open $actionLabel: ${error.message ?: error.javaClass.simpleName}", error)
         }
 
-        val targetPackage = resolved.packageName
+        val targetPackage = resolved.activityInfo?.packageName
+            ?: resolved.resolvePackageName
+            ?: throw IllegalStateException("Android resolved $actionLabel without a target package")
         var foregroundConfirmed = false
         for (check in 0 until 10) {
             if (JarvisAccessibilityService.instance?.isPackageActive(targetPackage) == true) {
