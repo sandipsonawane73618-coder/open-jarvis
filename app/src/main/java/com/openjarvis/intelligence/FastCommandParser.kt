@@ -133,8 +133,18 @@ internal object FastCommandParser {
         if (target.isBlank() || target.length > 60) return null
         // Canonicalize common Devanagari app names so package/installed-label
         // resolution receives a stable target instead of a translated display name.
-        val canonicalTarget = when (target.lowercase()) {
-            "यूट्यूब", "यु ट्यूब", "यूट्युब", "युट्युब" -> "YouTube"
+        val canonicalTarget = when (com.openjarvis.agent.VoiceTextNormalizer.canonicalAppLabel(target)) {
+            "youtube" -> "YouTube"
+            "whatsapp" -> "WhatsApp"
+            "instagram" -> "Instagram"
+            "telegram" -> "Telegram"
+            "chrome" -> "Chrome"
+            "camera" -> "Camera"
+            "settings" -> "Settings"
+            "gallery" -> "Gallery"
+            "spotify" -> "Spotify"
+            "gmail" -> "Gmail"
+            "maps" -> "Maps"
             else -> target
         }
         // A fast-path target must be only an app label. Compound requests
