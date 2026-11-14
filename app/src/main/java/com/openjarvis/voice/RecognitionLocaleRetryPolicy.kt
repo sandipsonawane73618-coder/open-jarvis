@@ -8,7 +8,7 @@ internal object RecognitionLocaleRetryPolicy {
 
     fun localeAttempts(deviceLocale: String): List<String> {
         val normalizedDevice = normalizeLocale(deviceLocale)
-        val deviceFallback = normalizedDevice?.let(::listOf).orEmpty()
+        val deviceFallback = if (normalizedDevice == null) emptyList() else listOf(normalizedDevice)
         return (listOf("hi-IN", "en-IN", "mr-IN") + deviceFallback)
             .distinct()
             .take(MAX_RETRIES + 1)
