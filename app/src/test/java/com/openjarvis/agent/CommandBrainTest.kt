@@ -192,4 +192,18 @@ class CommandBrainTest {
         }
     }
 
+
+    @Test fun timedOutCommandBrainReturnsControlForOfflineFallback() = runBlocking {
+        val startedAt = System.nanoTime()
+        val result = CommandBrainAttemptPolicy.withinDeadline(25L) {
+            kotlinx.coroutines.delay(250L)
+            CommandBrainPlan(listOf(CommandBrainStep.OpenApp("YouTube")))
+        }
+        val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L
+
+        assertEquals(null, result)
+        assertTrue("deadline must return promptly; elapsed=${elapsedMs}ms", elapsedMs < 200L)
+        assertEquals(1_500L, CommandBrainAttemptPolicy.TIMEOUT_MS)
+    }
+
 }
