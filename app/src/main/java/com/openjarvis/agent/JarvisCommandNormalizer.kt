@@ -12,5 +12,5 @@ internal object JarvisCommandNormalizer {
     )
 
     fun stripWakeWord(command: String): String =
-        command.replaceFirst(LEADING_WAKE_WORD, "").trim()
+        VoiceTextNormalizer.stripWakePhrase(command)
 }
