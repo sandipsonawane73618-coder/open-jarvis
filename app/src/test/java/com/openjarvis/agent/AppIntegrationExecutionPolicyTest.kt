@@ -65,6 +65,14 @@ class AppIntegrationExecutionPolicyTest {
     }
 
     @Test
+    fun calendarPackageCandidatesIncludeRealmeColorOsAndAospFallbacks() {
+        assertEquals(
+            listOf("com.google.android.calendar", "com.coloros.calendar", "com.android.calendar"),
+            AppIntegrationExecutionPolicy.calendarPackageCandidates()
+        )
+    }
+
+    @Test
     fun invalidOrBlankRequestsAreRejectedWithoutCreatingPlans() {
         assertNull(AppIntegrationExecutionPolicy.instagramSearch("  "))
         assertNull(AppIntegrationExecutionPolicy.telegramMessage(""))
