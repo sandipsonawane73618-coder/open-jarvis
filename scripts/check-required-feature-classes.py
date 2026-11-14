@@ -34,11 +34,11 @@ for relative, names in REQUIRED.items():
     for name in names:
         checked += 1
         declaration = re.compile(
-            r"\\b(?:class|object|interface)\\s+" + re.escape(name) + r"\\b"
+            r"\b(?:class|object|interface)\s+" + re.escape(name) + r"\b"
         )
         if not declaration.search(source):
             failures.append(f"missing required feature declaration {name} in {path.relative_to(ROOT)}")
 if failures:
-    print("\\n".join(failures), file=sys.stderr)
+    print("\n".join(failures), file=sys.stderr)
     raise SystemExit(1)
 print(f"Required feature-class guard PASS: {checked} declarations checked.")
