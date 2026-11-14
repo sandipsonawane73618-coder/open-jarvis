@@ -359,6 +359,12 @@ ${rawResponse.take(1000)}
                         else -> cleanCommand
                     }
 
+                    // These legacy helpers are opt-in only. The default command path and
+                    // all current banking/send/permission/retry gates remain unchanged.
+                    if (ExperimentalSelfHealingSettings.isEnabled(context)) {
+                        safeCommand = RepairMemory(context).normalize(CommandDictionary.normalize(safeCommand))
+                    }
+
                     // Full-device power off is a dedicated deterministic action, never an LLM plan.
                     val nowMs = System.currentTimeMillis()
                     val pendingPowerOff = pendingPowerOffUntilMs
@@ -1510,6 +1516,9 @@ ${fullSystem.substringAfter("MEMORY:")}
                                 provider = universalAdapter.getProviderName(),
                                 latencyMs = latency
                             )
+                            if (ExperimentalSelfHealingSettings.isEnabled(context)) {
+                                SelfHealingEngine(context).recordSuccess(safeCommand)
+                            }
 
                             runCatching { analysisEngine.analyzeLastTask() }
                                 .onFailure { Log.e(TAG, "Post-task analysis failed", it) }
@@ -1552,6 +1561,10 @@ ${fullSystem.substringAfter("MEMORY:")}
                                 }
                             }
 
+                            if (ExperimentalSelfHealingSettings.isEnabled(context)) {
+                                val diagnosis = ErrorDiagnosis.fromThrowable(error, "LLM request")
+                                RepairMemory(context).recordFailure(diagnosis.code, diagnosis.stage)
+                            }
                             AgentDiagnostics.record(context, "ollama-request", safeCommand, msg, error = error, provider = universalAdapter.getProviderName(), model = "qwen3:1.7b")
                             _state.value = AgentState.Error(msg)
 
