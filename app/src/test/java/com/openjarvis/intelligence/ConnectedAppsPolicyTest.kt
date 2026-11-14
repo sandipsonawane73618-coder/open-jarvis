@@ -27,6 +27,22 @@ class ConnectedAppsPolicyTest {
         assertTrue(redacted.contains("[REDACTED]"))
     }
 
+    @Test fun redactionCatchesSecretBeforeLabelAndPasswordValues() {
+        val redacted = invoke("com.openjarvis.intelligence.NotificationPrivacyPolicy", "redact",
+            "482913 is your OTP; 9876 is your UPI PIN; password: SecretValue77") as String
+        assertFalse(redacted.contains("482913"))
+        assertFalse(redacted.contains("9876"))
+        assertFalse(redacted.contains("SecretValue77"))
+        assertTrue(redacted.contains("[REDACTED]"))
+    }
+
+    @Test fun senderSpecificMessageReadRoutesToNotifications() {
+        assertEquals("NOTIFICATION_READ", invoke("com.openjarvis.intelligence.ConnectedAppCommandParser",
+            "route", "Amit ka kya message hai?"))
+        assertEquals("Amit", invoke("com.openjarvis.intelligence.ConnectedAppCommandParser",
+            "senderFilter", "Amit ka kya message hai?"))
+    }
+
     @Test fun pinAndCardContentAreRedacted() {
         val redacted = invoke("com.openjarvis.intelligence.NotificationPrivacyPolicy", "redact",
             "UPI PIN 1234 card ending 4111 1111 1111 1111") as String
