@@ -1,5 +1,6 @@
 package com.openjarvis.agent
 
+import com.openjarvis.skills.SkillRegistry
 import java.text.Normalizer
 import java.util.Locale
 
