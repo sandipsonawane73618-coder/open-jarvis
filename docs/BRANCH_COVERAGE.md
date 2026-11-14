@@ -6,7 +6,7 @@ Policy: do not force-merge diverged branches. Preserve all existing tests; total
 
 | branch | feature | already in all-in-one (path) | missing | action |
 |---|---|---|---|---|
-| `feature/autonomous-self-healing-edition` | Command dictionary, error diagnosis, verified repair memory and bounded retry guard; also contains a wider network/repair dashboard | `AgentCore.kt`, `LLMResponseValidator.kt`, `UniversalAdapter.kt`, `Providers.kt` | `CommandDictionary.kt`, `ErrorDiagnosis.kt`, `RepairMemory.kt`, `SelfHealingEngine.kt` (all four source files absent); `SocketServer.kt`, `SignedUpdateManager.kt` and other repair/network surface intentionally excluded | **selective port in progress**: only the four requested self-contained files will be added as new files behind a Settings opt-in (default OFF), test-first. No AgentCore/manifest/Gradle/provider/voice bulk merge. |
+| `feature/autonomous-self-healing-edition` | Command dictionary, error diagnosis, verified repair memory and bounded retry guard; also contains a wider network/repair dashboard | `AgentCore.kt`, `LLMResponseValidator.kt`, `UniversalAdapter.kt`, `Providers.kt` | `agent/CommandDictionary.kt`, `agent/ErrorDiagnosis.kt`, `agent/RepairMemory.kt`, `agent/SelfHealingEngine.kt`, `agent/ExperimentalSelfHealingSettings.kt` | **selectively ported in PR #96** as new files behind the Settings switch (default OFF). AgentCore only uses command normalization, privacy-filtered repair failure diagnostics and success cleanup when explicitly enabled; current retry/safety gates remain authoritative. Network/security files excluded. |
 | `feature/euronics-webview-integration` | Separate Euronics WebView feature | Jarvis app baseline only | Euronics assets/activity and app wiring are outside Jarvis scope | **skip**; separate Euronics workstream; do not alter Euronics app or data. |
 | `feature/jarvis-accessibility-agent-loop` | Screen evidence and compact repeated OCR context | `accessibility/ScreenEvidenceVerifier.kt`, `agent/AgentDiagnostics.kt`, `ui/OverlayService.kt` | `agent/HeadroomLiteContext.kt`; diagnostic logger also absent | **integrate HeadroomLiteContext test-first**; defer unrelated diagnostic logger and wakeword bundle. |
 | `feature/jarvis-action-session-multistep-fix` | Multi-step action session | `agent/AgentCore.kt`, `agent/StepPipeline.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
@@ -54,7 +54,7 @@ Policy: do not force-merge diverged branches. Preserve all existing tests; total
 | `feature/jarvis-uktam-indic-stt-audit` | Indic STT audit and diagnostics | `voice/IndicModelCompatibility.kt`, `agent/AgentDiagnostics.kt` | No accepted missing non-wakeword feature identified | **skip**; current compatibility implementation exists; do not import its wakeword bundle. |
 | `feature/jarvis-voice-screen-command-fixes` | Voice screen command fixes | `intelligence/FastCommandParser.kt`, `agent/AgentCore.kt` | None identified; branch is behind All-in-One | **skip**; already included. |
 | `feature/jarvis-wakeword-reliability` | Sherpa ONNX wakeword reliability | Existing Voicute controller remains the selected engine | Sherpa controller and Sherpa-specific config/tests | **skip by user decision**; no Sherpa integration. |
-| `feature/self-healing-command-dictionary` | Same four self-healing helpers as autonomous branch | `AgentCore.kt`, `LLMResponseValidator.kt`, `UniversalAdapter.kt`, `SettingsScreen.kt` | Same four new files; byte-identical to `feature/autonomous-self-healing-edition`. | **not a separate implementation**: 41 commits behind autonomous branch with no unique commits; four helpers are being selectively ported once. Explicitly exclude its `app/src/main/assets/euronics/index.html` and `EuronicsActivity.kt`; no Euronics asset/activity changes. |
+| `feature/self-healing-command-dictionary` | Same four self-healing helpers as autonomous branch | `AgentCore.kt`, `LLMResponseValidator.kt`, `UniversalAdapter.kt`, `SettingsScreen.kt` | Same helpers now present as new files in PR #96; no unique commits in this branch | **covered by the one selective port**; 41 commits behind autonomous branch. Explicitly exclude its `app/src/main/assets/euronics/index.html` and `EuronicsActivity.kt`; no Euronics asset/activity changes. |
  
 ## Self-healing conflict report
 
@@ -202,3 +202,22 @@ Security review — explicitly not ported without separate approval:
 - `RepairCenter.kt` / patch generation: persists stack traces and sends them to the configured Ollama endpoint; even local logs can contain personal data. It is not part of the four requested helpers and is not ported. No runtime patch application is allowed.
 
 No `SocketServer`, bridge, `SignedUpdateManager`, repair center, patch auto-apply, network-security config, manifest permissions, Euronics assets, or Euronics activities are copied in this batch.
+
+
+### 9. Selective self-healing helper port — test-first implementation
+
+The RED-only test commit was `a4113f3443ffe9cfcb0e9e08cd4bfca5b70f33e9`. Workflow run #1357 failed at Kotlin test compilation with unresolved references to the six new test targets (`ExperimentalSelfHealingSettings`, `CommandDictionary`, `ErrorDiagnosis`, `RepairMemoryPolicy`, `SelfHealingRetryPolicy`), proving the tests were added before implementation. The ECC scan passed on that test-only commit. Six new tests cover default-off behavior, English/Hindi/Marathi exact aliases, preserving unknown/sensitive commands, retryable timeout vs non-retryable permission errors, hashed/sensitive-filtered verified correction storage, and retry claims only before actions with cooldown.
+
+The implementation adds these new source files only:
+
+| New file | Ported behaviour / safeguards |
+|---|---|
+| `agent/ExperimentalSelfHealingSettings.kt` | SharedPreferences switch defaults false; only an explicit true enables experimental helpers. |
+| `agent/CommandDictionary.kt` | Exact English/Hindi/Marathi aliases. Unknown commands are returned unchanged; app-open normalization requires the entire remainder to exactly match an alias, so a multi-step command is never truncated into an app launch. |
+| `agent/ErrorDiagnosis.kt` | Deterministic diagnosis codes and actionable guidance; security/permission, missing model and unknown failures are non-retryable. |
+| `agent/RepairMemory.kt` | Hashes original command keys (raw commands are not persisted), bounds the alias map to 100 entries, and only remembers explicitly verified, non-sensitive canonical corrections. Phone/email/URL and sensitive action content are rejected. |
+| `agent/SelfHealingEngine.kt` | Persistent cooldown-bounded retry claim, keyed by command/error hashes; refuses non-retryable errors and any retry after device actions have started. It never executes or replays an action. |
+
+Integration deltas are intentionally small: `SettingsScreen.kt` adds the default-OFF toggle; `AgentCore.kt` calls CommandDictionary/RepairMemory only when enabled, records only ErrorDiagnosis category/stage in the local repair memory, and clears a prior retry claim after a fully successful plan. No new automatic retry is wired into execution; the existing SelfHealingExecutor/Retry gates remain authoritative. No changes to banking/send safety, overlay attachment gate, permissions, STT, wakeword, Ollama model/defaults, Euronics assets, or Euronics activities.
+
+The full post-implementation CI result and exact final batch SHA are recorded after run completion below.
