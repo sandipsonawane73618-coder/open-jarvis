@@ -105,3 +105,11 @@ Parser-level intent tests do not count as proof that Android device actions exec
 | Reply command routed to existing exact-payload send preview; no direct notification send | `MessageCommandParser.parse` / `MessageSendApprovalPolicy` / `NotificationReplyPolicy.maySend` | `app/src/test/java/com/openjarvis/intelligence/ConnectedAppsPolicyTest.kt::replyPhraseParsesAsWhatsAppPreviewRequestNotDirectSend`; `app/src/test/java/com/openjarvis/intelligence/ConnectedAppsPolicyTest.kt::notificationReplyRequiresExplicitExactPayloadApproval` |
 
 Contacts, Calendar and SMS require first-use Android runtime permission prompts. Notification access requires the user to enable the Notification Listener in Android Settings. These device permission and provider-query flows still require physical-device verification; JVM policy tests do not claim OEM/OS permission UI success.
+
+## STAGE D — ANY-APP CONTROL (B2)
+
+| Feature | Implementation | Named test methods |
+|---|---|---|
+| Scroll-until-target performs a fresh screen read after every scroll, stops at 8, and reports honest failure if no scroll container accepts the action | `ScrollUntilTargetRunner` / `ScrollUntilTargetPolicy` / `AgentCore.executeActions` / `ActionVerifier` | `app/src/test/java/com/openjarvis/agent/ScrollUntilTargetRunnerTest.kt::scrollsUntilTargetAppearsThenStopsImmediately`; `app/src/test/java/com/openjarvis/agent/ScrollUntilTargetRunnerTest.kt::stopsAfterEightScrollsWithHonestFailure`; `app/src/test/java/com/openjarvis/agent/ScrollUntilTargetRunnerTest.kt::doesNotScrollWhenTargetIsAlreadyVisible`; `app/src/test/java/com/openjarvis/agent/ScrollUntilTargetRunnerTest.kt::reportsFailureWhenNoScrollableContainerAcceptsAction` |
+
+Existing Stage D building blocks retained and reused: fuzzy installed-app resolution (`AppTargetResolverTest`), visible-text/content-description tapping and editable-field discovery (`JarvisAccessibilityService`), 8-action/45-second agent loop (`AgentLoopRunnerTest`), fresh-screen goal evidence (`GoalEvidencePolicyTest`), generic irreversible-action confirmation and payment hard block (`ActionRiskPolicyTest` / `BankingSafetyPolicyTest`), and ten synthetic app types (`AgentAppMatrixSelfTestTest`). These existing tests remain in place; no test was removed or weakened.
