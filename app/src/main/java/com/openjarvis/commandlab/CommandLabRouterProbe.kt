@@ -67,7 +67,7 @@ object CommandLabRouterProbe {
         if (text == "open whatsapp" || text == "whatsapp खोलो") {
             return CommandLabRouteResult(CommandLabRoute.STEP, "AppLaunch(WhatsApp)", result = "open WhatsApp")
         }
-        if (text == "back screen par jao") {
+        if (text == "back screen पर जाओ") {
             return CommandLabRouteResult(CommandLabRoute.STEP, "Back", result = "BACK")
         }
         if (text.matches(Regex("(?i)^(mute|unmute|awaaz band|awaaz chalu|आवाज़ बंद|आवाज़ चालू)$"))) {
