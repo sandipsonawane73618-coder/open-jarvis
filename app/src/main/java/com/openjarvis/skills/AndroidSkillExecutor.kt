@@ -11,6 +11,7 @@ import com.openjarvis.agent.ContactCommandParser
 import com.openjarvis.agent.AppTargetResolver
 import com.openjarvis.agent.InstalledAppTarget
 import com.openjarvis.agent.SearchCommandParser
+import com.openjarvis.agent.AppIntegrationExecutionPolicy
 
 /** Android effects live here; SkillRegistry remains JVM-testable and side-effect free. */
 class AndroidSkillExecutor(private val context: Context) : SkillRegistry.SkillExecutor {
