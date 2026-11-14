@@ -33,6 +33,7 @@ data class Action(
         const val LONG_PRESS = "long_press"
         const val SWIPE = "swipe"
         const val SCROLL = "scroll"
+        const val SCROLL_UNTIL_TARGET = "scroll_until_target"
         const val PRESS_BACK = "press_back"
         const val PRESS_HOME = "press_home"
         const val PRESS_RECENTS = "press_recents"
