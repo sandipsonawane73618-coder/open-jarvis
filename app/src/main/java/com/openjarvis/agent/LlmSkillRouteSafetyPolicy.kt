@@ -23,7 +23,9 @@ internal object LlmSkillRouteSafetyPolicy {
     fun acceptedSkill(skill: String, command: String): String? {
         val normalized = skill.uppercase(Locale.ROOT)
         val intentCommand = stripWakeAliases(JarvisCommandNormalizer.stripWakeWord(command))
-        val commandTokens = tokens(intentCommand)
+        // Validate explicit action words against the original utterance. Wake aliases are
+        // harmless extra tokens; normalizing them must never erase the user's actual intent.
+        val commandTokens = tokens(command)
         if (normalized == "MAPS") {
             return normalized.takeIf { SkillRegistry.hasExplicitNavigationIntent(intentCommand) }
         }
