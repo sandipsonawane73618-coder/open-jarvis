@@ -22,9 +22,10 @@ internal object LlmSkillRouteSafetyPolicy {
 
     fun acceptedSkill(skill: String, command: String): String? {
         val normalized = skill.uppercase(Locale.ROOT)
-        val commandTokens = tokens(command)
+        val intentCommand = JarvisCommandNormalizer.stripWakeWord(command)
+        val commandTokens = tokens(intentCommand)
         if (normalized == "MAPS") {
-            return normalized.takeIf { SkillRegistry.hasExplicitNavigationIntent(command) }
+            return normalized.takeIf { SkillRegistry.hasExplicitNavigationIntent(intentCommand) }
         }
         if (normalized == "OPEN_APP") {
             return normalized.takeIf { commandTokens.any { it in keywords.getValue(normalized) } }
