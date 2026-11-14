@@ -11,6 +11,7 @@ import com.openjarvis.agent.ContactCommandParser
 import com.openjarvis.agent.AppTargetResolver
 import com.openjarvis.agent.InstalledAppTarget
 import com.openjarvis.agent.SearchCommandParser
+import com.openjarvis.agent.AppIntegrationExecutionPolicy
 
 /** Android effects live here; SkillRegistry remains JVM-testable and side-effect free. */
 class AndroidSkillExecutor(private val context: Context) : SkillRegistry.SkillExecutor {
@@ -120,6 +121,12 @@ class AndroidSkillExecutor(private val context: Context) : SkillRegistry.SkillEx
             if (context.packageManager.getLaunchIntentForPackage("com.google.android.youtube") != null) {
                 return "com.google.android.youtube"
             }
+        }
+        if (normalized in setOf("calendar", "google calendar")) {
+            AppIntegrationExecutionPolicy.calendarPackageCandidates().firstOrNull { packageName ->
+                context.packageManager.getLaunchIntentForPackage(packageName) != null
+            }?.let { return it }
+            throw IllegalStateException("No Calendar app is installed on this device.")
         }
         val known = when (normalized) {
             "youtube" -> "com.google.android.youtube"

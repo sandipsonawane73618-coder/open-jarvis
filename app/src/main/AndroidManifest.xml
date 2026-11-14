@@ -7,12 +7,20 @@
         <package android:name="com.openai.chatgpt" />
         <package android:name="com.instagram.android" />
         <package android:name="com.whatsapp" />
+        <package android:name="com.coloros.calendar" />
+        <package android:name="org.telegram.messenger" />
+        <package android:name="com.google.android.calendar" />
+        <package android:name="com.android.calendar" />
         <package android:name="com.facebook.katana" />
         <package android:name="com.termux" />
         <package android:name="moe.shizuku.privileged.api" />
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.INSERT" />
+            <data android:scheme="content" />
         </intent>
         <intent>
             <action android:name="android.intent.action.MAIN" />

@@ -13,6 +13,8 @@ import android.provider.Settings
 import android.provider.AlarmClock
 import android.provider.MediaStore
 import android.provider.ContactsContract
+import android.provider.CalendarContract
+import java.time.ZoneId
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -557,6 +559,60 @@ ${rawResponse.take(1000)}
                             false -> { pendingAgentLoopSession = null; _state.value = AgentState.Done("Theek hai, action cancel kar diya."); return@withLock }
                             null -> { _state.value = AgentState.Done("Pending action confirmation chahiye. 'yes confirm' ya 'no cancel' bolo."); return@withLock }
                         }
+                    }
+
+                    // Supported app integrations use deterministic Android intents before any LLM fallback.
+                    val instagramQuery = AppIntegrationCommandParser.parseInstagramSearch(safeCommand)
+                    if (instagramQuery != null) {
+                        try {
+                            val plan = AppIntegrationExecutionPolicy.instagramSearch(instagramQuery)
+                                ?: throw IllegalArgumentException("Instagram search phrase is empty")
+                            val result = executeAppIntegrationPlan(plan, "Instagram search for $instagramQuery")
+                            graphifyRepo.logTask(safeCommand, "success (Instagram integration): $result", "Android app integration", 0)
+                            _state.value = AgentState.Done(result)
+                        } catch (error: Exception) {
+                            val detail = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
+                            AgentDiagnostics.record(context, "instagram-integration", safeCommand, detail, error = error, provider = "Android app integration", model = "Not used")
+                            _state.value = AgentState.Error(detail)
+                        }
+                        return@withLock
+                    }
+
+                    val telegramRequest = AppIntegrationCommandParser.parseTelegramMessage(safeCommand)
+                    if (telegramRequest != null) {
+                        try {
+                            val plan = AppIntegrationExecutionPolicy.telegramMessage(
+                                telegramRequest.message,
+                                telegramRequest.contactName
+                            ) ?: throw IllegalArgumentException("Telegram message draft is empty")
+                            val result = executeAppIntegrationPlan(plan, "Telegram draft for ${telegramRequest.contactName}")
+                            _state.value = AgentState.Done(result)
+                            graphifyRepo.logTask(safeCommand, "success (Telegram draft opened; not sent): $result", "Android app integration", 0)
+                        } catch (error: Exception) {
+                            val detail = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
+                            AgentDiagnostics.record(context, "telegram-integration", safeCommand, detail, error = error, provider = "Android app integration", model = "Not used")
+                            _state.value = AgentState.Error(detail)
+                        }
+                        return@withLock
+                    }
+
+                    val calendarRequest = AppIntegrationCommandParser.parseCalendarEvent(safeCommand)
+                    if (calendarRequest != null) {
+                        try {
+                            val plan = AppIntegrationExecutionPolicy.calendarEvent(
+                                calendarRequest.title,
+                                calendarRequest.start,
+                                calendarRequest.durationMinutes
+                            ) ?: throw IllegalArgumentException("Calendar event details are invalid")
+                            val result = executeAppIntegrationPlan(plan, "Calendar event")
+                            _state.value = AgentState.Done(result)
+                            graphifyRepo.logTask(safeCommand, "success (Calendar event form opened): $result", "Android app integration", 0)
+                        } catch (error: Exception) {
+                            val detail = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
+                            AgentDiagnostics.record(context, "calendar-integration", safeCommand, detail, error = error, provider = "Android app integration", model = "Not used")
+                            _state.value = AgentState.Error(detail)
+                        }
+                        return@withLock
                     }
 
                     // Multi-step commands use the ordered deterministic pipeline.
@@ -2182,8 +2238,72 @@ Actions remaining: ${session.remainingActions}
         }
     }
 
+    private suspend fun executeAppIntegrationPlan(
+        plan: AppIntegrationExecutionPolicy.Plan,
+        actionLabel: String
+    ): String {
+        val intent = Intent(plan.action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        plan.uri?.let { intent.data = Uri.parse(it) }
+        plan.mimeType?.let { intent.type = it }
+        plan.packageName?.let(intent::setPackage)
+        plan.text?.let { intent.putExtra(Intent.EXTRA_TEXT, it) }
+
+        if (plan.title != null && plan.start != null && plan.durationMinutes != null) {
+            val beginMillis = plan.start.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            val endMillis = beginMillis + plan.durationMinutes * 60_000L
+            intent.putExtra(CalendarContract.Events.TITLE, plan.title)
+            intent.putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, beginMillis)
+            intent.putExtra(CalendarContract.EXTRA_EVENT_END_TIME, endMillis)
+            intent.putExtra(CalendarContract.Events.EVENT_TIMEZONE, ZoneId.systemDefault().id)
+        }
+
+        var launchIntent = intent
+        var resolved = launchIntent.resolveActivity(context.packageManager)
+        if (resolved == null && plan.action == Intent.ACTION_VIEW &&
+            plan.packageName == "com.instagram.android" && plan.uri != null
+        ) {
+            // Instagram is optional; a browser can still open the official search URL.
+            launchIntent = Intent(Intent.ACTION_VIEW, Uri.parse(plan.uri))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            resolved = launchIntent.resolveActivity(context.packageManager)
+        }
+        if (resolved == null) {
+            val target = plan.packageName ?: actionLabel
+            throw IllegalStateException("Required app or compatible activity is unavailable: $target")
+        }
+
+        try {
+            context.startActivity(launchIntent)
+        } catch (error: Exception) {
+            throw IllegalStateException("Android could not open $actionLabel: ${error.message ?: error.javaClass.simpleName}", error)
+        }
+
+        // Intent.resolveActivity returns a ComponentName, not ResolveInfo.
+        val targetPackage = resolved.packageName
+        var foregroundConfirmed = false
+        for (check in 0 until 10) {
+            if (JarvisAccessibilityService.instance?.isPackageActive(targetPackage) == true) {
+                foregroundConfirmed = true
+                break
+            }
+            kotlinx.coroutines.delay(250)
+        }
+
+        val verification = if (foregroundConfirmed) "foreground confirmed" else "foreground confirmation unavailable"
+        return when {
+            plan.action == Intent.ACTION_SEND && plan.requiresUserSelection ->
+                "Telegram draft opened for ${plan.recipientName ?: "your selected contact"}; choose the chat and tap Send yourself ($verification)."
+            plan.action == Intent.ACTION_INSERT && plan.requiresUserConfirmation ->
+                "Calendar event form opened; review the details and save it yourself ($verification)."
+            else -> "$actionLabel opened ($verification)."
+        }
+    }
+
     private fun canParsePipelineStep(step: String): Boolean =
-        CommandRouter.classify(step) != CommandRouter.Route.NONE
+        CommandRouter.classify(step) != CommandRouter.Route.NONE ||
+            AppIntegrationCommandParser.parseInstagramSearch(step) != null ||
+            AppIntegrationCommandParser.parseTelegramMessage(step) != null ||
+            AppIntegrationCommandParser.parseCalendarEvent(step) != null
 
     private fun selectedMessageApp(app: String?): String = when (app?.lowercase(java.util.Locale.ROOT)) {
         "sms" -> "sms"
@@ -2200,7 +2320,41 @@ Actions remaining: ${session.remainingActions}
                 override val name: String = "skill"
 
                 override suspend fun handle(step: String, ctx: StepContext): StepOutcome? {
-                    // SkillRegistry is the first parser for every pipeline step.
+                    val instagramQuery = AppIntegrationCommandParser.parseInstagramSearch(step)
+                    if (instagramQuery != null) {
+                        return try {
+                            val plan = AppIntegrationExecutionPolicy.instagramSearch(instagramQuery)
+                                ?: throw IllegalArgumentException("Instagram search phrase is empty")
+                            StepOutcome(true, executeAppIntegrationPlan(plan, "Instagram search for $instagramQuery"), ctx.copy(app = "instagram"))
+                        } catch (error: Exception) {
+                            StepOutcome(false, error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName, ctx)
+                        }
+                    }
+
+                    val telegramRequest = AppIntegrationCommandParser.parseTelegramMessage(step)
+                    if (telegramRequest != null) {
+                        return try {
+                            val plan = AppIntegrationExecutionPolicy.telegramMessage(telegramRequest.message, telegramRequest.contactName)
+                                ?: throw IllegalArgumentException("Telegram message draft is empty")
+                            val reply = executeAppIntegrationPlan(plan, "Telegram draft for ${telegramRequest.contactName}")
+                            StepOutcome(true, reply, ctx.copy(app = "telegram", contact = telegramRequest.contactName, messageText = telegramRequest.message))
+                        } catch (error: Exception) {
+                            StepOutcome(false, error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName, ctx)
+                        }
+                    }
+
+                    val calendarRequest = AppIntegrationCommandParser.parseCalendarEvent(step)
+                    if (calendarRequest != null) {
+                        return try {
+                            val plan = AppIntegrationExecutionPolicy.calendarEvent(calendarRequest.title, calendarRequest.start, calendarRequest.durationMinutes)
+                                ?: throw IllegalArgumentException("Calendar event details are invalid")
+                            StepOutcome(true, executeAppIntegrationPlan(plan, "Calendar event"), ctx)
+                        } catch (error: Exception) {
+                            StepOutcome(false, error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName, ctx)
+                        }
+                    }
+
+                    // SkillRegistry is the first parser for every remaining pipeline step.
                     // StepIntentParser remains the compatibility parser for richer Hindi/Marathi forms.
                     val skillRequest = SkillRegistry.parse(step)
                     if (skillRequest != null) {
@@ -3004,7 +3158,7 @@ ${fullSystem.substringAfter("MEMORY:")}
                 return "com.google.android.youtube"
             }
         }
-        val knownPackage = knownPackages[normalized]
+        val knownPackage = knownPackages[normalized] ?: AppIntegrationExecutionPolicy.appPackage(normalized)
         if (knownPackage != null && context.packageManager.getLaunchIntentForPackage(knownPackage) != null) {
             return knownPackage
         }
