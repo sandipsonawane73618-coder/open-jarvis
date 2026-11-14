@@ -67,6 +67,7 @@ internal object AgentPlanPolicy {
             Action.CLICK, Action.TAP -> !action.text.isNullOrBlank()
             Action.TYPE_TEXT, Action.TYPE -> !action.value.isNullOrBlank()
             Action.SCROLL -> !action.direction.isNullOrBlank()
+            Action.SCROLL_UNTIL_TARGET -> !action.text.isNullOrBlank()
             Action.WAIT, Action.WAIT_FOR -> !action.text.isNullOrBlank()
             Action.AI_PROMPT -> !action.packageName.isNullOrBlank() && !action.prompt.isNullOrBlank()
             else -> true
