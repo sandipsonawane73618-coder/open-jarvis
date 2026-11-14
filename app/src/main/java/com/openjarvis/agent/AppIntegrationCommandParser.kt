@@ -23,6 +23,7 @@ object AppIntegrationCommandParser {
     )
 
     private val instagramSearchPatterns = listOf(
+        Regex("""^\\s*(?:instagram|insta)\\s+followers\\s+(.+?)\\s*$""", RegexOption.IGNORE_CASE),
         Regex(
             """^\s*(?:instagram|insta)(?:\s+(?:kholo|open))?(?:\s+(?:par|pe))?\s+(?:aur\s+)?(.+?)\s+search\s+(?:karo|kro|kar)\s*$""",
             RegexOption.IGNORE_CASE
