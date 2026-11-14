@@ -138,4 +138,22 @@ class CommandBrainTest {
             assertEquals("$utterance executed steps", expectedSteps, executed)
         }
     }
+
+    @Test fun executionPolicyRejectsBankingAndPreservesMessageDraftOnly() {
+        val safeDraft = CommandBrainPlan(listOf(
+            CommandBrainStep.MessageDraft("WhatsApp", "Rahul", "hello")
+        ))
+        assertTrue(CommandBrainExecutionPolicy.validate(
+            safeDraft, "WhatsApp per Rahul ko message bhejo hello"
+        ).isSuccess)
+        assertTrue(CommandBrainExecutionPolicy.validate(
+            safeDraft, "WhatsApp per Rahul ko message bhejo hello and make payment now"
+        ).isFailure)
+        assertTrue(CommandBrainPlanParser.parse(
+            """{"steps":[{"tool":"maps","args":{"destination":"Pune"}}]}"""
+        ).isFailure)
+        assertTrue(CommandBrainPlanParser.parse(
+            """{"steps":[{"tool":"message_draft","args":{"app":"WhatsApp","contact":"Rahul","text":"hello","send":true}}]}"""
+        ).isFailure)
+    }
 }
