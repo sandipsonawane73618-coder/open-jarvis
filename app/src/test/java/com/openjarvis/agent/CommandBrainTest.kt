@@ -33,6 +33,7 @@ class CommandBrainTest {
         val responses = mapOf(
             "ओपन यूट्यूब" to """{"steps":[{"tool":"open_app","args":{"label":"YouTube"}}]}""",
             "ओपन यूट्यूब एंड सर्च" to """{"steps":[{"tool":"open_app","args":{"label":"YouTube"}},{"tool":"clarify","args":{"question":"Kya search karun?"}}]}""",
+            "ओपन यूट्यूब एंड प्ले अरीजित सिंह सोंग" to """{"steps":[{"tool":"open_app","args":{"label":"YouTube"}},{"tool":"play_media","args":{"query":"arijit singh song","app":"YouTube"}}]}""",
             "एंड प्ले रोमांटिक सोंग" to """{"steps":[{"tool":"play_media","args":{"query":"romantic song","app":null}}]}""",
             "हे जरवेस ओपन यूट्यूब एंड प्ले अरीजित सिंह सोंग" to """{"steps":[{"tool":"open_app","args":{"label":"YouTube"}},{"tool":"play_media","args":{"query":"arijit singh song","app":"YouTube"}}]}""",
             "बैक स्क्रीन पर जाओ" to """{"steps":[{"tool":"back","args":{}}]}""",
@@ -69,7 +70,7 @@ class CommandBrainTest {
         expected.forEach { (utterance, expectedPlan) ->
             assertEquals(utterance, expectedPlan, commandBrain.plan(utterance, 1_500L).getOrThrow())
         }
-        assertEquals(10, provider.calls.size)
+        assertEquals(11, provider.calls.size)
     }
 
     @Test fun bareWakePhraseIsAcknowledgedWithoutCallingProvider() = runBlocking {
@@ -102,6 +103,7 @@ class CommandBrainTest {
         val responses = mapOf(
             "ओपन यूट्यूब" to """{"steps":[{"tool":"open_app","args":{"label":"YouTube"}}]}""",
             "ओपन यूट्यूब एंड सर्च" to """{"steps":[{"tool":"open_app","args":{"label":"YouTube"}},{"tool":"clarify","args":{"question":"Kya search karun?"}}]}""",
+            "ओपन यूट्यूब एंड प्ले अरीजित सिंह सोंग" to """{"steps":[{"tool":"open_app","args":{"label":"YouTube"}},{"tool":"play_media","args":{"query":"arijit singh song","app":"YouTube"}}]}""",
             "एंड प्ले रोमांटिक सोंग" to """{"steps":[{"tool":"play_media","args":{"query":"romantic song","app":null}}]}""",
             "ओपन यूट्यूब एंड प्ले अरीजित सिंह सोंग" to """{"steps":[{"tool":"open_app","args":{"label":"YouTube"}},{"tool":"play_media","args":{"query":"arijit singh song","app":"YouTube"}}]}""",
             "बैक स्क्रीन पर जाओ" to """{"steps":[{"tool":"back","args":{}}]}""",
