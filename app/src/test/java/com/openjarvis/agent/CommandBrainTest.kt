@@ -103,7 +103,7 @@ class CommandBrainTest {
         val responses = mapOf(
             "ओपन यूट्यूब" to """{"steps":[{"tool":"open_app","args":{"label":"YouTube"}}]}""",
             "ओपन यूट्यूब एंड सर्च" to """{"steps":[{"tool":"open_app","args":{"label":"YouTube"}},{"tool":"clarify","args":{"question":"Kya search karun?"}}]}""",
-            "ओपन यूट्यूब एंड प्ले अरीजित सिंह सोंग" to """{"steps":[{"tool":"open_app","args":{"label":"YouTube"}},{"tool":"play_media","args":{"query":"arijit singh song","app":"YouTube"}}]}""",
+            "हे जरवेस ओपन यूट्यूब एंड प्ले अरीजित सिंह सोंग" to """{"steps":[{"tool":"open_app","args":{"label":"YouTube"}},{"tool":"play_media","args":{"query":"arijit singh song","app":"YouTube"}}]}""",
             "एंड प्ले रोमांटिक सोंग" to """{"steps":[{"tool":"play_media","args":{"query":"romantic song","app":null}}]}""",
             "ओपन यूट्यूब एंड प्ले अरीजित सिंह सोंग" to """{"steps":[{"tool":"open_app","args":{"label":"YouTube"}},{"tool":"play_media","args":{"query":"arijit singh song","app":"YouTube"}}]}""",
             "बैक स्क्रीन पर जाओ" to """{"steps":[{"tool":"back","args":{}}]}""",
@@ -111,7 +111,8 @@ class CommandBrainTest {
             "WhatsApp per Rahul ko message bhejo hello" to """{"steps":[{"tool":"message_draft","args":{"app":"WhatsApp","contact":"Rahul","text":"hello"}}]}""",
             "Awaaz badhao" to """{"steps":[{"tool":"volume","args":{"direction":"up"}}]}""",
             "इंडिया का कैपिटल" to """{"steps":[{"tool":"answer","args":{"text":"भारत की राजधानी नई दिल्ली है।"}}]}""",
-            "मद्राचोद" to """{"steps":[{"tool":"none","args":{}}]}"""
+            "मद्राचोद" to """{"steps":[{"tool":"none","args":{}}]}""",
+            "Torch on" to """{"steps":[{"tool":"torch","args":{"on":true}}]}"""
         )
         val expected = mapOf(
             "ओपन यूट्यूब" to listOf(CommandBrainStep.OpenApp("YouTube")),
