@@ -18,7 +18,7 @@ internal object LlmSkillRouteSafetyPolicy {
     )
 
     private fun tokens(command: String) = Normalizer.normalize(command, Normalizer.Form.NFC)
-        .lowercase(Locale.ROOT).split(Regex("[^\\p{L}\\p{N}]+")).filter { it.isNotBlank() }.toSet()
+        .lowercase(Locale.ROOT).split(Regex("[^\\p{L}\\p{M}\\p{N}]+")).filter { it.isNotBlank() }.toSet()
 
     fun acceptedSkill(skill: String, command: String): String? {
         val normalized = skill.uppercase(Locale.ROOT)
