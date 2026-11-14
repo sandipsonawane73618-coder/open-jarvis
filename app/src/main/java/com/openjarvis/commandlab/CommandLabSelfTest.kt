@@ -70,6 +70,17 @@ object CommandLabSelfTest {
         CommandLabTestCase("Extra 6 Instagram open then in-app search", "Instagram kholo aur Shahrukh Khan search karo", CommandLabRoute.LOOP, "open_app(Instagram) -> in_app_search(Shahrukh Khan); LLM=not-used"),
         CommandLabTestCase("Extra 7 India capital is chat", "India ki capital kya hai", CommandLabRoute.CHAT, "chat; action-loop=not-used"),
         CommandLabTestCase("Extra 8 vague command clarifies safely", "kuch bhi", CommandLabRoute.CLARIFY, "clarify; no-action; torch=untouched")
+, 
+        CommandLabTestCase("Phone report 1 Devanagari open YouTube", "ओपन यूट्यूब", CommandLabRoute.STEP, "open YouTube; maps=not-invoked"),
+        CommandLabTestCase("Phone report 2 YouTube search missing query", "ओपन यूट्यूब एंड सर्च", CommandLabRoute.CLARIFY, "open YouTube; Kya search karun?"),
+        CommandLabTestCase("Phone report 3 play a song missing query", "प्ले ए सोंग", CommandLabRoute.CLARIFY, "Kya play karun?"),
+        CommandLabTestCase("Phone report 4 play romantic song in current media app", "एंड प्ले रोमांटिक सोंग", CommandLabRoute.SEARCH, "current/last media app; search 'romantic song'; play first result"),
+        CommandLabTestCase("Phone report 5 wake YouTube search and play", "हे जरवेस ओपन यूट्यूब एंड प्ले अरीजित सिंह सोंग", CommandLabRoute.SEARCH, "open YouTube; search 'arijit singh song'; play first result"),
+        CommandLabTestCase("Phone report 6 back screen", "बैक स्क्रीन पर जाओ", CommandLabRoute.STEP, "BACK"),
+        CommandLabTestCase("Phone report 7 WhatsApp open", "व्हाट्सएप खोलो", CommandLabRoute.STEP, "open WhatsApp"),
+        CommandLabTestCase("Phone report 8 WhatsApp garbage tail", "जरवेस ओपन व्हाट्सएप एंड टेक्स्टबुक एंड कमिंग", CommandLabRoute.CLARIFY, "open WhatsApp; Ye samajh nahi aaya. Kya karna hai?"),
+        CommandLabTestCase("Phone report 9 misheard wake alias close Maps open WhatsApp", "एचआरवी क्लोज मैप एंड ओपन व्हाट्सएप", CommandLabRoute.LOOP, "close Maps -> open WhatsApp"),
+        CommandLabTestCase("Phone report 10 Instagram followers profile search", "इंस्टा फॉलोअर्स शाहरुख खन", CommandLabRoute.LOOP, "Instagram; search profile 'shahrukh khan'; followers=open-profile")
     )
 
     fun run(): List<CommandLabTestResult> = (cases + extraCases).map { test ->
