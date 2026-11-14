@@ -30,7 +30,7 @@ internal object UnknownCommandPolicy {
         return words.all { it in fillerWords }
     }
 
-    private fun isVague(command: String): Boolean {
+    fun shouldAskClarification(command: String): Boolean {
         val text = normalize(command)
         return text in vaguePhrases
     }
@@ -48,7 +48,7 @@ internal object UnknownCommandPolicy {
     ) {
         when {
             shouldStopBeforePlanner(command) -> onStop()
-            isVague(command) -> onAskClarify()
+            shouldAskClarification(command) -> onAskClarify()
             else -> onActionPlan()
         }
     }

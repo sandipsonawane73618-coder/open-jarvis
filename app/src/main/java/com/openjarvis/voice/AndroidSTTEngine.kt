@@ -11,6 +11,7 @@ import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import com.openjarvis.commandlab.CommandLogPolicy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -124,9 +125,14 @@ class AndroidSTTEngine(private val context: Context) : STTEngine {
                     val bestPositiveScore = confidenceScores
                         ?.filter { it.isFinite() && it > 0f }
                         ?.maxOrNull()
-                    val scoreSummary = confidenceScores?.joinToString(
+                    val scoreSummary = confidenceScores?.take(RecognitionCandidateSelector.MAX_CANDIDATES)?.joinToString(
                         prefix = "[", postfix = "]"
                     ) { score -> if (score.isFinite()) score.toString() else "non_finite" } ?: "unavailable"
+                    val redactedCandidates = matches.orEmpty()
+                        .take(RecognitionCandidateSelector.MAX_CANDIDATES)
+                        .mapIndexed { index, candidate ->
+                            "${index + 1}:${CommandLogPolicy.redact(candidate) ?: "[empty]"}"
+                        }
                     val rejectReason = when {
                         text != null -> "none"
                         nonBlankCandidateCount == 0 -> "no_nonblank_candidate"
@@ -138,7 +144,7 @@ class AndroidSTTEngine(private val context: Context) : STTEngine {
                     android.util.Log.i(
                         TAG,
                         "stt_result candidate_count=$candidateCount nonblank_count=$nonBlankCandidateCount " +
-                            "scores=$scoreSummary best_positive_score=$bestPositiveScore " +
+                            "scores=$scoreSummary candidates=$redactedCandidates best_positive_score=$bestPositiveScore " +
                             "threshold=${RecognitionCandidateSelector.MIN_CONFIDENCE} reject_reason=$rejectReason"
                     )
                     val hadPartialHypothesis = !latestPartialTranscript.isNullOrBlank()

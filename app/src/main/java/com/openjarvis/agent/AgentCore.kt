@@ -304,7 +304,7 @@ ${rawResponse.take(1000)}
         else rawResponse to initial
     }
 
-    fun executeTask(cleanCommand: String) {
+    fun executeTask(cleanCommand: String, onFinished: ((AgentState) -> Unit)? = null) {
         scope.launch {
             taskMutex.withLock {
                 // Task-scoped memory must be initialized only after acquiring the mutex.
@@ -577,13 +577,21 @@ ${rawResponse.take(1000)}
                         }
                     }
 
+                    // A play command without a media query must clarify before any action planner.
+                    val youtubeForeground = JarvisAccessibilityService.instance
+                        ?.isPackageActive("com.google.android.youtube") == true
+                    if (PlayCommandPolicy.shouldAskForQuery(safeCommand, youtubeForeground)) {
+                        _state.value = AgentState.Done("Kya play karun?")
+                        return@withLock
+                    }
+
                     // Supported app integrations use deterministic Android intents before any LLM fallback.
                     val instagramQuery = AppIntegrationCommandParser.parseInstagramSearch(safeCommand)
                     if (instagramQuery != null) {
                         try {
                             val plan = AppIntegrationExecutionPolicy.instagramSearch(instagramQuery)
                                 ?: throw IllegalArgumentException("Instagram search phrase is empty")
-                            val result = executeAppIntegrationPlan(plan, "Instagram search for $instagramQuery")
+                            val result = executeInstagramSearchWithFallback(instagramQuery)
                             graphifyRepo.logTask(safeCommand, "success (Instagram integration): $result", "Android app integration", 0)
                             _state.value = AgentState.Done(result)
                         } catch (error: Exception) {
@@ -691,7 +699,7 @@ ${rawResponse.take(1000)}
                                     SkillRegistry.Kind.ALARM -> "Alarm set"
                                     SkillRegistry.Kind.TIMER -> "Timer started"
                                     SkillRegistry.Kind.TORCH -> if (nativeSkill.args["enabled"] == "true") "Torch turned on" else "Torch turned off"
-                                    SkillRegistry.Kind.VOLUME -> "Volume adjusted"
+                                    SkillRegistry.Kind.VOLUME -> if (nativeSkill.args["direction"] == "up") "Volume badha diya" else "Volume kam kar diya"
                                     SkillRegistry.Kind.MAPS -> "Opening navigation"
                                     SkillRegistry.Kind.CALL -> "Dialer opened"
                                     SkillRegistry.Kind.TIME -> SkillRegistry.timeReply(safeCommand)
@@ -1093,6 +1101,13 @@ Never invent contact names or app labels. Understand Hindi, Marathi, Hinglish an
                     }
                     val nativeIntent = nativeRaw.takeIf { it.isNotBlank() }?.let(NativeStepIntentParser::parse)
                     if (nativeIntent != null) {
+                        val guardedSkill = LlmSkillRouteSafetyPolicy.skillFor(nativeIntent)
+                        if (guardedSkill != null && LlmSkillRouteSafetyPolicy.acceptedSkill(guardedSkill, safeCommand) == null) {
+                            val question = LlmSkillRouteSafetyPolicy.clarificationQuestion(guardedSkill)
+                            pendingClarification = ClarificationWorkflowPolicy.Pending(safeCommand, question, 0)
+                            _state.value = AgentState.Done(question)
+                            return@withLock
+                        }
                         _state.value = AgentState.Running("running native ${nativeIntent.javaClass.simpleName.lowercase()} skill...")
                         try {
                             val reply = NativeIntentLearning.executeAndLearn(
@@ -1114,9 +1129,8 @@ Never invent contact names or app labels. Understand Hindi, Marathi, Hinglish an
                     val skillSystem = """
 You are Jarvis, an Android skill router. Return ONLY one JSON object with exactly "skill" and "args".
 Allowed skills: OPEN_APP, SETTINGS, CALL, SEARCH, WHATSAPP_MESSAGE, SMS_MESSAGE, ALARM, TIMER, TORCH, VOLUME, MAPS, ANDROID_UI_ACTIONS.
-Native example: {"skill":"TORCH","args":{"enabled":true}}.
-UI example: {"skill":"ANDROID_UI_ACTIONS","args":{"actions":[{"action":"open_app","label":"Chrome"}]}}.
-Use a native skill whenever it fits. Use ANDROID_UI_ACTIONS only for visible-screen tasks. Never invent app labels, contacts or controls.
+${LlmSkillRouteSafetyPolicy.fewShotPromptInstructions()}
+Use ANDROID_UI_ACTIONS only for visible-screen tasks. Never invent app labels, contacts or controls.
 Never tap Send, Delete, Pay, Purchase, or other final confirmation controls. For messaging, open the composer only and never send.
 For UI actions, use only open_app, click, tap, type_text, type, scroll, back, press_back, home, press_home, press_recents, wait, wait_for, read_screen, ai_prompt, extract_text, error.
 Understand Hindi, Marathi, Hinglish and English. Do not include markdown or explanation.
@@ -1133,7 +1147,19 @@ ${fullSystem.substringAfter("MEMORY:")}
                                 _state.value = AgentState.Error("Jarvis skill response invalid: $detail")
                                 return@fold
                             }
+                            if (skillPlan.skill == "NONE") {
+                                val question = ClarificationWorkflowPolicy.OFFLINE_FALLBACK
+                                pendingClarification = ClarificationWorkflowPolicy.Pending(safeCommand, question, 0)
+                                _state.value = AgentState.Done(question)
+                                return@fold
+                            }
                             if (skillPlan.skill != "ANDROID_UI_ACTIONS") {
+                                if (LlmSkillRouteSafetyPolicy.acceptedMainPromptSkill(skillPlan.skill, safeCommand) == null) {
+                                    val question = LlmSkillRouteSafetyPolicy.clarificationQuestion(skillPlan.skill)
+                                    pendingClarification = ClarificationWorkflowPolicy.Pending(safeCommand, question, 0)
+                                    _state.value = AgentState.Done(question)
+                                    return@fold
+                                }
                                 if (skillPlan.skill == "DATE" || skillPlan.skill == "TIME") {
                                     val reply = if (skillPlan.skill == "DATE") SkillRegistry.dateReply(safeCommand)
                                     else SkillRegistry.timeReply(safeCommand)
@@ -1170,7 +1196,7 @@ ${fullSystem.substringAfter("MEMORY:")}
                                             SkillRegistry.Kind.ALARM -> "Alarm set"
                                             SkillRegistry.Kind.TIMER -> "Timer started"
                                             SkillRegistry.Kind.TORCH -> if (args["enabled"] == "true") "Torch turned on" else "Torch turned off"
-                                            SkillRegistry.Kind.VOLUME -> "Volume adjusted"
+                                            SkillRegistry.Kind.VOLUME -> if (args["direction"] == "up" || args["up"] == "true") "Volume badha diya" else "Volume kam kar diya"
                                             SkillRegistry.Kind.MAPS -> "Opening navigation"
                                             SkillRegistry.Kind.CALL -> "Dialer opened"
                                             SkillRegistry.Kind.TIME -> SkillRegistry.timeReply(safeCommand)
@@ -1607,6 +1633,8 @@ ${fullSystem.substringAfter("MEMORY:")}
                             lastResult = completedState.result.take(240)
                         )
                     }
+                    // Correlate the final state with the exact submitting command/log entry.
+                    runCatching { onFinished?.invoke(_state.value) }
                 }
             }
         }
@@ -2272,6 +2300,47 @@ Actions remaining: ${session.remainingActions}
         }
     }
 
+    private suspend fun executeInstagramInAppSearch(query: String): String {
+        require(query.isNotBlank()) { "Instagram search query is empty" }
+        val service = JarvisAccessibilityService.instance
+            ?: throw IllegalStateException("Accessibility service is unavailable for Instagram search")
+        val instagramPackage = "com.instagram.android"
+        var foreground = false
+        for (attempt in 0 until 20) {
+            if (service.isPackageActive(instagramPackage)) {
+                foreground = true
+                break
+            }
+            kotlinx.coroutines.delay(250)
+        }
+        if (!foreground) throw IllegalStateException("Instagram is not foreground; refusing to search another app")
+        val searchOpened = service.tapByText("Search") || service.tapByText("Explore")
+        if (!searchOpened) throw IllegalStateException("Instagram Search control was not found")
+        kotlinx.coroutines.delay(450)
+        if (!service.typeText(query, "Search")) {
+            throw IllegalStateException("Instagram search field was not found; no LLM fallback was attempted")
+        }
+        // Instagram filters the visible suggestions as text changes; verify the resulting tree.
+        kotlinx.coroutines.delay(900)
+        val visibleText = service.extractVisibleText()
+        if (!service.isPackageActive(instagramPackage) ||
+            !InAppSearchPolicy.isVerified(instagramPackage, query, visibleText)
+        ) {
+            throw IllegalStateException("Instagram search results could not be verified")
+        }
+        return "Searched Instagram for $query (results verified; deterministic in-app route)"
+    }
+
+    private suspend fun executeInstagramSearchWithFallback(query: String): String {
+        require(query.isNotBlank()) { "Instagram search query is empty" }
+        if (JarvisAccessibilityService.instance == null) {
+            val plan = AppIntegrationExecutionPolicy.instagramSearch(query)
+                ?: throw IllegalArgumentException("Instagram search phrase is empty")
+            return executeAppIntegrationPlan(plan, "Instagram search for $query")
+        }
+        return executeInstagramInAppSearch(query)
+    }
+
     private suspend fun executeAppIntegrationPlan(
         plan: AppIntegrationExecutionPolicy.Plan,
         actionLabel: String
@@ -2335,6 +2404,9 @@ Actions remaining: ${session.remainingActions}
 
     private fun canParsePipelineStep(step: String): Boolean =
         CommandRouter.classify(step) != CommandRouter.Route.NONE ||
+            AppIntegrationCommandParser.parseInstagramSearch(step) != null ||
+            AppIntegrationCommandParser.parseTelegramMessage(step) != null ||
+            AppIntegrationCommandParser.parseCalendarEvent(step) != null ||
             AppIntegrationCommandParser.parseInstagramSearch(step) != null ||
             AppIntegrationCommandParser.parseTelegramMessage(step) != null ||
             AppIntegrationCommandParser.parseCalendarEvent(step) != null
@@ -2426,7 +2498,7 @@ Actions remaining: ${session.remainingActions}
                                     SkillRegistry.Kind.ALARM -> "Alarm set"
                                     SkillRegistry.Kind.TIMER -> "Timer started"
                                     SkillRegistry.Kind.TORCH -> if (skillRequest.args["enabled"] == "true") "Torch turned on" else "Torch turned off"
-                                    SkillRegistry.Kind.VOLUME -> "Volume adjusted"
+                                    SkillRegistry.Kind.VOLUME -> if (skillRequest.args["direction"] == "up") "Volume badha diya" else "Volume kam kar diya"
                                     SkillRegistry.Kind.MAPS -> "Opening navigation"
                                 }
                                 val nextContext = when (skillRequest.kind) {
@@ -2473,15 +2545,19 @@ Actions remaining: ${session.remainingActions}
                             val reply = executeStepIntent(intent)
                             // Learning is success-only; failed execution is never persisted.
                             nativeLearnedStore.save(step, intent)
-                            val nextContext = if (intent is StepIntent.Message &&
-                                !intent.contact.isNullOrBlank() && !intent.text.isNullOrBlank()
-                            ) {
-                                ctx.copy(
-                                    app = selectedMessageApp(intent.app),
-                                    contact = intent.contact,
-                                    messageText = intent.text
-                                )
-                            } else ctx
+                            val nextContext = when (intent) {
+                                is StepIntent.AppLaunch -> ctx.copy(app = intent.label)
+                                is StepIntent.Message -> if (
+                                    !intent.contact.isNullOrBlank() && !intent.text.isNullOrBlank()
+                                ) {
+                                    ctx.copy(
+                                        app = selectedMessageApp(intent.app),
+                                        contact = intent.contact,
+                                        messageText = intent.text
+                                    )
+                                } else ctx
+                                else -> ctx
+                            }
                             StepOutcome(true, reply, nextContext)
                         } catch (error: Exception) {
                             StepOutcome(false, error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName, ctx)
@@ -2538,15 +2614,47 @@ Actions remaining: ${session.remainingActions}
                             StepOutcome(false, error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName, ctx)
                         }
                     }
-                    val webQuery = SearchCommandParser.parseWebQuery(step) ?: return null
-                    return try {
-                        val webIntent = Intent(Intent.ACTION_WEB_SEARCH)
-                            .putExtra(SearchManager.QUERY, webQuery)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        context.startActivity(webIntent)
-                        StepOutcome(true, "Searching the web for $webQuery", ctx)
-                    } catch (error: Exception) {
-                        StepOutcome(false, "Could not open web search: ${error.message ?: error.javaClass.simpleName}", ctx)
+                    val webQuery = SearchCommandParser.parseWebQuery(step)
+                    if (webQuery != null) {
+                        return try {
+                            val webIntent = Intent(Intent.ACTION_WEB_SEARCH)
+                                .putExtra(SearchManager.QUERY, webQuery)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(webIntent)
+                            StepOutcome(true, "Searching the web for $webQuery", ctx)
+                        } catch (error: Exception) {
+                            StepOutcome(false, "Could not open web search: ${error.message ?: error.javaClass.simpleName}", ctx)
+                        }
+                    }
+
+                    // An unqualified search inherits only a previously opened, known app.
+                    // Never guess a target app from a bare query.
+                    val contextualQuery = SearchCommandParser.parseUnqualifiedQuery(step) ?: return null
+                    return when (ctx.app?.lowercase(Locale.ROOT)) {
+                        "youtube", "you tube" -> try {
+                            StepOutcome(
+                                true,
+                                executeFastCommand(FastCommandParser.Command.YoutubeSearch(contextualQuery)),
+                                ctx
+                            )
+                        } catch (error: Exception) {
+                            StepOutcome(false, error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName, ctx)
+                        }
+                        "chrome", "google", "browser" -> try {
+                            val webIntent = Intent(Intent.ACTION_WEB_SEARCH)
+                                .putExtra(SearchManager.QUERY, contextualQuery)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(webIntent)
+                            StepOutcome(true, "Searching the web for $contextualQuery", ctx)
+                        } catch (error: Exception) {
+                            StepOutcome(false, "Could not open web search: ${error.message ?: error.javaClass.simpleName}", ctx)
+                        }
+                        "instagram", "insta" -> try {
+                            StepOutcome(true, executeInstagramSearchWithFallback(contextualQuery), ctx)
+                        } catch (error: Exception) {
+                            StepOutcome(false, error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName, ctx)
+                        }
+                        else -> null
                     }
                 }
             },
@@ -2689,8 +2797,7 @@ Actions remaining: ${session.remainingActions}
         val skillSystem = """
 You are Jarvis, an Android skill router. Return ONLY one JSON object with exactly "skill" and "args".
 Allowed skills: OPEN_APP, SETTINGS, CALL, SEARCH, WHATSAPP_MESSAGE, SMS_MESSAGE, ALARM, TIMER, TORCH, VOLUME, MAPS, ANDROID_UI_ACTIONS.
-Native example: {"skill":"TORCH","args":{"enabled":true}}.
-UI example: {"skill":"ANDROID_UI_ACTIONS","args":{"actions":[{"action":"open_app","label":"Chrome"}]}}.
+${LlmSkillRouteSafetyPolicy.fewShotPromptInstructions()}
 Use a native skill whenever it fits. Use ANDROID_UI_ACTIONS only for visible-screen tasks. Never invent app labels, contacts or controls.
 Never tap Send, Delete, Pay, Purchase, or other final confirmation controls. For messaging, open the composer only and never send.
 For UI actions, use only open_app, click, tap, type_text, type, scroll, back, press_back, home, press_home, press_recents, wait, wait_for, read_screen, ai_prompt, extract_text, error.
@@ -2731,6 +2838,14 @@ ${fullSystem.substringAfter("MEMORY:")}
             )
         }
 
+        if (plan.skill == "NONE") {
+            return StepOutcome(true, ClarificationWorkflowPolicy.OFFLINE_FALLBACK, ctx)
+        }
+        if (plan.skill != "ANDROID_UI_ACTIONS" &&
+            LlmSkillRouteSafetyPolicy.acceptedPipelinePromptSkill(plan.skill, step) == null
+        ) {
+            return StepOutcome(true, LlmSkillRouteSafetyPolicy.clarificationQuestion(plan.skill), ctx)
+        }
         if (plan.skill != "ANDROID_UI_ACTIONS") {
             val kind = try {
                 SkillRegistry.Kind.valueOf(plan.skill)
@@ -2766,7 +2881,7 @@ ${fullSystem.substringAfter("MEMORY:")}
                         SkillRegistry.Kind.ALARM -> "Alarm set"
                         SkillRegistry.Kind.TIMER -> "Timer started"
                         SkillRegistry.Kind.TORCH -> if (args["enabled"] == "true") "Torch turned on" else "Torch turned off"
-                        SkillRegistry.Kind.VOLUME -> "Volume adjusted"
+                        SkillRegistry.Kind.VOLUME -> if (args["direction"] == "up" || args["up"] == "true") "Volume badha diya" else "Volume kam kar diya"
                         SkillRegistry.Kind.MAPS -> "Opening navigation"
                         SkillRegistry.Kind.CALL -> "Dialer opened"
                         SkillRegistry.Kind.TIME -> "Abhi " + SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date()) + " baj rahe hain."

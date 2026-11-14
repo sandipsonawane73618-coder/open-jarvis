@@ -8,7 +8,7 @@ internal data class OllamaSkillPlan(val skill: String, val args: JSONObject)
 internal object OllamaSkillPlanParser {
     private val allowedSkills = setOf(
         "OPEN_APP", "SETTINGS", "CALL", "SEARCH", "WHATSAPP_MESSAGE", "SMS_MESSAGE",
-        "ALARM", "TIMER", "TORCH", "VOLUME", "MAPS", "TIME", "ANDROID_UI_ACTIONS", "UNKNOWN"
+        "ALARM", "TIMER", "TORCH", "VOLUME", "MAPS", "TIME", "ANDROID_UI_ACTIONS", "NONE", "UNKNOWN"
     )
     private val allowedArgs = setOf(
         "app", "screen", "contact", "text", "hour", "minute", "seconds",

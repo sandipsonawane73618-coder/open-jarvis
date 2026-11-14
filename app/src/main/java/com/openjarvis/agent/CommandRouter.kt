@@ -20,12 +20,15 @@ internal object CommandRouter {
     }
 
     fun classify(step: String): Route {
+        // Global BACK must win before generic step/navigation parsing can claim the utterance.
+        if (FastCommandParser.parse(step) is FastCommandParser.Command.Back) return Route.FAST
         if (SkillRegistry.parse(step) != null) return Route.SKILL_REGISTRY
         if (StepIntentParser.parse(step) != null) return Route.STEP_INTENT
         if (MessageCommandParser.parse(step) != null) return Route.MESSAGE
         if (messageContinuationContact(step) != null) return Route.MESSAGE_CONTINUATION
         if (SearchCommandParser.parseYouTubeQuery(step) != null ||
-            SearchCommandParser.parseWebQuery(step) != null
+            SearchCommandParser.parseWebQuery(step) != null ||
+            SearchCommandParser.parseUnqualifiedQuery(step) != null
         ) return Route.SEARCH
         if (ContactCommandParser.parse(step) != null) return Route.CONTACT
         if (FastCommandParser.parse(step) != null) return Route.FAST

@@ -3,6 +3,7 @@ package com.openjarvis.intelligence
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import com.openjarvis.agent.CommandRouter
 import org.junit.Test
 
 class FastCommandParserTest {
@@ -107,5 +108,28 @@ class FastCommandParserTest {
         assertNull(FastCommandParser.openAppTarget("play music"))
         assertNull(FastCommandParser.parse(" "))
         assertNull(FastCommandParser.parse("search for weather"))
+    }
+    @Test fun recognizesAllReportedBackScreenPhrasesAsGlobalBack() {
+        listOf(
+            "back screen per jao",
+            "peeche jao",
+            "peeche ja",
+            "wapas jao",
+            "wapas ja",
+            "mage ja",
+            "mage jaa",
+            "go back",
+            "piche jao",
+            "पीछे जाओ",
+            "वापस जाओ",
+            "मागे जा"
+        ).forEach { phrase ->
+            assertEquals("BACK for: $phrase", FastCommandParser.Command.Back, FastCommandParser.parse(phrase))
+            assertEquals("FAST/BACK route for: $phrase", CommandRouter.Route.FAST, CommandRouter.classify(phrase))
+        }
+
+        // Navigation route words must not steal a deterministic BACK command.
+        assertNull(FastCommandParser.openAppTarget("peeche jao"))
+        assertNull(FastCommandParser.openAppTarget("maps par jao"))
     }
 }

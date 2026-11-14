@@ -9,6 +9,14 @@ class StepIntentParserTest {
     private fun p(text: String) = StepIntentParser.parse(text)
 
     @Test
+    fun channelFirstWhatsAppPerMessageExtractsOnlyRahulAsRecipient() {
+        assertEquals(
+            StepIntent.Message("whatsapp", "rahul", "hello"),
+            p("WhatsApp per Rahul ko message bhejo ki hello")
+        )
+    }
+
+    @Test
     fun messages() {
         assertEquals(
             StepIntent.Message(null, "rahul", "kal milte hain"),
