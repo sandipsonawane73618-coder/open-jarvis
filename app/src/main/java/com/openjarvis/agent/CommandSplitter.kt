@@ -39,7 +39,7 @@ object CommandSplitter {
     }
 
     fun split(text: String, canParse: (String) -> Boolean = { true }): List<String> {
-        val words = text.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        val words = VoiceTextNormalizer.normalize(text).trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
         val steps = ArrayList<String>()
         val cur = ArrayList<String>()
         var inText = false
