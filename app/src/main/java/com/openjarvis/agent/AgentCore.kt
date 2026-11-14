@@ -2321,9 +2321,8 @@ Actions remaining: ${session.remainingActions}
             throw IllegalStateException("Android could not open $actionLabel: ${error.message ?: error.javaClass.simpleName}", error)
         }
 
-        val targetPackage = resolved.activityInfo?.packageName
-            ?: resolved.resolvePackageName
-            ?: throw IllegalStateException("Android resolved $actionLabel without a target package")
+        // Intent.resolveActivity returns a ComponentName, not ResolveInfo.
+        val targetPackage = resolved.packageName
         var foregroundConfirmed = false
         for (check in 0 until 10) {
             if (JarvisAccessibilityService.instance?.isPackageActive(targetPackage) == true) {
