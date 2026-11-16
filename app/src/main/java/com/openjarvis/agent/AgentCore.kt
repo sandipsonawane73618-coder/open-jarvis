@@ -27,6 +27,7 @@ import com.openjarvis.llm.UniversalAdapter
 import com.openjarvis.vision.VisionModule
 import com.openjarvis.vision.ScreenshotCapture
 import com.openjarvis.skills.AndroidSkillExecutor
+import com.openjarvis.proactive.ReminderScheduler
 import com.openjarvis.skills.SkillEngine
 import com.openjarvis.skills.SkillRegistry
 import com.openjarvis.llm.providers.OllamaSkillPlanParser
@@ -1755,6 +1756,15 @@ ${fullSystem.substringAfter("MEMORY:")}
             executor.execute(SkillRegistry.Request(kind, args)).getOrElse { throw it }
         }
         return when (intent) {
+            is StepIntent.Reminder -> {
+                ReminderScheduler.schedule(context, intent.message, intent.delaySeconds)
+                val delayText = when {
+                    intent.delaySeconds % 3600L == 0L -> "${intent.delaySeconds / 3600L} hours"
+                    intent.delaySeconds % 60L == 0L -> "${intent.delaySeconds / 60L} minutes"
+                    else -> "${intent.delaySeconds} seconds"
+                }
+                "Reminder set for $delayText: ${intent.message}"
+            }
             is StepIntent.Alarm -> {
                 run(SkillRegistry.Kind.ALARM, mapOf("hour" to intent.hour.toString(), "minute" to intent.minute.toString()))
                 String.format(java.util.Locale.ROOT, "Alarm set for %02d:%02d", intent.hour, intent.minute)
