@@ -28,6 +28,9 @@ object AgentProfiles {
 
     fun byId(id: SpecialistAgent): AgentProfile = all.first { it.id == id }
 
+    fun usesConversationRoute(id: SpecialistAgent): Boolean =
+        id == SpecialistAgent.RESEARCH || id == SpecialistAgent.FILES || id == SpecialistAgent.CONTENT
+
     fun parseMention(command: String): Pair<SpecialistAgent?, String> {
         val atMatch = Regex("""(?:^|\s)@([a-z]+)\b""", RegexOption.IGNORE_CASE).find(command)
         if (atMatch != null) {
