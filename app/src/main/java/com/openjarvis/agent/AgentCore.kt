@@ -198,6 +198,38 @@ ${rawResponse.take(1000)}
                         Log.i(TAG, "specialist_route=${specialistProfile.id.name.lowercase()}")
                     }
 
+                    // Research, Files and Content are explicit local conversation routes.
+                    // They do not fall through to phone-action planning or pretend that web/file
+                    // connectors exist. Phone and Scheduler continue through deterministic Android skills.
+                    if (specialistProfile != null && AgentProfiles.usesConversationRoute(specialistProfile.id)) {
+                        val specialistSystem = """
+You are JARVIS's ${specialistProfile.displayName} specialist, running on the configured local model.
+Answer in the user's language (Hindi, Marathi, Hinglish or English). Be concise, practical and transparent.
+This is a specialist conversation, not Android action planning. Never return JSON or action objects.
+Capability limits: this route has no live web retrieval and no general file-reading connector. Do not claim to browse, fetch, open, or read sources/files unless their contents are actually supplied in the conversation.
+For Research, separate known facts from assumptions and clearly flag when current verification is unavailable.
+For Files, ask the user to provide or open the relevant file through a supported flow; never invent a listing or file contents.
+For Content, produce the requested draft but do not send or publish it.
+${specialistProfile.guidance}
+""".trimIndent()
+                        val specialistStart = System.currentTimeMillis()
+                        _state.value = AgentState.Running("${specialistProfile.displayName} specialist is working...")
+                        val reply = completeWithinBudget(
+                            specialistSystem,
+                            safeCommand,
+                            specialistStart,
+                            conversation = true
+                        ).getOrElse { throw it }
+                        graphifyRepo.logTask(
+                            safeCommand,
+                            "${specialistProfile.displayName} specialist response",
+                            universalAdapter.getProviderName(),
+                            System.currentTimeMillis() - specialistStart
+                        )
+                        _state.value = AgentState.Done(reply)
+                        return@withLock
+                    }
+
                     // Consume the next utterance as a contact name only during the 10s pending window.
                     if (contactFollowUpWindow.consume(System.currentTimeMillis())) {
                             try {
