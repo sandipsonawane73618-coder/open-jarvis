@@ -80,6 +80,12 @@ class ImportedJarvisFoundationTest {
         assertEquals("@unknown do something", parsed.second)
     }
 
+    @Test fun specialistProfilesDoNotClaimUnavailableResearchOrFileAccess() {
+        assertTrue(AgentProfiles.byId(SpecialistAgent.RESEARCH).guidance.contains("never claim"))
+        assertTrue(AgentProfiles.byId(SpecialistAgent.FILES).guidance.contains("Never invent"))
+        assertTrue(AgentProfiles.byId(SpecialistAgent.SCHEDULER).guidance.contains("never claim"))
+    }
+
     @Test fun profileGuidanceKeepsSensitiveActionsApprovalGated() {
         assertTrue(AgentProfiles.byId(SpecialistAgent.PHONE).guidance.contains("confirmation"))
         assertTrue(AgentProfiles.byId(SpecialistAgent.CONTENT).guidance.contains("explicit user approval"))
