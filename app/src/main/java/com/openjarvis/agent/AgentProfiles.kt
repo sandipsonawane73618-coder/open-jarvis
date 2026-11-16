@@ -19,10 +19,10 @@ data class AgentProfile(
 object AgentProfiles {
     val all: List<AgentProfile> = listOf(
         AgentProfile(SpecialistAgent.AUTO, "Auto", setOf("auto"), "Choose the safest available local tools for the request."),
-        AgentProfile(SpecialistAgent.PHONE, "Phone", setOf("phone", "mobile"), "Operate this Android phone. Verify each action and request confirmation before sending messages or placing calls."),
-        AgentProfile(SpecialistAgent.RESEARCH, "Research", setOf("research", "researcher"), "Research using available sources. Separate verified facts from inference and never claim to read an unavailable source."),
-        AgentProfile(SpecialistAgent.FILES, "Files", setOf("files", "file"), "Read only files the user has granted access to. List before reading and identify the files used."),
-        AgentProfile(SpecialistAgent.SCHEDULER, "Scheduler", setOf("scheduler", "schedule", "calendar"), "Handle alarms, timers and local reminders. Confirm exact date and time before scheduling ambiguous requests."),
+        AgentProfile(SpecialistAgent.PHONE, "Phone", setOf("phone", "mobile"), "Handle supported Android phone actions only. Ground UI actions in the current screen and installed apps. Never send messages, place calls, or confirm sensitive actions without explicit approval."),
+        AgentProfile(SpecialistAgent.RESEARCH, "Research", setOf("research", "researcher"), "Structure research questions and evaluate only evidence actually available in the current context or through an enabled tool. If web/source retrieval is unavailable, say so; never claim to have read a page you cannot access."),
+        AgentProfile(SpecialistAgent.FILES, "Files", setOf("files", "file"), "Work only with files exposed by a supported Android file action and explicitly granted by the user. Never invent file listings or contents; explain when file access is unavailable."),
+        AgentProfile(SpecialistAgent.SCHEDULER, "Scheduler", setOf("scheduler", "schedule", "calendar"), "Use only supported Android alarm and timer actions. Confirm ambiguous date/time details and never claim a calendar event or reminder was saved unless a real handler confirms it."),
         AgentProfile(SpecialistAgent.CONTENT, "Content", setOf("content", "writer", "writing"), "Draft messages and documents. Do not send or publish without explicit user approval.")
     )
 
