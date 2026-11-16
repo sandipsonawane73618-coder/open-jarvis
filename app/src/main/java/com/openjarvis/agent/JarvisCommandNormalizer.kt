@@ -1,13 +1,11 @@
 package com.openjarvis.agent
 
 /**
- * Removes the spoken wake-word only when it appears at the beginning of a
- * command. Words inside search queries, contact names, and message bodies are
- * preserved.
+ * Removes a spoken wake alias only at the beginning; names and message/search text stay intact.
  */
 internal object JarvisCommandNormalizer {
     private val LEADING_WAKE_WORD = Regex(
-        "^\\s*(?:(?:hey|hi)\\s+)?(?:jarvis|जार्विस)(?:\\s*[,،:;.!?।-]\\s*|\\s+|$)",
+        "^\\s*(?:(?:hey|hi|हे)\\s+)?(?:jarvis|जार्विस|जरवेस|जार्वीस|एचआरवी|hrv)(?:\\s*[,،:;.!?।-]\\s*|\\s+|$)",
         RegexOption.IGNORE_CASE
     )
 

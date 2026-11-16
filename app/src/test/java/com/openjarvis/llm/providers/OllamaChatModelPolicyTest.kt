@@ -18,6 +18,13 @@ class OllamaChatModelPolicyTest {
     }
 
     @Test
+    fun qwen35TwoBQuantizedIsSelectableWithoutChangingDefault() {
+        assertTrue("qwen3.5:2b-q4_K_M" in OllamaProvider.AVAILABLE_MODELS)
+        assertEquals("qwen3.5:2b-q4_K_M", OllamaProvider.supportedChatModel("qwen3.5:2b-q4_K_M"))
+        assertEquals("qwen3:1.7b", OllamaProvider.DEFAULT_MODEL)
+    }
+
+    @Test
     fun unsupportedModelFallsBackToDefault() {
         assertEquals(OllamaProvider.DEFAULT_MODEL, OllamaProvider.supportedChatModel("qwen3:8b"))
     }

@@ -9,6 +9,15 @@ interface LLMProvider {
         userMessage: String
     ): Result<String>
     
+    /** Request a provider-native JSON response when supported; local providers may use strict prompt mode. */
+    suspend fun completeJson(systemPrompt: String, userMessage: String): Result<String> = complete(systemPrompt, userMessage)
+
+    suspend fun completeJsonWithDeadline(systemPrompt: String, userMessage: String, timeoutMs: Long): Result<String> {
+        if (timeoutMs <= 0L) return Result.failure(IllegalStateException("LLM time budget exceeded."))
+        return kotlinx.coroutines.withTimeoutOrNull(timeoutMs) { completeJson(systemPrompt, userMessage) }
+            ?: Result.failure(IllegalStateException("LLM time budget exceeded."))
+    }
+
     suspend fun completeConversation(systemPrompt: String, userMessage: String): Result<String> = complete(systemPrompt, userMessage)
 
     /** Emits decoded text deltas as they arrive; implementations may fall back to one final chunk. */

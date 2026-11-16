@@ -73,6 +73,19 @@ class ClarificationWorkflowPolicyTest {
     }
 
     @Test
+    fun pendingClarificationExpiresAfterSixtySeconds() {
+        val pending = ClarificationWorkflowPolicy.Pending(
+            originalCommand = "play a song",
+            question = "Which song?",
+            round = 1,
+            createdAtMs = 1_000L
+        )
+        assertFalse(pending.isExpired(61_000L))
+        assertTrue(pending.isExpired(61_001L))
+        assertTrue(pending.isExpired(999L))
+    }
+
+    @Test
     fun malformedRouterOutputFallsBackToClarificationNotUnknownCommandError() {
         val result = ClarificationWorkflowPolicy.resolve(
             "not-json",

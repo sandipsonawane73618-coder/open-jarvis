@@ -1,5 +1,6 @@
 package com.openjarvis.agent
 
+import com.openjarvis.skills.SkillRegistry
 import java.text.Normalizer
 import java.util.Locale
 
@@ -9,15 +10,49 @@ internal object LlmSkillRouteSafetyPolicy {
         "VOLUME" to setOf("volume", "sound", "awaaz", "aawaz", "awaz", "avaz", "avaj", "आवाज़", "आवाज", "वॉल्यूम"),
         "ALARM" to setOf("alarm", "अलार्म"),
         "TIMER" to setOf("timer", "टाइमर"),
-        "CALL" to setOf("call", "dial", "phone", "कॉल", "फोन", "डायल")
+        "CALL" to setOf("call", "dial", "phone", "कॉल", "फोन", "डायल"),
+        "MAPS" to setOf("navigate", "navigation", "directions", "direction", "route", "map", "maps", "रास्ता", "रस्ता", "नेविगेट", "नेविगेशन", "दिशा", "ले चलो"),
+        "OPEN_APP" to setOf("open", "launch", "start", "खोलो", "खोल", "ओपन", "उघडा", "उघड"),
+        "SEARCH" to setOf("search", "find", "look", "lookup", "सर्च", "खोज", "ढूंढ", "ढूँढ", "शोध"),
+        "SETTINGS" to setOf("settings", "setting", "सेटिंग", "सेटिंग्स", "सेटिंग्ज")
     )
+
     private fun tokens(command: String) = Normalizer.normalize(command, Normalizer.Form.NFC)
-        .lowercase(Locale.ROOT).split(Regex("[^\\p{L}\\p{N}]+")).filter { it.isNotBlank() }.toSet()
+        .lowercase(Locale.ROOT).split(Regex("[^\\p{L}\\p{M}\\p{N}]+")).filter { it.isNotBlank() }.toSet()
+
     fun acceptedSkill(skill: String, command: String): String? {
         val normalized = skill.uppercase(Locale.ROOT)
+        val intentCommand = stripWakeAliases(JarvisCommandNormalizer.stripWakeWord(command))
+        // Validate explicit action words against the original utterance. Wake aliases are
+        // harmless extra tokens; normalizing them must never erase the user's actual intent.
+        val commandTokens = tokens(command)
+        if (normalized == "MAPS") {
+            return normalized.takeIf { SkillRegistry.hasExplicitNavigationIntent(intentCommand) }
+        }
+        if (normalized == "OPEN_APP") {
+            return normalized.takeIf { commandTokens.any { it in keywords.getValue(normalized) } }
+        }
+        if (normalized == "SEARCH") {
+            return normalized.takeIf { commandTokens.any { it in keywords.getValue(normalized) } }
+        }
+        if (normalized == "SETTINGS") {
+            return normalized.takeIf { commandTokens.any { it in keywords.getValue(normalized) } }
+        }
         val required = keywords[normalized] ?: return normalized
-        return normalized.takeIf { route -> tokens(command).any { it in required } }
+        return normalized.takeIf { route -> commandTokens.any { it in required } }
     }
+
+
+
+    private fun stripWakeAliases(command: String): String =
+        command.trim().replaceFirst(
+            Regex(
+                "^\\s*(?:(?:hey|hi|हे)\\s+)?(?:jarvis|जार्विस|जरवेस|जार्वीस|एचआरवी|hrv)(?:\\s*[,،:;.!?।-]\\s*|\\s+|$)",
+                RegexOption.IGNORE_CASE
+            ),
+            ""
+        ).trim()
+
     fun acceptedMainPromptSkill(skill: String, command: String): String? = acceptedSkill(skill, command)
     fun acceptedPipelinePromptSkill(skill: String, command: String): String? = acceptedSkill(skill, command)
 
@@ -39,12 +74,17 @@ Choose NONE whenever no explicit command evidence supports a native skill. Never
         is StepIntent.Timer -> "TIMER"
         else -> null
     }
+
     fun clarificationQuestion(skill: String): String = when (skill.uppercase(Locale.ROOT)) {
         "TORCH" -> "Kya aap torch/flashlight on ya off karna chahte hain?"
         "VOLUME" -> "Aap volume badhana chahte hain ya kam karna?"
         "ALARM" -> "Kya alarm set karna hai? Time bataiye."
         "TIMER" -> "Kya timer lagana hai? Duration bataiye."
         "CALL" -> "Kya aap kisi ko call karna chahte hain? Contact ka naam bataiye."
+        "OPEN_APP" -> "Kaunsa installed app kholna hai?"
+        "SEARCH" -> "Kya search karna hai?"
+        "MAPS" -> "Kis jagah ke directions chahiye?"
+        "SETTINGS" -> "Kaunsi setting kholni hai?"
         else -> ClarificationWorkflowPolicy.OFFLINE_FALLBACK
     }
 }
