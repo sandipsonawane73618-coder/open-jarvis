@@ -66,6 +66,9 @@ class AgentCore(private val context: Context) {
     private val _state = MutableStateFlow<AgentState>(AgentState.Idle)
     val state: StateFlow<AgentState> = _state
 
+    private val _activityEvents = MutableStateFlow<List<ToolActivityEvent>>(emptyList())
+    val activityEvents: StateFlow<List<ToolActivityEvent>> = _activityEvents
+
     private val systemPrompt = """
 You are Jarvis, an Android action planner. Return ONLY a JSON array of action objects.
 Example: [{"action":"open_app","label":"<exact installed label>"}]
@@ -1357,7 +1360,7 @@ ${fullSystem.substringAfter("MEMORY:")}
     }
 
     private fun createStepPipeline(): StepPipeline = StepPipeline(
-        listOf<StepHandler>(
+        handlers = listOf<StepHandler>(
             object : StepHandler {
                 override val name: String = "skill"
 
@@ -1585,7 +1588,10 @@ ${fullSystem.substringAfter("MEMORY:")}
                         )
                     }
             }
-        )
+        ),
+        activityEngine = ToolActivityEngine(ToolActivityListener { event ->
+            _activityEvents.value = (_activityEvents.value + event).takeLast(20)
+        })
     )
 
 
