@@ -82,7 +82,7 @@ class ReminderWorker(
             val pendingIntent = launchIntent?.let {
                 PendingIntent.getActivity(
                     applicationContext,
-                    NOTIFICATION_ID,
+                    id.hashCode(),
                     it,
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
@@ -108,6 +108,5 @@ class ReminderWorker(
 
     companion object {
         private const val CHANNEL_ID = "jarvis_reminders"
-        private const val NOTIFICATION_ID = 7401
     }
 }
