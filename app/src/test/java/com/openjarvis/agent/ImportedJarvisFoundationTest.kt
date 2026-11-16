@@ -58,6 +58,22 @@ class ImportedJarvisFoundationTest {
         assertEquals("remind me", spoken.second)
     }
 
+    @Test fun everyVisibleSpecialistHandleRoutesToItsOwnProfile() {
+        val cases = listOf(
+            "@phone open settings" to SpecialistAgent.PHONE,
+            "@research compare these options" to SpecialistAgent.RESEARCH,
+            "@files list my documents" to SpecialistAgent.FILES,
+            "@scheduler remind me tomorrow" to SpecialistAgent.SCHEDULER,
+            "@content draft a message" to SpecialistAgent.CONTENT
+        )
+        cases.forEach { (command, expectedAgent) ->
+            val (actualAgent, routedCommand) = AgentProfiles.parseMention(command)
+            assertEquals(expectedAgent, actualAgent)
+            assertTrue(routedCommand.isNotBlank())
+            assertFalse(routedCommand.startsWith("@"))
+        }
+    }
+
     @Test fun unknownAgentMentionRemainsOrdinaryText() {
         val parsed = AgentProfiles.parseMention("@unknown do something")
         assertNull(parsed.first)
