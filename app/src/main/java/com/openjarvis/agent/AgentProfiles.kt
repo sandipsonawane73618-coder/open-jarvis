@@ -29,16 +29,16 @@ object AgentProfiles {
     fun byId(id: SpecialistAgent): AgentProfile = all.first { it.id == id }
 
     fun parseMention(command: String): Pair<SpecialistAgent?, String> {
-        val atMatch = Regex("""(?:^|\\s)@([a-z]+)\\b""", RegexOption.IGNORE_CASE).find(command)
+        val atMatch = Regex("""(?:^|\s)@([a-z]+)\b""", RegexOption.IGNORE_CASE).find(command)
         if (atMatch != null) {
             val handle = atMatch.groupValues[1].lowercase()
             val profile = all.firstOrNull { handle in it.handles }
             if (profile != null) {
-                val cleaned = (command.removeRange(atMatch.range)).trim().replace(Regex("""\\s+"""), " ")
+                val cleaned = (command.removeRange(atMatch.range)).trim().replace(Regex("""\s+"""), " ")
                 return (if (cleaned.isBlank()) null else profile.id) to cleaned
             }
         }
-        val spoken = Regex("""^\\s*(?:ask|tell|use|get)?\\s*(?:the\\s+)?([a-z]+)\\s+agent\\b(?:\\s+to)?\\s*(.*)$""", RegexOption.IGNORE_CASE)
+        val spoken = Regex("""^\s*(?:ask|tell|use|get)?\s*(?:the\s+)?([a-z]+)\s+agent\b(?:\s+to)?\s*(.*)$""", RegexOption.IGNORE_CASE)
             .matchEntire(command)
         if (spoken != null) {
             val handle = spoken.groupValues[1].lowercase()
