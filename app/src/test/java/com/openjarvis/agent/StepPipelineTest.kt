@@ -100,6 +100,28 @@ class StepPipelineTest {
         )
     }
 
+
+    @Test
+    fun emitsPrivacySafeActivityForEachStepAndMarksFailure() = runBlocking {
+        val events = mutableListOf<ToolActivityEvent>()
+        val engine = ToolActivityEngine(ToolActivityListener { events += it })
+        val handler = object : StepHandler {
+            override val name = "fake"
+            override suspend fun handle(step: String, ctx: StepContext): StepOutcome =
+                StepOutcome(step != "fail", "result for $step", ctx)
+        }
+        val result = StepPipeline(listOf(handler), engine).run(listOf("private message text", "fail"))
+        assertFalse(result.allOk)
+        assertEquals(6, events.size)
+        assertEquals(ActivityStatus.QUEUED, events[0].status)
+        assertEquals(ActivityStatus.RUNNING, events[1].status)
+        assertEquals(ActivityStatus.COMPLETED, events[2].status)
+        assertEquals(ActivityStatus.FAILED, events[5].status)
+        assertEquals("Inputs kept private", events[0].safeInput)
+        assertFalse(events.any { it.safeInput.contains("private message text") })
+    }
+
+
     @Test
     fun successfulRunHasNoFailureMessage() = runBlocking {
         val handler = object : StepHandler {
