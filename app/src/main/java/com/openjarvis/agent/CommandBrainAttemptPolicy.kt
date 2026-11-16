@@ -17,3 +17,12 @@ internal object CommandBrainAttemptPolicy {
         return withTimeoutOrNull(timeoutMs) { block() }
     }
 }
+
+/**
+ * User-facing fallback when the online command brain and the local Ollama route
+ * are both unavailable after the bounded attempt.
+ */
+internal object CommandBrainTimeoutReplyPolicy {
+    fun unavailableReply(): String =
+        "Abhi samajh nahi paa raha: cloud aur Ollama dono band hain"
+}
