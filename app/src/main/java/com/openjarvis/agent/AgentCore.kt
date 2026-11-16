@@ -579,7 +579,7 @@ Never tap Send, Delete, Pay, Purchase, or other final confirmation controls. For
 For UI actions, use only open_app, click, tap, type_text, type, scroll, back, press_back, home, press_home, press_recents, wait, wait_for, read_screen, ai_prompt, extract_text, error.
 Understand Hindi, Marathi, Hinglish and English. Do not include markdown or explanation.
 ${fullSystem.substringAfter("MEMORY:")}
-""".trimIndent() + specialistPrompt
+""".trimIndent()
 
                     val result = completeSkillWithinBudget(skillSystem, safeCommand, startTime)
 
