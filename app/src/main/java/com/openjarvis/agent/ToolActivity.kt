@@ -60,9 +60,9 @@ object ToolActivityFactory {
     ): ToolActivityEvent {
         val safeTool = tool.takeIf { it in titles } ?: "unknown_tool"
         val safeInput = when {
-            safeTool == "device_control" && numericInput["level"] in 0..100 ->
+            safeTool == "device_control" && numericInput["level"]?.let { it in 0..100 } == true ->
                 "Level: ${numericInput.getValue("level")}%"
-            safeTool == "set_reminder" && numericInput["minutes"] in 1..10080 ->
+            safeTool == "set_reminder" && numericInput["minutes"]?.let { it in 1..10080 } == true ->
                 "Delay: ${numericInput.getValue("minutes")} minutes"
             safeTool == "consult_agent" && agent in setOf("phone", "research", "files", "scheduler", "content") ->
                 "Agent: $agent"
