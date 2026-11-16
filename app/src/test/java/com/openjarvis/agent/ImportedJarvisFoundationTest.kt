@@ -80,6 +80,15 @@ class ImportedJarvisFoundationTest {
         assertEquals("@unknown do something", parsed.second)
     }
 
+    @Test fun specialistProfilesSelectOnlyTheirIntendedExecutionRoutes() {
+        assertTrue(AgentProfiles.usesConversationRoute(SpecialistAgent.RESEARCH))
+        assertTrue(AgentProfiles.usesConversationRoute(SpecialistAgent.FILES))
+        assertTrue(AgentProfiles.usesConversationRoute(SpecialistAgent.CONTENT))
+        assertFalse(AgentProfiles.usesConversationRoute(SpecialistAgent.PHONE))
+        assertFalse(AgentProfiles.usesConversationRoute(SpecialistAgent.SCHEDULER))
+        assertFalse(AgentProfiles.usesConversationRoute(SpecialistAgent.AUTO))
+    }
+
     @Test fun specialistProfilesDoNotClaimUnavailableResearchOrFileAccess() {
         assertTrue(AgentProfiles.byId(SpecialistAgent.RESEARCH).guidance.contains("never claim"))
         assertTrue(AgentProfiles.byId(SpecialistAgent.FILES).guidance.contains("Never invent"))
