@@ -97,7 +97,7 @@ class ReminderWorker(
                 .setAutoCancel(true)
                 .setContentIntent(pendingIntent)
                 .build()
-            NotificationManagerCompat.from(applicationContext).notify(NOTIFICATION_ID, notification)
+            NotificationManagerCompat.from(applicationContext).notify(id.hashCode(), notification)
             Result.success()
         } catch (_: SecurityException) {
             Result.failure()
