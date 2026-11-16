@@ -80,6 +80,7 @@ class MainActivity : ComponentActivity() {
                 val overlayEnabled = Settings.canDrawOverlays(this)
                 
                 val agentState by agentCore.state.collectAsState()
+                val activityEvents by agentCore.activityEvents.collectAsState()
                 
                 if (!accessibilityEnabled || !overlayEnabled) {
                     PermissionScreen(
@@ -95,6 +96,7 @@ class MainActivity : ComponentActivity() {
                         onOpenEuronics = { startOverlayService(); startActivity(Intent(this, EuronicsActivity::class.java)) },
                         graphifyRepo = graphifyRepo,
                         isSystemActive = accessibilityEnabled && overlayEnabled,
+                        activityEvents = activityEvents,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
