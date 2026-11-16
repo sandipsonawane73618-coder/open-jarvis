@@ -46,6 +46,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.openjarvis.agent.ActivityStatus
+import com.openjarvis.agent.ToolActivityEvent
 import com.openjarvis.graphify.GraphifyRepository
 import com.openjarvis.graphify.nodes.AppNode
 import com.openjarvis.graphify.nodes.TaskNode
@@ -62,6 +64,7 @@ fun DashboardScreen(
     onOpenEuronics: () -> Unit,
     graphifyRepo: GraphifyRepository,
     isSystemActive: Boolean,
+    activityEvents: List<ToolActivityEvent> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     var recentTasks by remember { mutableStateOf<List<TaskNode>>(emptyList()) }
@@ -130,6 +133,10 @@ fun DashboardScreen(
             ProactiveAssistantCard(taskCount = recentTasks.size)
 
             Spacer(modifier = Modifier.height(16.dp))
+
+            ToolActivitySection(events = activityEvents)
+
+            Spacer(modifier = Modifier.height(16.dp))
             
             StatsRow(
                 tasks = recentTasks,
@@ -166,6 +173,54 @@ fun DashboardScreen(
         }
     }
 }
+
+
+@Composable
+private fun ToolActivitySection(events: List<ToolActivityEvent>) {
+    if (events.isEmpty()) return
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = VoidColor.Void900,
+        border = androidx.compose.foundation.BorderStroke(1.dp, VoidColor.Cyan.copy(alpha = 0.22f))
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("LIVE TOOL ACTIVITY", color = VoidColor.Cyan, fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.5.sp)
+            events.takeLast(5).asReversed().forEach { event ->
+                val statusText = when (event.status) {
+                    ActivityStatus.QUEUED -> "QUEUED"
+                    ActivityStatus.RUNNING -> "RUNNING"
+                    ActivityStatus.WAITING_FOR_APPROVAL -> "NEEDS APPROVAL"
+                    ActivityStatus.COMPLETED -> "COMPLETED"
+                    ActivityStatus.FAILED -> "FAILED"
+                    ActivityStatus.STOPPED -> "STOPPED"
+                    ActivityStatus.UNCONFIRMED -> "UNCONFIRMED"
+                    ActivityStatus.NOT_RUN -> "NOT RUN"
+                }
+                val statusColor = when (event.status) {
+                    ActivityStatus.COMPLETED -> VoidColor.Green
+                    ActivityStatus.FAILED, ActivityStatus.UNCONFIRMED -> VoidColor.Red
+                    ActivityStatus.RUNNING, ActivityStatus.WAITING_FOR_APPROVAL -> VoidColor.Cyan
+                    else -> VoidColor.TextDisabled
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(event.title, color = VoidColor.TextPrimary, fontSize = 13.sp)
+                        Text(event.safeInput, color = VoidColor.TextDisabled, fontSize = 10.sp)
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(statusText, color = statusColor, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        event.elapsedMs?.let { Text("${it} ms", color = VoidColor.TextDisabled, fontSize = 9.sp) }
+                    }
+                }
+            }
+            Text("Command details are hidden in this activity feed.", color = VoidColor.TextDisabled, fontSize = 10.sp)
+        }
+    }
+}
+
 
 @Composable
 private fun OrbBackground() {
