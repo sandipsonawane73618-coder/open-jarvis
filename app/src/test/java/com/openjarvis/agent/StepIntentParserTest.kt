@@ -64,6 +64,28 @@ class StepIntentParserTest {
     }
 
     @Test
+    fun scheduledReminders() {
+        assertEquals(
+            StepIntent.Reminder("drink water", 600L),
+            p("Remind me in 10 minutes to drink water")
+        )
+        assertEquals(
+            StepIntent.Reminder("check the oven", 1800L),
+            p("Please remind me after 30 minutes to check the oven")
+        )
+        assertEquals(
+            StepIntent.Reminder("pani peena", 300L),
+            p("mujhe 5 minute baad pani peena yaad dilana")
+        )
+        assertEquals(
+            StepIntent.Reminder("दवाई लेना", 3600L),
+            p("मुझे 1 घंटे बाद दवाई लेना याद दिलाना")
+        )
+        assertNull(p("remind me in 0 minutes to call"))
+        assertNull(p("remind me in 10 minutes"))
+    }
+
+    @Test
     fun torchAndVolume() {
         assertEquals(StepIntent.Torch(true), p("torch on karo"))
         assertEquals(StepIntent.Torch(false), p("torch band karo"))
