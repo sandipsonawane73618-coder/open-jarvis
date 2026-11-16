@@ -122,6 +122,30 @@ class StepPipelineTest {
     }
 
 
+
+    @Test
+    fun repeatedThirdStepIsBlockedBeforeItReachesHandler() = runBlocking {
+        val executed = mutableListOf<String>()
+        val handler = object : StepHandler {
+            override val name = "fake"
+            override suspend fun handle(step: String, ctx: StepContext): StepOutcome {
+                executed += step
+                return StepOutcome(true, "ok", ctx)
+            }
+        }
+
+        val result = StepPipeline(listOf(handler)).run(
+            listOf("open settings", "open settings", "open settings", "turn on wifi")
+        )
+
+        assertFalse(result.allOk)
+        assertEquals(listOf("open settings", "open settings"), executed)
+        assertEquals("recovery_guard", result.traces.last().route)
+        assertEquals("Repeated identical step blocked to prevent an action loop.", result.traces.last().reply)
+        assertEquals(listOf("turn on wifi"), result.skipped)
+    }
+
+
     @Test
     fun successfulRunHasNoFailureMessage() = runBlocking {
         val handler = object : StepHandler {
