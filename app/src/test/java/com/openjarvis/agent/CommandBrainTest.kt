@@ -199,6 +199,15 @@ class CommandBrainTest {
     }
 
 
+
+    @Test
+    fun unavailableCommandBrainShowsClearHindiReplyAtDeadline() {
+        assertEquals(
+            "Abhi samajh nahi paa raha: cloud aur Ollama dono band hain",
+            CommandBrainTimeoutReplyPolicy.unavailableReply()
+        )
+    }
+
     @Test fun timedOutCommandBrainReturnsControlForOfflineFallback() = runBlocking {
         val startedAt = System.nanoTime()
         val result = CommandBrainAttemptPolicy.withinDeadline(25L) {
