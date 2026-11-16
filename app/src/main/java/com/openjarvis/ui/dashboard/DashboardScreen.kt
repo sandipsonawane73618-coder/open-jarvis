@@ -177,7 +177,6 @@ fun DashboardScreen(
 
 @Composable
 private fun ToolActivitySection(events: List<ToolActivityEvent>) {
-    if (events.isEmpty()) return
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
@@ -187,6 +186,13 @@ private fun ToolActivitySection(events: List<ToolActivityEvent>) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("LIVE TOOL ACTIVITY", color = VoidColor.Cyan, fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.5.sp)
+            if (events.isEmpty()) {
+                Text(
+                    "No tool activity yet. Start a task from the Jarvis assistant to see live execution status here.",
+                    color = VoidColor.TextSecondary,
+                    fontSize = 12.sp
+                )
+            }
             events.takeLast(5).asReversed().forEach { event ->
                 val statusText = when (event.status) {
                     ActivityStatus.QUEUED -> "QUEUED"
