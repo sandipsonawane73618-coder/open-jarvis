@@ -42,23 +42,37 @@ data class RunResult(
     }
 }
 
-class StepPipeline(private val handlers: List<StepHandler>) {
+class StepPipeline(
+    private val handlers: List<StepHandler>,
+    private val activityEngine: ToolActivityEngine? = null
+) {
     suspend fun run(steps: List<String>): RunResult {
         var ctx = StepContext()
         val traces = ArrayList<StepTrace>()
         for ((i, step) in steps.withIndex()) {
+            val startedAt = System.currentTimeMillis()
+            var activity = ToolActivityFactory.create(id = "pipeline-step-${i + 1}", tool = "phone_task", atEpochMs = startedAt)
+            activityEngine?.emit(activity)
+            activity = activityEngine?.progress(activity, 1, ProgressKind.STEP, atEpochMs = startedAt) ?: activity
             var handled = false
-            for (handler in handlers) {
-                val outcome = handler.handle(step, ctx) ?: continue
-                traces.add(StepTrace(i, step, handler.name, outcome.ok, outcome.reply))
-                if (!outcome.ok) return RunResult(traces, false, steps.drop(i + 1))
-                ctx = outcome.ctx ?: ctx
-                handled = true
-                break
-            }
-            if (!handled) {
-                traces.add(StepTrace(i, step, "unhandled", false, "Samajh nahi aaya: $step"))
-                return RunResult(traces, false, steps.drop(i + 1))
+            try {
+                for (handler in handlers) {
+                    val outcome = handler.handle(step, ctx) ?: continue
+                    traces.add(StepTrace(i, step, handler.name, outcome.ok, outcome.reply))
+                    activityEngine?.finish(activity, if (outcome.ok) ActivityStatus.COMPLETED else ActivityStatus.FAILED, startedAt)
+                    if (!outcome.ok) return RunResult(traces, false, steps.drop(i + 1))
+                    ctx = outcome.ctx ?: ctx
+                    handled = true
+                    break
+                }
+                if (!handled) {
+                    traces.add(StepTrace(i, step, "unhandled", false, "Samajh nahi aaya: $step"))
+                    activityEngine?.finish(activity, ActivityStatus.FAILED, startedAt)
+                    return RunResult(traces, false, steps.drop(i + 1))
+                }
+            } catch (error: Exception) {
+                activityEngine?.finish(activity, ActivityStatus.FAILED, startedAt)
+                throw error
             }
         }
         return RunResult(traces, true, emptyList())
