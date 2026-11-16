@@ -49,7 +49,16 @@ class StepPipeline(
     suspend fun run(steps: List<String>): RunResult {
         var ctx = StepContext()
         val traces = ArrayList<StepTrace>()
+        val loopGuard = PipelineLoopGuard()
         for ((i, step) in steps.withIndex()) {
+            if (loopGuard.shouldBlock(step)) {
+                val message = "Repeated identical step blocked to prevent an action loop."
+                traces.add(StepTrace(i, step, "recovery_guard", false, message))
+                val activity = ToolActivityFactory.create(id = "pipeline-step-${i + 1}", tool = "phone_task")
+                activityEngine?.emit(activity)
+                activityEngine?.finish(activity, ActivityStatus.FAILED, activity.atEpochMs)
+                return RunResult(traces, false, steps.drop(i + 1))
+            }
             val startedAt = System.currentTimeMillis()
             var activity = ToolActivityFactory.create(id = "pipeline-step-${i + 1}", tool = "phone_task", atEpochMs = startedAt)
             activityEngine?.emit(activity)
