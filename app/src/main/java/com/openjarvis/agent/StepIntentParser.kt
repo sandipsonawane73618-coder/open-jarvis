@@ -6,6 +6,7 @@ import java.util.Locale
 sealed class StepIntent {
     data class Alarm(val hour: Int, val minute: Int) : StepIntent()
     data class Timer(val seconds: Int) : StepIntent()
+    data class Reminder(val message: String, val delaySeconds: Long) : StepIntent()
     data class Torch(val on: Boolean) : StepIntent()
     data class Volume(val up: Boolean) : StepIntent()
     data class Navigate(val place: String) : StepIntent()
@@ -88,6 +89,8 @@ object StepIntentParser {
     private val SAVA = words("sava", "सवा")
 
     private val TIMER_WORDS = words("timer", "टाइमर")
+    private val REMINDER_EN = Regex("^(?:please\\s+)?remind\\s+me\\s+(?:in|after)\\s+(\\d{1,4})\\s+(seconds?|secs?|minutes?|mins?|hours?|hrs?)\\s+(?:to\\s+)?(.+)$", RegexOption.IGNORE_CASE)
+    private val REMINDER_HI = Regex("^(?:mujhe\\s+|मुझे\\s+)?(\\d{1,4})\\s+(seconds?|secs?|minutes?|mins?|hours?|hrs?|सेकंड|सेकेंड|मिनट|घंटे|घंटा)\\s+(?:baad|बाद)\\s+(.+?)(?:\\s+(?:yaad\\s+dilana|yaad\\s+dila\\s+dena|याद\\s+दिलाना))?$", RegexOption.IGNORE_CASE)
     private val UNIT_MIN = words("minute", "minutes", "min", "mins", "मिनट")
     private val UNIT_SEC = words("second", "seconds", "sec", "secs", "सेकंड", "सेकेंड")
     private val UNIT_HOUR = words("ghanta", "ghante", "hour", "hours", "घंटा", "घंटे", "घण्टे")
@@ -130,7 +133,8 @@ object StepIntentParser {
     fun parse(step: String): StepIntent? {
         val tokens = tokenize(step)
         if (tokens.isEmpty()) return null
-        return parseScreenRead(tokens)
+        return parseReminder(step)
+            ?: parseScreenRead(tokens)
             ?: parseMessage(step)
             ?: parseAlarm(tokens)
             ?: parseTimer(tokens)
@@ -155,6 +159,22 @@ object StepIntentParser {
         while (list.isNotEmpty() && list.first() in noise) list.removeAt(0)
         while (list.isNotEmpty() && list.last() in noise) list.removeAt(list.size - 1)
         return list
+    }
+
+    private fun parseReminder(step: String): StepIntent.Reminder? {
+        val normalized = Normalizer.normalize(step.trim(), Normalizer.Form.NFC).replace(SPACES, " ")
+        val match = REMINDER_EN.matchEntire(normalized) ?: REMINDER_HI.matchEntire(normalized) ?: return null
+        val amount = match.groupValues[1].toLongOrNull() ?: return null
+        val unit = match.groupValues[2].lowercase(Locale.ROOT)
+        val multiplier = when {
+            unit.startsWith("sec") || unit.startsWith("सेक") -> 1L
+            unit.startsWith("min") || unit == "मिनट" -> 60L
+            else -> 3600L
+        }
+        val delaySeconds = amount * multiplier
+        val message = match.groupValues[3].trim().trimEnd('.', '!', '?', '।')
+        if (delaySeconds !in 10L..604_800L || message.length !in 2..240) return null
+        return StepIntent.Reminder(message, delaySeconds)
     }
 
     private fun parseScreenRead(tokens: List<String>): StepIntent.ScreenRead? {
