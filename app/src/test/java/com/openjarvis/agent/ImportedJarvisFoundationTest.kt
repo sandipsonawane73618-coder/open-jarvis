@@ -96,7 +96,7 @@ class ImportedJarvisFoundationTest {
     }
 
     @Test fun profileGuidanceKeepsSensitiveActionsApprovalGated() {
-        assertTrue(AgentProfiles.byId(SpecialistAgent.PHONE).guidance.contains("confirmation"))
+        assertTrue(AgentProfiles.byId(SpecialistAgent.PHONE).guidance.contains("explicit approval"))
         assertTrue(AgentProfiles.byId(SpecialistAgent.CONTENT).guidance.contains("explicit user approval"))
     }
 }
