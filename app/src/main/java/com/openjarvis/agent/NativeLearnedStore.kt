@@ -29,6 +29,7 @@ internal class NativeLearnedStore(context: Context) {
         when (intent) {
             is StepIntent.Alarm -> put("type", "alarm").put("hour", intent.hour).put("minute", intent.minute)
             is StepIntent.Timer -> put("type", "timer").put("seconds", intent.seconds)
+            is StepIntent.Reminder -> put("type", "reminder").put("message", intent.message).put("delaySeconds", intent.delaySeconds)
             is StepIntent.Torch -> put("type", "torch").put("on", intent.on)
             is StepIntent.Volume -> put("type", "volume").put("up", intent.up)
             is StepIntent.Navigate -> put("type", "navigate").put("place", intent.place)
@@ -43,6 +44,9 @@ internal class NativeLearnedStore(context: Context) {
             require(it.hour in 0..23 && it.minute in 0..59)
         }
         "timer" -> StepIntent.Timer(json.getInt("seconds")).also { require(it.seconds in 1..86400) }
+        "reminder" -> StepIntent.Reminder(json.getString("message").take(240), json.getLong("delaySeconds")).also {
+            require(it.message.length in 2..240 && it.delaySeconds in 10L..604_800L)
+        }
         "torch" -> StepIntent.Torch(json.getBoolean("on"))
         "volume" -> StepIntent.Volume(json.getBoolean("up"))
         "navigate" -> StepIntent.Navigate(json.getString("place").take(120)).also { require(it.place.isNotBlank()) }

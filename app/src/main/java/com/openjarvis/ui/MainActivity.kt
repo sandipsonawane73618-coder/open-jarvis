@@ -55,11 +55,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            requestMicPermission.launch(Manifest.permission.RECORD_AUDIO)
-        } else {
-            requestNotificationPermissionIfNeeded()
-        }
+        // Do not launch runtime permission dialogs during startup. They can cover
+        // the dashboard and make the app appear frozen on first launch. Request
+        // each permission only from the feature that needs it.
         
         enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -80,24 +78,32 @@ class MainActivity : ComponentActivity() {
                 val overlayEnabled = Settings.canDrawOverlays(this)
                 
                 val agentState by agentCore.state.collectAsState()
+                val activityEvents by agentCore.activityEvents.collectAsState()
                 
-                if (!accessibilityEnabled || !overlayEnabled) {
-                    PermissionScreen(
-                        accessibilityEnabled = accessibilityEnabled,
-                        overlayEnabled = overlayEnabled,
-                        onEnableAccessibility = { startAccessibilitySettings() },
-                        onEnableOverlay = { startOverlaySettings() }
-                    )
-                } else {
-                    DashboardScreen(
-                        onStartOverlay = { startOverlayService() },
-                        onOpenSettings = { openSettings() },
-                        onOpenEuronics = { startOverlayService(); startActivity(Intent(this, EuronicsActivity::class.java)) },
-                        graphifyRepo = graphifyRepo,
-                        isSystemActive = accessibilityEnabled && overlayEnabled,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
+                DashboardScreen(
+                    onStartOverlay = {
+                        if (!accessibilityEnabled) {
+                            startAccessibilitySettings()
+                        } else if (!overlayEnabled) {
+                            startOverlaySettings()
+                        } else {
+                            startOverlayService()
+                        }
+                    },
+                    onOpenSettings = { openSettings() },
+                    onOpenEuronics = {
+                        if (!accessibilityEnabled) startAccessibilitySettings()
+                        else if (!overlayEnabled) startOverlaySettings()
+                        else {
+                            startOverlayService()
+                            startActivity(Intent(this, EuronicsActivity::class.java))
+                        }
+                    },
+                    graphifyRepo = graphifyRepo,
+                    isSystemActive = accessibilityEnabled && overlayEnabled,
+                    activityEvents = activityEvents,
+                    modifier = Modifier.fillMaxSize()
+                )
             }
         }
     }

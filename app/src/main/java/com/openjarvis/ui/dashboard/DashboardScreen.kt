@@ -46,6 +46,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.openjarvis.agent.ActivityStatus
+import com.openjarvis.agent.ToolActivityEvent
+import com.openjarvis.agent.AgentProfiles
+import com.openjarvis.agent.SpecialistAgent
 import com.openjarvis.graphify.GraphifyRepository
 import com.openjarvis.graphify.nodes.AppNode
 import com.openjarvis.graphify.nodes.TaskNode
@@ -62,6 +66,7 @@ fun DashboardScreen(
     onOpenEuronics: () -> Unit,
     graphifyRepo: GraphifyRepository,
     isSystemActive: Boolean,
+    activityEvents: List<ToolActivityEvent> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     var recentTasks by remember { mutableStateOf<List<TaskNode>>(emptyList()) }
@@ -130,6 +135,14 @@ fun DashboardScreen(
             ProactiveAssistantCard(taskCount = recentTasks.size)
 
             Spacer(modifier = Modifier.height(16.dp))
+
+            ToolActivitySection(events = activityEvents)
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            SpecialistAgentsSection()
+
+            Spacer(modifier = Modifier.height(16.dp))
             
             StatsRow(
                 tasks = recentTasks,
@@ -166,6 +179,115 @@ fun DashboardScreen(
         }
     }
 }
+
+
+@Composable
+private fun SpecialistAgentsSection() {
+    val profiles = AgentProfiles.all.filter { it.id != SpecialistAgent.AUTO }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = VoidColor.Void900,
+        border = androidx.compose.foundation.BorderStroke(1.dp, VoidColor.Violet.copy(alpha = 0.24f))
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                "SPECIALIST AGENTS",
+                color = VoidColor.Violet,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+                letterSpacing = 1.5.sp
+            )
+            Text(
+                "Choose a specialist in your command by adding its @handle. The selected profile guides Jarvis's local planner; Android safety checks still apply.",
+                color = VoidColor.TextSecondary,
+                fontSize = 12.sp
+            )
+            profiles.forEach { profile ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(profile.displayName, color = VoidColor.TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text(profile.guidance, color = VoidColor.TextDisabled, fontSize = 10.sp)
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = VoidColor.Violet.copy(alpha = 0.12f)
+                    ) {
+                        Text(
+                            "@${profile.handles.first()}",
+                            color = VoidColor.Violet,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                        )
+                    }
+                }
+            }
+            Text(
+                "Example: @research compare these options • @scheduler remind me in 20 minutes",
+                color = VoidColor.Cyan.copy(alpha = 0.9f),
+                fontSize = 10.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun ToolActivitySection(events: List<ToolActivityEvent>) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = VoidColor.Void900,
+        border = androidx.compose.foundation.BorderStroke(1.dp, VoidColor.Cyan.copy(alpha = 0.22f))
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("LIVE TOOL ACTIVITY", color = VoidColor.Cyan, fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.5.sp)
+            if (events.isEmpty()) {
+                Text(
+                    "No tool activity yet. Start a task from the Jarvis assistant to see live execution status here.",
+                    color = VoidColor.TextSecondary,
+                    fontSize = 12.sp
+                )
+            }
+            events.takeLast(5).asReversed().forEach { event ->
+                val statusText = when (event.status) {
+                    ActivityStatus.QUEUED -> "QUEUED"
+                    ActivityStatus.RUNNING -> "RUNNING"
+                    ActivityStatus.WAITING_FOR_APPROVAL -> "NEEDS APPROVAL"
+                    ActivityStatus.COMPLETED -> "COMPLETED"
+                    ActivityStatus.FAILED -> "FAILED"
+                    ActivityStatus.STOPPED -> "STOPPED"
+                    ActivityStatus.UNCONFIRMED -> "UNCONFIRMED"
+                    ActivityStatus.NOT_RUN -> "NOT RUN"
+                }
+                val statusColor = when (event.status) {
+                    ActivityStatus.COMPLETED -> VoidColor.Green
+                    ActivityStatus.FAILED, ActivityStatus.UNCONFIRMED -> VoidColor.Red
+                    ActivityStatus.RUNNING, ActivityStatus.WAITING_FOR_APPROVAL -> VoidColor.Cyan
+                    else -> VoidColor.TextDisabled
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(event.title, color = VoidColor.TextPrimary, fontSize = 13.sp)
+                        Text(event.safeInput, color = VoidColor.TextDisabled, fontSize = 10.sp)
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(statusText, color = statusColor, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        event.elapsedMs?.let { Text("${it} ms", color = VoidColor.TextDisabled, fontSize = 9.sp) }
+                    }
+                }
+            }
+            Text("Command details are hidden in this activity feed.", color = VoidColor.TextDisabled, fontSize = 10.sp)
+        }
+    }
+}
+
 
 @Composable
 private fun OrbBackground() {
